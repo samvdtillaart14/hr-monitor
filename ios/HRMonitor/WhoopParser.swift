@@ -57,6 +57,7 @@ final class WhoopParser: ObservableObject {
     var onRecord: ((Record) -> Void)?
     private var seen = Set<UInt32>()
     private var file: FileHandle?
+    private var writeFailed = false
     private let iso = ISO8601DateFormatter()
 
     static func crc16Modbus(_ b: ArraySlice<UInt8>) -> UInt16 {
@@ -74,18 +75,28 @@ final class WhoopParser: ObservableObject {
     @Published private(set) var imuFrames = 0
     @Published private(set) var lastAccel: (Int, Int, Int)?
 
+    /// Leegt de fragmentbuffers (bij een nieuwe verbinding hoort oude halve data er niet meer bij).
+    func resetBuffers() { buffers = [:] }
+
     /// Voegt fragmenten samen: grote frames (bv. IMU, 1244 B) komen verdeeld over meerdere notificaties.
     func handle(_ data: Data, channel: String) {
         var buf = buffers[channel, default: []] + [UInt8](data)
-        while !buf.isEmpty {
-            if buf[0] != 0xAA { buf.removeFirst(); continue }
-            guard buf.count >= 4 else { break }
-            let total = u16(buf, 2) + 8
-            guard total >= 12, total <= 4096 else { buf.removeFirst(); badFrames += 1; continue }
-            guard buf.count >= total else { break }
-            handle(Data(buf[0..<total]))
-            buf.removeFirst(total)
+        var i = 0
+        while i < buf.count {
+            if buf[i] != 0xAA || (i + 1 < buf.count && buf[i + 1] != 0x01) { i += 1; continue }
+            // Pas de lengte vertrouwen als de header-CRC klopt; anders is deze 0xAA toevallig een databyte.
+            guard buf.count - i >= 8 else { break }
+            let header = buf[i..<(i + 6)]
+            guard Self.crc16Modbus(header) == UInt16(u16(buf, i + 6)) else { i += 1; continue }
+            let total = u16(buf, i + 2) + 8
+            guard total >= 12, total <= 4096 else { i += 1; badFrames += 1; continue }
+            guard buf.count - i >= total else { break }
+            handle(Data(buf[i..<(i + total)]))
+            i += total
         }
+        buf.removeFirst(i)
+        // Nooit eindeloos wachten op een onvolledig frame.
+        if buf.count > 8192 { buf.removeAll() }
         buffers[channel] = buf
     }
 
@@ -111,6 +122,7 @@ final class WhoopParser: ObservableObject {
             rec.temp2 = Double(u16(b, 69)) / 10
             rec.temp3 = Double(u16(b, 71)) / 10
             lastRecord = rec
+            if seen.count > 200_000 { seen.removeAll() }   // geheugen begrenzen; DayStore ontdubbelt ook
             if seen.insert(t).inserted {
                 records += 1
                 write(rec)
@@ -154,22 +166,23 @@ final class WhoopParser: ObservableObject {
     /// Historische records worden direct naar whoop_historie_<datum>.csv geschreven.
     private func write(_ r: Record) {
         if file == nil {
-            let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+            if writeFailed { return }
             let url = Recorder.folder.appendingPathComponent(Recorder.fileName(.whoopHistory))
-            FileManager.default.createFile(atPath: url.path, contents: Data("tijd;hr_bpm;huidtemp_c;rr_ms;q0;q1;q2;q3;temp2_c;temp3_c\n".utf8))
-            file = try? FileHandle(forWritingTo: url)
-            file?.seekToEndOfFile()
+            guard FileManager.default.createFile(atPath: url.path, contents: Data("tijd;hr_bpm;huidtemp_c;rr_ms;q0;q1;q2;q3;temp2_c;temp3_c\n".utf8)) else { writeFailed = true; return }
+            file = FileHandle.appending(to: url)
         }
         let t = iso.string(from: Date(timeIntervalSince1970: TimeInterval(r.time)))
         let temp = r.skinTemp.map { String(format: "%.2f", $0).replacingOccurrences(of: ".", with: ",") } ?? ""
         let nl = { (d: Double) in String(format: "%.3f", d).replacingOccurrences(of: ".", with: ",") }
         let q = r.motion.map { nl(Double($0)) }.joined(separator: ";")
         let rr = r.rr.map(String.init).joined(separator: " ")
-        file?.write(Data("\(t);\(r.hr);\(temp);\(rr);\(q);\(nl(r.temp2));\(nl(r.temp3))\n".utf8))
+        if let f = file, !f.safeWrite(Data("\(t);\(r.hr);\(temp);\(rr);\(q);\(nl(r.temp2));\(nl(r.temp3))\n".utf8)) {
+            try? f.close(); file = nil; writeFailed = true
+        }
     }
 
     func reset() {
-        try? file?.close(); file = nil
+        try? file?.close(); file = nil; writeFailed = false
         seen = []; records = 0; frames = 0; badFrames = 0; typeCounts = [:]; lastRecord = nil
     }
 }

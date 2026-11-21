@@ -67,4 +67,13 @@ final class ActivitiesTests: XCTestCase {
         XCTAssertGreaterThan(sum.kcal, 0)
         XCTAssertEqual(WhoopScores.zoneLowerBounds(cal.profile), [0, 120, 134, 148, 162, 176])
     }
+
+    func testMeasuredSecondsAndRestingKcal() {
+        // 10 min aaneengesloten, dan 1 uur gat, dan 1 sample: gat telt 5 s, laatste 1 s.
+        let s = series(t0, Array(repeating: 60.0, count: 10)) + [Sample(t: t0 + 4200, hr: 60)]
+        XCTAssertEqual(WhoopScores.measuredSeconds(s), 600 - 1 + 5 + 1, accuracy: 1e-9)
+        XCTAssertEqual(WhoopScores.measuredSeconds([]), 0)
+        // Mifflin-St Jeor, man 75 kg, 180 cm, 30 jaar: 1730 kcal/dag
+        XCTAssertEqual(WhoopScores.restingKcalPerMin(.standard) * 1440, 1730, accuracy: 1e-6)
+    }
 }

@@ -71,10 +71,16 @@ final class RouteRecorder: NSObject, ObservableObject, CLLocationManagerDelegate
 
     var status: CLAuthorizationStatus { lm.authorizationStatus }
     /// "Altijd" nodig om GPS op de achtergrond te kunnen starten (automatische activiteit).
+    /// iOS negeert een tweede verzoek zolang het eerste nog op het scherm staat: daarom pas "Altijd"
+    /// vragen nadat "Bij gebruik" is gegeven (in locationManagerDidChangeAuthorization).
     func requestAlways() {
-        if lm.authorizationStatus == .notDetermined { lm.requestWhenInUseAuthorization() }
-        lm.requestAlwaysAuthorization()
+        switch lm.authorizationStatus {
+        case .notDetermined: wantAlways = true; lm.requestWhenInUseAuthorization()
+        case .authorizedWhenInUse: lm.requestAlwaysAuthorization()
+        default: break
+        }
     }
+    private var wantAlways = false
 
     func start(_ id: UUID) {
         activityId = id
@@ -113,6 +119,7 @@ final class RouteRecorder: NSObject, ObservableObject, CLLocationManagerDelegate
     nonisolated func locationManagerDidChangeAuthorization(_ m: CLLocationManager) {
         MainActor.assumeIsolated {
             let s = m.authorizationStatus
+            if s == .authorizedWhenInUse && wantAlways { wantAlways = false; m.requestAlwaysAuthorization() }
             if s == .denied || s == .restricted { denied = activityId != nil } else { begin() }
         }
     }

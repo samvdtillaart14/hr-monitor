@@ -117,6 +117,10 @@ final class BLEManager: NSObject, ObservableObject {
         guard clean.count % 2 == 0, !clean.isEmpty else { return "Oneven of leeg aantal hex-tekens" }
         var bytes = [UInt8](); var i = clean.startIndex
         while i < clean.endIndex { let j = clean.index(i, offsetBy: 2); bytes.append(UInt8(clean[i..<j], radix: 16)!); i = j }
+        // Nooit cmd 23 (historie bevestigen) naar de band: dat kan data wissen voordat de Whoop-app heeft gesynchroniseerd.
+        if ch.uuid.uuidString.hasPrefix("FD4B0002"), bytes.count > 10, bytes[0] == 0xAA, bytes[8] == 0x23, bytes[10] == 23 {
+            return "Cmd 23 is geblokkeerd: dat kan data op de band wissen."
+        }
         let type: CBCharacteristicWriteType = ch.properties.contains(.write) ? .withResponse : .withoutResponse
         p.writeValue(Data(bytes), for: ch, type: type)
         raw.log(service: ch.service?.uuid.uuidString ?? "", char: ch.uuid.uuidString, kind: "WRITE", data: Data(bytes))
@@ -125,6 +129,7 @@ final class BLEManager: NSObject, ObservableObject {
 
     /// Stuurt een Whoop-commando naar FD4B0002 (met CRC's). Alleen voor veilige, lezende commando's.
     func sendWhoop(cmd: UInt8, body: [UInt8]) -> String? {
+        guard cmd != 23 else { return "Cmd 23 is geblokkeerd: dat kan data op de band wissen." }
         guard let p = peripheral, let ch = charRefs.first(where: { $0.key.hasPrefix("FD4B0001") && $0.key.hasSuffix("FD4B0002-CCE1-4033-93CE-002D5875F58A") })?.value
         else { return "Whoop-service niet gevonden. Verbind eerst." }
         let f = whoop.frame(cmd: cmd, body: body)
@@ -243,6 +248,7 @@ extension BLEManager: CBCentralManagerDelegate {
         deviceName = p.name
         if sessionStart == nil { sessionStart = Date() }
         chars = []; charRefs = [:]
+        whoop.resetBuffers()
         p.discoverServices(nil)
     }
 

@@ -377,9 +377,22 @@ public enum WhoopScores {
     // MARK: Calorieën
 
     /// Energieverbruik (kcal): rustmetabolisme (Mifflin-St Jeor) plus activiteit (Keytel, boven rust-HR + 20).
+    /// Rustverbruik (kcal/min) volgens Mifflin-St Jeor, zonder kcalScale.
+    public static func restingKcalPerMin(_ cal: Calibration = .standard) -> Double {
+        let p = cal.profile
+        return (10 * p.weightKg + 6.25 * p.heightCm - 5 * p.age + (p.male ? 5 : -161)) / 1440
+    }
+
+    /// Seconden die de samples dekken (zelfde tijdstappen als `calories` en `strain`: gat hooguit 5 s).
+    public static func measuredSeconds(_ samples: [Sample]) -> Double {
+        var t = 0.0
+        for i in samples.indices { t += i + 1 < samples.count ? max(0, min(5, samples[i + 1].t - samples[i].t)) : 1 }
+        return t
+    }
+
     public static func calories(_ samples: [Sample], _ cal: Calibration = .standard) -> Double {
         let p = cal.profile
-        let bmrPerMin = (10 * p.weightKg + 6.25 * p.heightCm - 5 * p.age + (p.male ? 5 : -161)) / 1440
+        let bmrPerMin = restingKcalPerMin(cal)
         var kcal = 0.0
         for i in samples.indices {
             let s = samples[i]

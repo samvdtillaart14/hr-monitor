@@ -13,11 +13,10 @@ final class RawLogger: ObservableObject {
     }()
 
     func start() {
-        let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd_HH-mm-ss"
         let url = Recorder.folder.appendingPathComponent(Recorder.fileName(.raw))
-        FileManager.default.createFile(atPath: url.path, contents: Data("tijd;type;service;characteristic;len;hex;opmerking\n".utf8))
-        handle = try? FileHandle(forWritingTo: url)
-        handle?.seekToEndOfFile()
+        guard FileManager.default.createFile(atPath: url.path, contents: Data("tijd;type;service;characteristic;len;hex;opmerking\n".utf8)),
+              let h = FileHandle.appending(to: url) else { return }
+        handle = h
         rows = 0
         isRecording = true
     }
@@ -36,8 +35,7 @@ final class RawLogger: ObservableObject {
         lines.append(Line(text: "\(t.suffix(13)) \(kind) \(short(service))/\(short(char)) [\(data.count)] \(hex) \(note)"))
         if lines.count > 400 { lines.removeFirst(lines.count - 400) }
         if isRecording, let handle {
-            handle.write(Data("\(t);\(kind);\(service);\(char);\(data.count);\(hex);\(note)\n".utf8))
-            rows += 1
+            if handle.safeWrite(Data("\(t);\(kind);\(service);\(char);\(data.count);\(hex);\(note)\n".utf8)) { rows += 1 } else { stop() }
         }
     }
 }

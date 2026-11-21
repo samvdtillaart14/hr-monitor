@@ -468,8 +468,13 @@ struct RouteCard: View {
     private func grid(_ p: [RoutePoint]) -> some View {
         let dist = live ? recorder.distance : Route.distance(p)
         let secs = (activity.end ?? Date()).timeIntervalSince(activity.start)
-        let kmh = secs > 0 ? dist / secs * 3.6 : 0
-        let pace = dist > 0 ? secs / (dist / 1000) : 0
+        // Snelheid en tempo over de tijd dat de GPS liep: bij een automatisch herkende activiteit start
+        // de GPS later dan het (teruggerekende) begin, en die tijd zonder route mag niet meetellen.
+        let gpsFrom = max(activity.start.timeIntervalSince1970, p[0].t)
+        let gpsTo = live ? Date().timeIntervalSince1970 : min(activity.effectiveEnd.timeIntervalSince1970, p[p.count - 1].t)
+        let moveSecs = max(0, gpsTo - gpsFrom)
+        let kmh = moveSecs > 0 ? dist / moveSecs * 3.6 : 0
+        let pace = dist > 0 ? moveSecs / (dist / 1000) : 0
         let hrs = hr.filter { $0.0 >= activity.start && $0.0 <= activity.effectiveEnd }.map(\.1)
         // Hoogtemeters: gladgestreken hoogte, alleen stijgingen > 1 m
         var climb = 0.0, ref = p[0].alt

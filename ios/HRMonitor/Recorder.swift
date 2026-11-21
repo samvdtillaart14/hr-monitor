@@ -7,6 +7,8 @@ final class Recorder: ObservableObject {
     @Published private(set) var rows = 0
     @Published private(set) var currentURL: URL?
     @Published private(set) var files: [URL] = []
+    /// Melding als schrijven mislukt (bv. iPhone-opslag vol); de opname is dan gestopt.
+    @Published private(set) var error: String?
 
     private var handle: FileHandle?
     private let iso: ISO8601DateFormatter = {
@@ -47,8 +49,7 @@ final class Recorder: ObservableObject {
     init() {
         if let name = UserDefaults.standard.string(forKey: Self.activeKey) {
             let url = Self.folder.appendingPathComponent(name)
-            if FileManager.default.fileExists(atPath: url.path), let h = try? FileHandle(forWritingTo: url) {
-                h.seekToEndOfFile()
+            if FileManager.default.fileExists(atPath: url.path), let h = FileHandle.appending(to: url) {
                 handle = h; currentURL = url; isRecording = true
             } else {
                 UserDefaults.standard.removeObject(forKey: Self.activeKey)
@@ -58,13 +59,15 @@ final class Recorder: ObservableObject {
     }
 
     func start() {
-        let df = DateFormatter()
-        df.dateFormat = "yyyy-MM-dd_HH-mm-ss"
         let url = Self.folder.appendingPathComponent(Self.fileName(.heartRate))
         // Puntkomma als scheidingsteken: opent direct goed in een Nederlandse Excel.
-        FileManager.default.createFile(atPath: url.path, contents: Data("tijd;hr_bpm;rr_ms;batterij_pct\n".utf8))
-        handle = try? FileHandle(forWritingTo: url)
-        handle?.seekToEndOfFile()
+        guard FileManager.default.createFile(atPath: url.path, contents: Data("tijd;hr_bpm;rr_ms;batterij_pct\n".utf8)),
+              let h = FileHandle.appending(to: url) else {
+            error = "Kon geen opnamebestand maken (opslag vol?)."
+            return
+        }
+        handle = h
+        error = nil
         currentURL = url
         rows = 0
         isRecording = true
@@ -85,7 +88,11 @@ final class Recorder: ObservableObject {
         guard isRecording, let handle else { return }
         let rrs = rr.map { String(Int($0.rounded())) }.joined(separator: " ")
         let line = "\(iso.string(from: time));\(bpm);\(rrs);\(battery.map(String.init) ?? "")\n"
-        handle.write(Data(line.utf8))
+        guard handle.safeWrite(Data(line.utf8)) else {
+            stop()
+            error = "Opname gestopt: schrijven mislukt (iPhone-opslag vol?)."
+            return
+        }
         rows += 1
     }
 
