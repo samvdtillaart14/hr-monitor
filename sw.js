@@ -1,5 +1,5 @@
 // Offline-cache: netwerk eerst, cache als terugval
-const C='hrm-v1',F=['./','index.html','manifest.webmanifest','icon.svg','icon-192.png','icon-512.png'];
+const C='hrm-v2',F=['./','index.html','manifest.webmanifest','icon.svg','icon-192.png','icon-512.png','vendor/gsap.min.js','vendor/ScrollTrigger.min.js','vendor/lenis.min.js','vendor/lenis.css'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(C).then(c=>c.addAll(F)));self.skipWaiting()});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==C).map(x=>caches.delete(x)))));self.clients.claim()});
 self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;
