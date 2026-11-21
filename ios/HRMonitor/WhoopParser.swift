@@ -153,7 +153,7 @@ final class WhoopParser: ObservableObject {
     private func write(_ r: Record) {
         if file == nil {
             let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd_HH-mm-ss"
-            let url = Recorder.folder.appendingPathComponent("whoop_historie_\(df.string(from: Date())).csv")
+            let url = Recorder.folder.appendingPathComponent(Recorder.fileName(.whoopHistory))
             FileManager.default.createFile(atPath: url.path, contents: Data("tijd;hr_bpm;huidtemp_c;rr_ms;q0;q1;q2;q3;temp2_c;temp3_c\n".utf8))
             file = try? FileHandle(forWritingTo: url)
             file?.seekToEndOfFile()

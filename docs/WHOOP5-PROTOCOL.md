@@ -37,8 +37,10 @@ Band: WG50_r45, firmware 50.43.2.0, iOS 27 (21-11-2026). Bron voor de basis: ope
     - u16LE @69 / 10 en @71 / 10: ±29 en ±31 °C, extra temperaturen (voorlopig).
     - Huidtemperatuur u16LE @73 / 100 °C (31,4–32,0 °C gemeten).
     - Ongeduid: @33–35, @57–61, @105–109 (optisch/kwaliteit?), @113–115.
-  - `0x1A` (R26, 88 B): ruwe optische data, nog niet gedecodeerd.
+  - `0x1A` (R26, 88 B, ±1 per 15 s): tijd u32LE @15; u32LE @23 ≈ 157 000 (DC-niveau?); 24× i16LE @27..74 (golfvorm, vermoedelijk PPG of beweging); float32 @75. Voorlopig.
 - **0x31:** live status met tijd u32LE @11.
+- **0x30 events (op 0004/0005):** event-id u16LE @10, tijd u32LE @12. Gezien: 3, 29, 63, 110, 123.
+- **Feature-flags (via 0x74/0x76/0x78):** o.a. `enable_raw_data_w_ecg`, `cont_collection_mode`, `whoop_live_hr_in_adv`, `max_collection_backlog`.
 - **0x32:** firmware-tekstlog, tekst vanaf byte 21.
 
 ## Belangrijk

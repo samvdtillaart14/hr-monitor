@@ -15,6 +15,30 @@ final class Recorder: ObservableObject {
         return f
     }()
 
+    /// Soorten opnames. Bestandsnaam: <SOORT>_<dag>-<maand>_<uu>u<mm>.csv, bv. HARTSLAG_21-11_16u34.csv
+    enum Kind: String, CaseIterable {
+        case heartRate = "HARTSLAG", raw = "RUW-ALLES", whoopHistory = "WHOOP-HISTORIE"
+        var title: String {
+            switch self { case .heartRate: "Hartslag (bpm + RR)"; case .raw: "Ruwe BLE-data (alles)"; case .whoopHistory: "Whoop-historie (per seconde)" }
+        }
+        var icon: String {
+            switch self { case .heartRate: "heart.fill"; case .raw: "waveform"; case .whoopHistory: "clock.arrow.circlepath" }
+        }
+        static func of(_ url: URL) -> Kind? {
+            let n = url.lastPathComponent.uppercased()
+            if let k = allCases.first(where: { n.hasPrefix($0.rawValue + "_") }) { return k }
+            if n.hasPrefix("HARTSLAG") { return .heartRate }
+            if n.hasPrefix("RUW") { return .raw }
+            if n.hasPrefix("WHOOP") { return .whoopHistory }
+            return nil
+        }
+    }
+
+    static func fileName(_ kind: Kind) -> String {
+        let df = DateFormatter(); df.dateFormat = "dd-MM_HH'u'mm-ss"
+        return "\(kind.rawValue)_\(df.string(from: Date())).csv"
+    }
+
     static var folder: URL { FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0] }
 
     init() { refresh() }
@@ -22,7 +46,7 @@ final class Recorder: ObservableObject {
     func start() {
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd_HH-mm-ss"
-        let url = Self.folder.appendingPathComponent("hartslag_\(df.string(from: Date())).csv")
+        let url = Self.folder.appendingPathComponent(Self.fileName(.heartRate))
         // Puntkomma als scheidingsteken: opent direct goed in een Nederlandse Excel.
         FileManager.default.createFile(atPath: url.path, contents: Data("tijd;hr_bpm;rr_ms;batterij_pct\n".utf8))
         handle = try? FileHandle(forWritingTo: url)
@@ -56,6 +80,7 @@ final class Recorder: ObservableObject {
 
     func refresh() {
         let urls = (try? FileManager.default.contentsOfDirectory(at: Self.folder, includingPropertiesForKeys: [.creationDateKey])) ?? []
-        files = urls.filter { $0.pathExtension == "csv" }.sorted { $0.lastPathComponent > $1.lastPathComponent }
+        let date = { (u: URL) in (try? u.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast }
+        files = urls.filter { $0.pathExtension == "csv" }.sorted { date($0) > date($1) }
     }
 }

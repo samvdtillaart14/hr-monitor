@@ -199,8 +199,18 @@ struct FilesView: View {
     var body: some View {
         List {
             ForEach(rec.files, id: \.self) { url in
+                let kind = Recorder.Kind.of(url)
+                let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
                 ShareLink(item: url) {
-                    Label(url.lastPathComponent, systemImage: "doc.text")
+                    HStack(spacing: 12) {
+                        Image(systemName: kind?.icon ?? "doc.text").foregroundStyle(Theme.accent).frame(width: 24)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(kind?.title ?? "Bestand").font(.headline).foregroundStyle(Theme.text)
+                            Text(url.lastPathComponent).font(.caption.monospaced()).foregroundStyle(Theme.muted)
+                        }
+                        Spacer()
+                        Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)).font(.caption).foregroundStyle(Theme.muted)
+                    }
                 }
                 .swipeActions {
                     if url != rec.currentURL || !rec.isRecording {

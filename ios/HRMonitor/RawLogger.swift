@@ -14,7 +14,7 @@ final class RawLogger: ObservableObject {
 
     func start() {
         let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd_HH-mm-ss"
-        let url = Recorder.folder.appendingPathComponent("ruw_\(df.string(from: Date())).csv")
+        let url = Recorder.folder.appendingPathComponent(Recorder.fileName(.raw))
         FileManager.default.createFile(atPath: url.path, contents: Data("tijd;type;service;characteristic;len;hex;opmerking\n".utf8))
         handle = try? FileHandle(forWritingTo: url)
         handle?.seekToEndOfFile()
