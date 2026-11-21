@@ -1,0 +1,24 @@
+name: Scores-tests
+
+on:
+  push:
+    paths: ['scores/**', 'ios/WhoopScores/**', '.github/workflows/scores.yml']
+  pull_request:
+    paths: ['scores/**', 'ios/WhoopScores/**', '.github/workflows/scores.yml']
+  workflow_dispatch:
+
+jobs:
+  js:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node --test test/*.test.mjs
+        working-directory: scores
+  swift:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test
+        working-directory: ios/WhoopScores

@@ -7,6 +7,7 @@ struct TodayView: View {
     @EnvironmentObject var ble: BLEManager
     @Environment(\.scenePhase) private var phase
     @State private var week: [Analytics.Day] = []
+    @StateObject private var scores = ScoreModel()
     @State private var lastCompute = Date.distantPast
 
     private var today: Analytics.Day? { week.last }
@@ -18,7 +19,10 @@ struct TodayView: View {
                 VStack(spacing: Theme.gap) {
                     header
                     rings.padding(.vertical, 8)
-                    HStack(spacing: Theme.gap) { healthTile; stressTile }
+                    HStack(spacing: Theme.gap) {
+                        NavigationLink { HealthMonitorView(model: scores) } label: { healthTile }
+                        NavigationLink { StressDetailView(model: scores) } label: { stressTile }
+                    }.buttonStyle(.plain)
                     stressChart
                     weekChart
                     metrics
@@ -40,7 +44,11 @@ struct TodayView: View {
         .onChange(of: phase) { _, p in if p == .active { recompute() } }
     }
 
-    private func recompute() { lastCompute = Date(); week = Analytics.week(store: store) }
+    private func recompute() { lastCompute = Date(); week = Analytics.week(store: store); scores.refresh(store: store) }
+
+    private var sleepPerf: Int? { scores.lastNight?.performance.map { Int($0.rounded()) } ?? today?.sleepScore }
+    private var recoveryNow: Int? { scores.lastNight?.recovery ?? today?.recovery }
+    private var strainNow: Double? { scores.today?.strain ?? today?.strain }
 
     private var header: some View {
         HStack {
@@ -56,13 +64,20 @@ struct TodayView: View {
 
     private var rings: some View {
         HStack(spacing: 10) {
-            ScoreRing(label: "Slaap", value: today?.sleepScore.map { Double($0) / 100 },
-                      text: today?.sleepScore.map { "\($0)%" } ?? "--", color: Theme.hex(0x8FA8C8))
-            ScoreRing(label: "Herstel", value: today?.recovery.map { Double($0) / 100 },
-                      text: today?.recovery.map { "\($0)%" } ?? "--", color: recoveryColor(today?.recovery))
-            ScoreRing(label: "Belasting", value: today.map { $0.strain / 21 },
-                      text: today.map { String(format: "%.1f", $0.strain) } ?? "--", color: Theme.zones[1].color)
+            NavigationLink { SleepDetailView(model: scores) } label: {
+                ScoreRing(label: "Slaap", value: sleepPerf.map { Double($0) / 100 },
+                          text: sleepPerf.map { "\($0)%" } ?? "--", color: Theme.hex(0x8FA8C8))
+            }
+            NavigationLink { RecoveryDetailView(model: scores) } label: {
+                ScoreRing(label: "Herstel", value: recoveryNow.map { Double($0) / 100 },
+                          text: recoveryNow.map { "\($0)%" } ?? "--", color: recoveryColor(recoveryNow))
+            }
+            NavigationLink { StrainDetailView(model: scores) } label: {
+                ScoreRing(label: "Belasting", value: strainNow.map { $0 / 21 },
+                          text: strainNow.map { String(format: "%.1f", $0) } ?? "--", color: Theme.zones[1].color)
+            }
         }
+        .buttonStyle(.plain)
     }
 
     private func recoveryColor(_ r: Int?) -> Color {

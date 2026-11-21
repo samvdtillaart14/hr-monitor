@@ -2,7 +2,7 @@ name: iOS build
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'claude/**']
     paths: ['ios/**', '.github/workflows/ios.yml']
   workflow_dispatch:
 
@@ -43,6 +43,7 @@ jobs:
           path: ios/HRMonitor.ipa
 
       - name: Publiceren als release 'latest'
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
@@ -55,6 +56,7 @@ jobs:
             Installeer HRMonitor.ipa met AltStore of Sideloadly; zie README.
 
       - name: AltStore-bron (apps.json) bijwerken
+        if: github.ref == 'refs/heads/main'
         env:
           RUN: ${{ github.run_number }}
         run: |
