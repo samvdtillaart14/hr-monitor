@@ -40,6 +40,7 @@ label{font-size:12px;color:var(--mut)}
   <button class="p" id="bScan">Zoek apparaat</button>
   <button id="bDisc" disabled>Verbreek</button>
   <label><input type="checkbox" id="auto" checked> auto-herverbinden</label>
+  <label><input type="checkbox" id="autoN" checked> alle notify automatisch aan</label>
   <span id="st">Niet verbonden</span>
 </header>
 <main>
@@ -146,7 +147,7 @@ async function discover(){
     const d=document.createElement('div');d.className='svc';
     d.innerHTML=`<b>${short(s.uuid)}</b><span class="nm">${nameOf(s.uuid)}</span>`;tree.append(d);
     let chs=[];try{chs=await s.getCharacteristics()}catch(e){d.append(' (characteristics niet leesbaar: '+e.message+')');continue}
-    for(const c of chs)d.append(chRow(c));
+    for(const c of chs){const r=chRow(c);d.append(r);if($('autoN').checked&&r._nb){try{await r._nb.onclick()}catch(e){}}}
   }
   addLog('INFO','',null,svcs.length+' services gevonden');
 }
@@ -165,7 +166,7 @@ function chRow(c){
     const nb=btn(p.notify?'Notify':'Indicate',async()=>{try{
       if(!on){c.addEventListener('characteristicvaluechanged',h);await c.startNotifications();on=true;nb.classList.add('on');addLog('INFO',c.uuid,null,'notificaties aan')}
       else{await c.stopNotifications();c.removeEventListener('characteristicvaluechanged',h);on=false;nb.classList.remove('on');addLog('INFO',c.uuid,null,'notificaties uit')}
-    }catch(e){addLog('FOUT',c.uuid,null,e.message)}});row.append(nb)}
+    }catch(e){addLog('FOUT',c.uuid,null,e.message)}});row.append(nb);el._nb=nb}
   if(p.write||p.writeWithoutResponse){
     const inp=document.createElement('input');inp.placeholder='hex bv. 01 a0 ff';
     const asText=document.createElement('select');asText.innerHTML='<option value="h">hex</option><option value="t">tekst</option><option value="tc">tekst+CRLF</option>';
