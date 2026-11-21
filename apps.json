@@ -1,0 +1,27 @@
+{
+  "name": "HR Monitor",
+  "identifier": "nl.samvdtillaart.hrmonitor.source",
+  "sourceURL": "https://raw.githubusercontent.com/samvdtillaart14/hr-monitor/main/apps.json",
+  "apps": [{
+    "name": "HR Monitor",
+    "bundleIdentifier": "nl.samvdtillaart.hrmonitor",
+    "developerName": "Sam",
+    "subtitle": "Whoop-hartslag en -data via Bluetooth",
+    "localizedDescription": "Leest je Whoop-band uit via Bluetooth, ook met het scherm uit.",
+    "iconURL": "https://raw.githubusercontent.com/samvdtillaart14/hr-monitor/main/icon-512.png",
+    "tintColor": "00F19F",
+    "versions": [{
+      "version": "1.0.12",
+      "buildVersion": "12",
+      "date": "2026-11-21T16:33:47Z",
+      "downloadURL": "https://github.com/samvdtillaart14/hr-monitor/releases/download/latest/HRMonitor.ipa",
+      "size": 277775,
+      "minOSVersion": "17.0"
+    }],
+    "appPermissions": {
+      "entitlements": [],
+      "privacy": { "NSBluetoothAlwaysUsageDescription": "HR Monitor verbindt via Bluetooth met je hartslagband." }
+    }
+  }],
+  "news": []
+}
