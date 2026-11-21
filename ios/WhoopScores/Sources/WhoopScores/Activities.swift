@@ -25,6 +25,10 @@ public struct ActivityDetectionParams: Sendable {
     public var maxGapMin: Int = 3
     /// minstens dit deel van de minuten moet actief zijn
     public var minActiveFraction: Double = 0.7
+    /// aanloop: begin terugzetten zolang de hartslag al boven deze reserve lag (opwarmen telt mee)
+    public var rampReserve: Double = 0.20
+    /// hooguit zoveel minuten terug
+    public var maxLeadMin: Int = 10
     /// minimaal aantal metingen in een minuut om hem mee te tellen
     public var minSamplesPerMin: Int = 6
     /// een activiteit die korter dan dit geleden eindigt kan nog lopen: nog niet melden
@@ -102,7 +106,11 @@ extension WhoopScores {
             guard mean >= p.minMeanReserve else { return }
             let end = Double((last + 1) * 60)
             guard now - end >= p.settleSec else { return }
-            out.append(DetectedActivity(start: Double(runStart * 60), end: end, meanReserve: mean))
+            // Aanloop meetellen: terug naar het moment dat de hartslag begon te stijgen.
+            var first = runStart
+            while runStart - first < p.maxLeadMin, let r = reserve[first - 1], r >= p.rampReserve,
+                  out.last.map({ Double((first - 1) * 60) >= $0.end }) ?? true { first -= 1 }
+            out.append(DetectedActivity(start: Double(first * 60), end: end, meanReserve: mean))
         }
         for m in active.dropFirst() {
             // Een gat mag niet over een uitgesloten periode heen lopen.
