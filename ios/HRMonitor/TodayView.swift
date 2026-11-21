@@ -5,7 +5,9 @@ import Charts
 struct TodayView: View {
     @EnvironmentObject var store: DayStore
     @EnvironmentObject var ble: BLEManager
+    @Environment(\.scenePhase) private var phase
     @State private var week: [Analytics.Day] = []
+    @State private var lastCompute = Date.distantPast
 
     private var today: Analytics.Day? { week.last }
     private var past: [Analytics.Day] { Array(week.dropLast()) }
@@ -30,10 +32,15 @@ struct TodayView: View {
             .refreshable { recompute() }
         }
         .onAppear(perform: recompute)
-        .onChange(of: store.revision) { _, _ in recompute() }
+        // Alleen herberekenen als de app zichtbaar is, hooguit 1× per 30 s: spaart CPU op de achtergrond,
+        // anders kan iOS de app 's nachts afsluiten.
+        .onChange(of: store.revision) { _, _ in
+            if phase == .active && Date().timeIntervalSince(lastCompute) > 30 { recompute() }
+        }
+        .onChange(of: phase) { _, p in if p == .active { recompute() } }
     }
 
-    private func recompute() { week = Analytics.week(store: store) }
+    private func recompute() { lastCompute = Date(); week = Analytics.week(store: store) }
 
     private var header: some View {
         HStack {

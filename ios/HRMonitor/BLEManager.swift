@@ -208,7 +208,11 @@ extension BLEManager: CBCentralManagerDelegate {
         switch c.state {
         case .poweredOn:
             if state == .off || state == .unauthorized { state = .idle }
-            if peripheral == nil { reconnectLast() }
+            if let p = peripheral {
+                // Na herstart door iOS: verbinding opnieuw opbouwen of abonnementen herstellen.
+                if p.state == .disconnected && !userDisconnected { state = .connecting; c.connect(p, options: nil) }
+                else if p.state == .connected && p.services == nil { p.discoverServices(nil) }
+            } else { reconnectLast() }
         case .unauthorized: state = .unauthorized
         default: state = .off
         }
