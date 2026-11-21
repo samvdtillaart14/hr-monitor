@@ -51,7 +51,8 @@ struct ContentView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     NavigationLink("Verkenner") { ExplorerView() }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    NavigationLink { UpdateView() } label: { Image(systemName: "arrow.down.circle") }
                     NavigationLink("Opnames") { FilesView() }
                 }
             }

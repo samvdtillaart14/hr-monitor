@@ -22,6 +22,8 @@ targets:
       path: HRMonitor/Info.plist
       properties:
         CFBundleDisplayName: HR Monitor
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSBluetoothAlwaysUsageDescription: HR Monitor verbindt via Bluetooth met je hartslagband.

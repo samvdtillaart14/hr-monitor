@@ -27,6 +27,7 @@ jobs:
           xcodebuild -project HRMonitor.xcodeproj -scheme HRMonitor \
             -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
             -derivedDataPath build \
+            MARKETING_VERSION=1.0.${{ github.run_number }} CURRENT_PROJECT_VERSION=${{ github.run_number }} \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
 
       - name: IPA maken
@@ -52,3 +53,45 @@ jobs:
           body: |
             Automatische build van commit ${{ github.sha }}.
             Installeer HRMonitor.ipa met AltStore of Sideloadly; zie README.
+
+      - name: AltStore-bron (apps.json) bijwerken
+        env:
+          RUN: ${{ github.run_number }}
+        run: |
+          SIZE=$(stat -f%z ios/HRMonitor.ipa)
+          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          cat > apps.json <<JSON
+          {
+            "name": "HR Monitor",
+            "identifier": "nl.samvdtillaart.hrmonitor.source",
+            "sourceURL": "https://raw.githubusercontent.com/${{ github.repository }}/main/apps.json",
+            "apps": [{
+              "name": "HR Monitor",
+              "bundleIdentifier": "nl.samvdtillaart.hrmonitor",
+              "developerName": "Sam",
+              "subtitle": "Whoop-hartslag en -data via Bluetooth",
+              "localizedDescription": "Leest je Whoop-band uit via Bluetooth, ook met het scherm uit.",
+              "iconURL": "https://raw.githubusercontent.com/${{ github.repository }}/main/icon-512.png",
+              "tintColor": "00F19F",
+              "versions": [{
+                "version": "1.0.$RUN",
+                "buildVersion": "$RUN",
+                "date": "$DATE",
+                "downloadURL": "https://github.com/${{ github.repository }}/releases/download/latest/HRMonitor.ipa",
+                "size": $SIZE,
+                "minOSVersion": "17.0"
+              }],
+              "appPermissions": {
+                "entitlements": [],
+                "privacy": { "NSBluetoothAlwaysUsageDescription": "HR Monitor verbindt via Bluetooth met je hartslagband." }
+              }
+            }],
+            "news": []
+          }
+          JSON
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps.json
+          git commit -m "AltStore-bron: versie 1.0.$RUN" || exit 0
+          for i in 1 2 3; do git pull --rebase origin main && git push origin HEAD:main && break; sleep 5; done
+
