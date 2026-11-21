@@ -7,7 +7,7 @@
 
 export const DEFAULT_CALIBRATION = {
   version: 1,
-  profile: { maxHr: 190, restingHr: 55, zoneMode: 'hrr' },
+  profile: { maxHr: 190, restingHr: 55, zoneMode: 'hrr', weightKg: 75, heightCm: 180, age: 30, male: true, kcalScale: 1 },
   strain: {
     // strain = min(21, a · ln(1 + T/b)), T = gewogen zoneminuten
     a: 3.7, b: 8,
@@ -28,7 +28,11 @@ export const DEFAULT_CALIBRATION = {
     deepFrac: 0.20, remFrac: 0.22,
     moveThreshold: 0,     // 0 = automatisch per opname
     hrAboveRest: 20, maxGapMin: 15, minPeriodMin: 30,
+    // slaapschuld = min(cap, carry·schuld gisteren + fromDeficit·(behoefte − geslapen) gisteren)
+    debtCarry: 0.1, debtFromDeficit: 0.55, debtCapMin: 127,
   },
+  // slaapstress 0–3 per minuut: offset + (HR − basis-rust-HR)/hrScale − (ln RMSSD − basis-ln-HRV)/hrvScale
+  stress: { offset: 1.0, hrScale: 10, hrvScale: 0.5 },
   corrections: { hrv: [0, 1], rhr: [0, 1], resp: [0, 1], skinTemp: [0, 1] }, // whoop ≈ a + b·eigen
 };
 
@@ -186,7 +190,7 @@ export function stageSleep(eps, period, candidate, moveThr, cal = DEFAULT_CALIBR
 
 // ---------- nacht ----------
 /** Volledige nachtanalyse: slaap, fases, HRV, rust-HR, ademfrequentie, huidtemperatuur. */
-export function analyzeNight(samples, cal = DEFAULT_CALIBRATION) {
+export function analyzeNight(samples, cal = DEFAULT_CALIBRATION, baseline = cal.recovery.baseline) {
   const eps = epochs(samples);
   const { periods, moveThr, candidate } = detectSleep(eps, cal);
   if (!periods.length) return null;
@@ -230,6 +234,19 @@ export function analyzeNight(samples, cal = DEFAULT_CALIBRATION) {
   const cnt = [0, 0, 0, 0]; stages.forEach((s) => cnt[s]++);
   let disturbances = 0; for (let k = 1; k < stages.length; k++) if (stages[k] === STAGE.WAKE && stages[k - 1] !== STAGE.WAKE) disturbances++;
   const asleep = cnt[1] + cnt[2] + cnt[3];
+  // slaapstress per minuut over de hele periode in bed (5-min-venster)
+  const st = cal.stress ?? DEFAULT_CALIBRATION.stress;
+  const stress = stages.map((_, k) => {
+    const lo = Math.max(0, k - 2), hi = Math.min(stages.length, k + 3);
+    const hr = mean(eps.slice(at(lo), at(hi)).map((e) => e.hr).filter(Number.isFinite));
+    if (!Number.isFinite(hr)) return NaN;
+    const rm = rmssd([].concat(...epochBeats.slice(at(lo), at(hi))));
+    const v = st.offset + (hr - baseline.rhrMean) / st.hrScale - (rm > 0 ? (Math.log(rm) - baseline.lnHrvMean) / st.hrvScale : 0);
+    return clamp(v, 0, 3);
+  });
+  const stressMin = { low: 0, medium: 0, high: 0 };
+  for (const v of stress) if (Number.isFinite(v)) stressMin[v >= 2 ? 'high' : v >= 1 ? 'medium' : 'low']++;
+  const stressTotal = stressMin.low + stressMin.medium + stressMin.high;
   const k = cal.corrections || {};
   return {
     onset: eps[main.startIdx].t, wake: eps[main.endIdx - 1].t + 60,
@@ -237,11 +254,24 @@ export function analyzeNight(samples, cal = DEFAULT_CALIBRATION) {
     efficiency: (100 * asleep) / stages.length, disturbances,
     hrv: correct(hrv, k.hrv), rhr: correct(rhr, k.rhr), resp: correct(resp, k.resp),
     skinTemp: correct(temps.length ? mean(temps) : NaN, k.skinTemp),
+    stress, stressMin, highStressPct: stressTotal ? (100 * stressMin.high) / stressTotal : NaN,
     stages, naps: periods.filter((p) => p !== main).map((p) => ({ onset: eps[p.startIdx].t, minutes: p.endIdx - p.startIdx })),
   };
 }
 
 // ---------- slaapbehoefte en -prestatie ----------
+/** Opbouw van de slaapbehoefte zoals de Whoop-app hem toont (minuten). */
+export function sleepNeedParts({ debtMin = 0, prevDayStrain = 0, napMin = 0 } = {}, cal = DEFAULT_CALIBRATION) {
+  const c = cal.sleep;
+  const parts = { healthy: c.needBaseMin, strain: c.needPerStrainMin * Math.max(0, prevDayStrain - c.strainRef), debt: c.needPerDebtMin * debtMin, naps: -napMin };
+  return { ...parts, total: Math.max(0, parts.healthy + parts.strain + parts.debt + parts.naps) };
+}
+/** Slaapschuld (min) voor vannacht, uit de schuld en het tekort van de vorige nacht. */
+export function sleepDebt({ prevDebtMin = 0, prevNeedMin = NaN, prevAsleepMin = NaN } = {}, cal = DEFAULT_CALIBRATION) {
+  const c = { ...DEFAULT_CALIBRATION.sleep, ...cal.sleep };
+  const deficit = Number.isFinite(prevNeedMin) && Number.isFinite(prevAsleepMin) ? prevNeedMin - prevAsleepMin : 0;
+  return clamp(c.debtCarry * prevDebtMin + c.debtFromDeficit * deficit, 0, c.debtCapMin);
+}
 export function sleepNeedMin({ debtMin = 0, prevDayStrain = 0, napMin = 0 } = {}, cal = DEFAULT_CALIBRATION) {
   const c = cal.sleep;
   return Math.max(0, c.needBaseMin + c.needPerDebtMin * debtMin + c.needPerStrainMin * Math.max(0, prevDayStrain - c.strainRef) - napMin);
@@ -300,6 +330,26 @@ export function strain(samples, cal = DEFAULT_CALIBRATION) {
   }
   const load = loadFromZoneMinutes(zoneMin, cal);
   return { strain: strainFromLoad(load, cal), load, zoneMin };
+}
+
+// ---------- calorieën ----------
+/** Energieverbruik (kcal) over samples: rustmetabolisme (Mifflin-St Jeor) plus activiteit (Keytel, boven rust-HR + 20). */
+export function calories(samples, cal = DEFAULT_CALIBRATION) {
+  const p = { ...DEFAULT_CALIBRATION.profile, ...cal.profile };
+  const bmrPerMin = (10 * p.weightKg + 6.25 * p.heightCm - 5 * p.age + (p.male ? 5 : -161)) / 1440;
+  let kcal = 0;
+  for (let i = 0; i < samples.length; i++) {
+    const s = samples[i];
+    const dt = (i + 1 < samples.length ? Math.min(5, samples[i + 1].t - s.t) : 1) / 60;
+    let perMin = bmrPerMin;
+    if (s.hr > p.restingHr + 20) {
+      const k = p.male ? (-55.0969 + 0.6309 * s.hr + 0.1988 * p.weightKg + 0.2017 * p.age) / 4.184
+        : (-20.4022 + 0.4472 * s.hr - 0.1263 * p.weightKg + 0.074 * p.age) / 4.184;
+      perMin = Math.max(bmrPerMin, k);
+    }
+    kcal += perMin * dt;
+  }
+  return kcal * p.kcalScale;
 }
 
 // ---------- recovery ----------

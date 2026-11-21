@@ -49,3 +49,19 @@ De kalibratie zelf staat niet in deze (openbare) repo; `whoop-calibration*.json`
 - CI: `.github/workflows/scores.yml`.
 
 De fit-test maakt een nep-export met bekende parameters en controleert dat de kalibratie ze terugvindt.
+
+## API voor de schermen (Swift `WhoopScores`; JS-namen gelijk in `scores/whoop-scores.js`)
+| Functie | Levert |
+|---|---|
+| `analyzeNight(samples, cal, baseline:)` | slaaptijden, fases per minuut, wake-events, HRV, rust-HR, ademfrequentie, huidtemp, **slaapstress per minuut** (`stress`, `stressMin`, `highStressPct`) |
+| `sleepNeedParts(debtMin:prevDayStrain:napMin:)` | opbouw behoefte: gezond minimum, strain, schuld, dutjes, totaal |
+| `sleepDebt(prevDebtMin:prevNeedMin:prevAsleepMin:)` | slaapschuld voor de komende nacht |
+| `sleepSufficiency`, `sleepConsistency`, `sleepPerformance` | de bijdragen en de slaapprestatie |
+| `recovery(_:history:)` | Recovery 1–99 % |
+| `strain(samples)` | strain, belasting, minuten per zone 0–5 |
+| `calories(samples)` | kcal (rustmetabolisme + Keytel); profiel in `Calibration.profile` |
+| `History.importWhoop(cycles:sleeps:)` | `[DayRecord]` uit de Whoop-export als startgeschiedenis |
+| `History.trailingMean`, `History.typicalRange`, `History.nextDebt` | "vs. laatste 30 dagen", normaalbereik (p25–p75), schuld |
+| `Calibration.load(from:)` | kalibratie-JSON; ontbrekende velden krijgen standaardwaarden |
+
+Stappen worden nog niet berekend: daarvoor is de IMU-data nodig.

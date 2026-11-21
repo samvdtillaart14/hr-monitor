@@ -26,6 +26,9 @@ const fx = {
     recovery: { history: hist, night: nightIn, calibration: recCal, score: W.recovery(nightIn, hist, recCal), scoreDefault: W.recovery(nightIn, hist) },
     sleepPerf: { asleepMin: 400, needMin: 470, efficiency: 88, consistency: 72, perf: W.sleepPerformance({ asleepMin: 400, needMin: 470, efficiency: 88, consistency: 72 }) },
     consistency: { nights: [[0, 82800, 111600], [1, 84600, 113400], [2, 81000, 109800], [3, 90000, 115200]].map(([d, a, b]) => ({ onset: d * 86400 + a, wake: d * 86400 + b })) },
+    needParts: W.sleepNeedParts({ debtMin: 100, prevDayStrain: 14, napMin: 20 }),
+    debt: { prevDebtMin: 40, prevNeedMin: 480, prevAsleepMin: 440, debt: W.sleepDebt({ prevDebtMin: 40, prevNeedMin: 480, prevAsleepMin: 440 }) },
+    calories: W.calories(run),
     sleepNeed: { debtMin: 45, prevDayStrain: 15, napMin: 20, need: W.sleepNeedMin({ debtMin: 45, prevDayStrain: 15, napMin: 20 }) },
   },
 };

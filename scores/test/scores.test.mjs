@@ -103,3 +103,29 @@ test('nacht met verhoogde hartslag (alcohol): slaap wordt nog steeds gevonden', 
   near((n.onset - samples[0].t) / 60, 30, 6);
   near(n.rhr, 68, 3);
 });
+
+test('slaapstress: hogere HR en lagere HRV geven meer stress', () => {
+  const { samples } = synthNight();
+  const base = W.analyzeNight(samples);
+  assert.equal(base.stress.length, base.inBedMin);
+  assert.equal(base.stressMin.low + base.stressMin.medium + base.stressMin.high, base.inBedMin);
+  const tense = W.analyzeNight(samples, W.DEFAULT_CALIBRATION, { ...W.DEFAULT_CALIBRATION.recovery.baseline, rhrMean: 40, lnHrvMean: Math.log(120) });
+  assert.ok(tense.highStressPct > base.highStressPct);
+});
+
+test('slaapschuld en opbouw slaapbehoefte', () => {
+  assert.equal(W.sleepDebt({ prevDebtMin: 100, prevNeedMin: 600, prevAsleepMin: 300 }), 127); // afgetopt
+  near(W.sleepDebt({ prevDebtMin: 40, prevNeedMin: 480, prevAsleepMin: 440 }), 0.1 * 40 + 0.55 * 40, 1e-9);
+  assert.equal(W.sleepDebt({ prevDebtMin: 0, prevNeedMin: 400, prevAsleepMin: 500 }), 0);
+  const p = W.sleepNeedParts({ debtMin: 100, prevDayStrain: 14, napMin: 20 });
+  near(p.total, p.healthy + p.strain + p.debt + p.naps, 1e-9);
+  near(p.total, W.sleepNeedMin({ debtMin: 100, prevDayStrain: 14, napMin: 20 }), 1e-9);
+});
+
+test('calorieën: rustdag rond het rustmetabolisme, inspanning meer', () => {
+  const rest = Array.from({ length: 1440 * 60 }, (_, i) => ({ t: i, hr: 60 }));
+  const bmr = 10 * 75 + 6.25 * 180 - 5 * 30 + 5;
+  near(W.calories(rest), bmr, 1);
+  const run = Array.from({ length: 3600 }, (_, i) => ({ t: i, hr: 150 }));
+  assert.ok(W.calories(run) > 500 && W.calories(run) < 1000, String(W.calories(run)));
+});

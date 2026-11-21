@@ -8,6 +8,10 @@ public struct Calibration: Codable, Equatable, Sendable {
         public var restingHr: Double = 55
         /// "hrr" (hartslagreserve, Whoop-standaard) of "max" (% van max HR)
         public var zoneMode: String = "hrr"
+        /// voor calorieën
+        public var weightKg: Double = 75, heightCm: Double = 180, age: Double = 30
+        public var male: Bool = true
+        public var kcalScale: Double = 1
     }
     public struct Strain: Codable, Equatable, Sendable {
         /// strain = min(21, a · ln(1 + T/b)), T = gewogen zoneminuten
@@ -45,6 +49,12 @@ public struct Calibration: Codable, Equatable, Sendable {
         /// 0 = automatisch per opname
         public var moveThreshold: Double = 0
         public var hrAboveRest: Double = 20, maxGapMin: Int = 15, minPeriodMin: Int = 30
+        /// slaapschuld = min(cap, carry·schuld gisteren + fromDeficit·(behoefte − geslapen) gisteren)
+        public var debtCarry: Double = 0.1, debtFromDeficit: Double = 0.55, debtCapMin: Double = 127
+    }
+    /// slaapstress 0–3: offset + (HR − basis-rust-HR)/hrScale − (ln RMSSD − basis-ln-HRV)/hrvScale
+    public struct Stress: Codable, Equatable, Sendable {
+        public var offset: Double = 1.0, hrScale: Double = 10, hrvScale: Double = 0.5
     }
     /// whoop ≈ a + b·eigen, als [a, b]
     public struct Corrections: Codable, Equatable, Sendable {
@@ -57,11 +67,25 @@ public struct Calibration: Codable, Equatable, Sendable {
     public var recovery = Recovery()
     public var sleep = Sleep()
     public var corrections = Corrections()
+    public var stress = Stress()
 
     public init() {}
     public static let standard = Calibration()
 
+    /// Laadt een kalibratie; ontbrekende velden (oudere bestanden) krijgen de standaardwaarde.
     public static func load(from url: URL) throws -> Calibration {
-        try JSONDecoder().decode(Calibration.self, from: Data(contentsOf: url))
+        try decodeLenient(Data(contentsOf: url))
+    }
+
+    public static func decodeLenient(_ data: Data) throws -> Calibration {
+        let base = try JSONSerialization.jsonObject(with: JSONEncoder().encode(Calibration.standard))
+        let loaded = try JSONSerialization.jsonObject(with: data)
+        func merge(_ a: Any, _ b: Any) -> Any {
+            guard let da = a as? [String: Any], let db = b as? [String: Any] else { return b }
+            var out = da
+            for (k, v) in db { out[k] = da[k].map { merge($0, v) } ?? v }
+            return out
+        }
+        return try JSONDecoder().decode(Calibration.self, from: JSONSerialization.data(withJSONObject: merge(base, loaded)))
     }
 }

@@ -21,12 +21,18 @@ public struct Epoch: Sendable { public var t: Double; public var hr: Double; pub
 
 public enum Stage: Int, Sendable { case wake = 0, light = 1, deep = 2, rem = 3 }
 
+public struct StressMinutes: Codable, Sendable, Equatable { public var low = 0, medium = 0, high = 0 }
+
 public struct NightResult: Sendable {
     public var onset: Double, wake: Double
     public var inBedMin: Int, asleepMin: Int, awakeMin: Int, lightMin: Int, deepMin: Int, remMin: Int
     public var efficiency: Double
     public var disturbances: Int
     public var hrv: Double, rhr: Double, resp: Double, skinTemp: Double
+    /// slaapstress 0–3 per minuut in bed (NaN = geen data)
+    public var stress: [Double]
+    public var stressMin: StressMinutes
+    public var highStressPct: Double
     public var stages: [Stage]
     public var naps: [(onset: Double, minutes: Int)]
 }
@@ -201,7 +207,8 @@ public enum WhoopScores {
     }
 
     /// Volledige nachtanalyse: slaap, fases, HRV, rust-HR, ademfrequentie, huidtemperatuur.
-    public static func analyzeNight(_ samples: [Sample], _ cal: Calibration = .standard) -> NightResult? {
+    public static func analyzeNight(_ samples: [Sample], _ cal: Calibration = .standard, baseline: Calibration.Baseline? = nil) -> NightResult? {
+        let baseline = baseline ?? cal.recovery.baseline
         let eps = epochs(samples)
         let det = detectSleep(eps, cal)
         guard var main = det.periods.first else { return nil }
@@ -250,6 +257,18 @@ public enum WhoopScores {
         var disturbances = 0
         for k in stages.indices.dropFirst() where stages[k] == .wake && stages[k - 1] != .wake { disturbances += 1 }
         let asleep = cnt[1] + cnt[2] + cnt[3]
+        let st = cal.stress
+        let stress: [Double] = stages.indices.map { k in
+            let lo = max(0, k - 2), hi = min(stages.count, k + 3)
+            let hr = M.mean(eps[at(lo)..<at(hi)].map { $0.hr }.filter { $0.isFinite })
+            guard hr.isFinite else { return .nan }
+            let rm = rmssd(Array(epochBeats[at(lo)..<at(hi)].joined()))
+            let v = st.offset + (hr - baseline.rhrMean) / st.hrScale - (rm > 0 ? (log(rm) - baseline.lnHrvMean) / st.hrvScale : 0)
+            return M.clamp(v, 0, 3)
+        }
+        var sm = StressMinutes()
+        for v in stress where v.isFinite { if v >= 2 { sm.high += 1 } else if v >= 1 { sm.medium += 1 } else { sm.low += 1 } }
+        let stTotal = sm.low + sm.medium + sm.high
         let cr = cal.corrections
         return NightResult(
             onset: eps[main.lowerBound].t, wake: eps[main.upperBound - 1].t + 60,
@@ -257,11 +276,28 @@ public enum WhoopScores {
             efficiency: 100 * Double(asleep) / Double(stages.count), disturbances: disturbances,
             hrv: M.correct(hrv, cr.hrv), rhr: M.correct(rhr, cr.rhr), resp: M.correct(resp, cr.resp),
             skinTemp: M.correct(temps.isEmpty ? .nan : M.mean(temps), cr.skinTemp),
+            stress: stress, stressMin: sm, highStressPct: stTotal > 0 ? 100 * Double(sm.high) / Double(stTotal) : .nan,
             stages: stages,
             naps: det.periods.filter { $0 != main }.map { (onset: eps[$0.lowerBound].t, minutes: $0.count) })
     }
 
     // MARK: Slaapbehoefte en -prestatie
+
+    public struct NeedParts: Sendable, Equatable { public var healthy, strain, debt, naps, total: Double }
+
+    /// Opbouw van de slaapbehoefte zoals de Whoop-app hem toont (minuten).
+    public static func sleepNeedParts(debtMin: Double = 0, prevDayStrain: Double = 0, napMin: Double = 0, _ cal: Calibration = .standard) -> NeedParts {
+        let c = cal.sleep
+        let h = c.needBaseMin, s = c.needPerStrainMin * max(0, prevDayStrain - c.strainRef), d = c.needPerDebtMin * debtMin, n = -napMin
+        return NeedParts(healthy: h, strain: s, debt: d, naps: n, total: max(0, h + s + d + n))
+    }
+
+    /// Slaapschuld (min) voor vannacht, uit de schuld en het tekort van de vorige nacht.
+    public static func sleepDebt(prevDebtMin: Double = 0, prevNeedMin: Double = .nan, prevAsleepMin: Double = .nan, _ cal: Calibration = .standard) -> Double {
+        let c = cal.sleep
+        let deficit = prevNeedMin.isFinite && prevAsleepMin.isFinite ? prevNeedMin - prevAsleepMin : 0
+        return M.clamp(c.debtCarry * prevDebtMin + c.debtFromDeficit * deficit, 0, c.debtCapMin)
+    }
 
     public static func sleepNeedMin(debtMin: Double = 0, prevDayStrain: Double = 0, napMin: Double = 0, _ cal: Calibration = .standard) -> Double {
         let c = cal.sleep
@@ -336,6 +372,27 @@ public enum WhoopScores {
         }
         let load = loadFromZoneMinutes(zoneMin, cal)
         return StrainResult(strain: strainFromLoad(load, cal), load: load, zoneMin: zoneMin)
+    }
+
+    // MARK: Calorieën
+
+    /// Energieverbruik (kcal): rustmetabolisme (Mifflin-St Jeor) plus activiteit (Keytel, boven rust-HR + 20).
+    public static func calories(_ samples: [Sample], _ cal: Calibration = .standard) -> Double {
+        let p = cal.profile
+        let bmrPerMin = (10 * p.weightKg + 6.25 * p.heightCm - 5 * p.age + (p.male ? 5 : -161)) / 1440
+        var kcal = 0.0
+        for i in samples.indices {
+            let s = samples[i]
+            let dt = (i + 1 < samples.count ? min(5, samples[i + 1].t - s.t) : 1) / 60
+            var perMin = bmrPerMin
+            if s.hr > p.restingHr + 20 {
+                let k = p.male ? (-55.0969 + 0.6309 * s.hr + 0.1988 * p.weightKg + 0.2017 * p.age) / 4.184
+                               : (-20.4022 + 0.4472 * s.hr - 0.1263 * p.weightKg + 0.074 * p.age) / 4.184
+                perMin = max(bmrPerMin, k)
+            }
+            kcal += perMin * dt
+        }
+        return kcal * p.kcalScale
     }
 
     // MARK: Recovery
