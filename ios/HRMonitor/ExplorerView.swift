@@ -5,6 +5,7 @@ import SwiftUI
 struct ExplorerView: View {
     @EnvironmentObject var ble: BLEManager
     @EnvironmentObject var raw: RawLogger
+    @EnvironmentObject var whoop: WhoopParser
     @State private var target: String?
     @State private var hex = ""
     @State private var error: String?
@@ -25,6 +26,25 @@ struct ExplorerView: View {
                 .tint(raw.isRecording ? .gray : .red)
             } footer: {
                 Text("Neemt alle data van alle characteristics op in ruw_<datum>.csv (zie Opnames). Loopt ook door met scherm uit.")
+            }
+
+            Section {
+                LabeledContent("Geldige frames", value: "\(whoop.frames)")
+                if whoop.badFrames > 0 { LabeledContent("Ongeldige frames", value: "\(whoop.badFrames)") }
+                LabeledContent("Historische records (uniek)", value: "\(whoop.records)")
+                if let r = whoop.lastRecord {
+                    LabeledContent("Laatste record", value: Date(timeIntervalSince1970: TimeInterval(r.time)).formatted(date: .omitted, time: .standard))
+                    LabeledContent("HR in record", value: "\(r.hr) bpm")
+                    LabeledContent("Huidtemp", value: r.skinTemp.map { String(format: "%.2f °C", $0) } ?? "–")
+                }
+                if let t = whoop.lastLiveTime {
+                    LabeledContent("Live-pakket (tijd band)", value: t.formatted(date: .omitted, time: .standard))
+                }
+                ForEach(whoop.typeCounts.keys.sorted(), id: \.self) { k in
+                    LabeledContent(String(format: "Type 0x%02X", k), value: "\(whoop.typeCounts[k] ?? 0)")
+                }
+            } header: { Text("Whoop-decoder") } footer: {
+                Text("Historische records worden opgeslagen in whoop_historie_<datum>.csv (zie Opnames). Decodering van HR en huidtemperatuur is nog voorlopig.")
             }
 
             if ble.chars.isEmpty {

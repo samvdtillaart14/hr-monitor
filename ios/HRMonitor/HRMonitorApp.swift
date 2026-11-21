@@ -10,6 +10,7 @@ struct HRMonitorApp: App {
                 .environmentObject(ble)
                 .environmentObject(ble.recorder)
                 .environmentObject(ble.raw)
+                .environmentObject(ble.whoop)
         }
     }
 }

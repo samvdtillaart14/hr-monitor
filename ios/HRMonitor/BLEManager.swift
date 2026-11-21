@@ -43,6 +43,7 @@ final class BLEManager: NSObject, ObservableObject {
 
     let recorder = Recorder()
     let raw = RawLogger()
+    let whoop = WhoopParser()
 
     /// Alle gevonden characteristics, voor de verkenner.
     struct CharInfo: Identifiable {
@@ -273,6 +274,7 @@ extension BLEManager: CBPeripheralDelegate {
             chars[k].count += 1
         }
         raw.log(service: sid, char: ch.uuid.uuidString, kind: ch.isNotifying ? "NOTIFY" : "READ", data: d)
+        if sid.hasPrefix("FD4B") { whoop.handle(d) }
         if ch.uuid == Self.hrMeasurement { handleHR(d) }
         else if ch.uuid == Self.batteryLevel, let v = d.first { battery = Int(v) }
     }
