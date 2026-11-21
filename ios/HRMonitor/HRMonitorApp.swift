@@ -10,6 +10,7 @@ struct HRMonitorApp: App {
             TabView {
                 TodayView().tabItem { Label("Vandaag", systemImage: "sun.max.fill") }
                 ContentView().tabItem { Label("Live", systemImage: "heart.fill") }
+                HealthTab().tabItem { Label("Gezondheid", systemImage: "heart.text.square.fill") }
             }
                 .onAppear { ble.store = store }
                 .environmentObject(store)
