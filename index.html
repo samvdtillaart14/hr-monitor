@@ -3,7 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>BLE Uitlezer</title>
+<title>HR Monitor</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#dc2626">
 <style>
 :root{--bg:#f6f7f9;--card:#fff;--fg:#1b1f24;--mut:#667085;--line:#d9dde3;--acc:#2563eb;--ok:#16a34a;--err:#dc2626;--mono:ui-monospace,Consolas,monospace}
 @media (prefers-color-scheme:dark){:root{--bg:#111418;--card:#1a1e24;--fg:#e6e8eb;--mut:#98a2b3;--line:#2c323b;--acc:#60a5fa;--ok:#4ade80;--err:#f87171}}
@@ -13,6 +17,18 @@ h1{font-size:16px;margin:0 12px 0 0}
 button,select,input{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg)}
 button{cursor:pointer}button.p{background:var(--acc);color:#fff;border-color:var(--acc)}button:disabled{opacity:.5;cursor:default}
 #st{margin-left:auto;color:var(--mut)}#st.ok{color:var(--ok)}#st.err{color:var(--err)}
+nav{display:flex;gap:4px;padding:8px 16px 0;background:var(--card);border-bottom:1px solid var(--line)}
+nav button{border:0;border-bottom:2px solid transparent;border-radius:0;background:none;padding:8px 12px;color:var(--mut)}
+nav button.act{border-color:var(--acc);color:var(--fg)}
+.hide{display:none!important}
+#dash{padding:12px 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px}
+.tile .k{font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+.tile .v{font-size:28px;font-weight:600;font-variant-numeric:tabular-nums}.tile .v small{font-size:14px;color:var(--mut);font-weight:400}
+.big{grid-column:1/-1;display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}
+.big .v{font-size:72px;line-height:1;color:var(--err)}
+.chart{grid-column:1/-1}.chart canvas{width:100%;height:220px;display:block}
+.beat{animation:b .25s}@keyframes b{50%{transform:scale(1.04)}}
 main{display:grid;grid-template-columns:minmax(320px,1fr) minmax(320px,1.2fr);gap:12px;padding:12px 16px}
 @media (max-width:900px){main{grid-template-columns:1fr}}
 section{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px;min-width:0}
@@ -34,7 +50,7 @@ label{font-size:12px;color:var(--mut)}
 <body>
 <div class="warn" id="warn"></div>
 <header>
-  <h1>BLE Uitlezer</h1>
+  <h1>HR Monitor</h1>
   <input id="flt" placeholder="Naamfilter (optioneel)" size="16">
   <input id="extra" placeholder="Extra service-UUIDs, komma-gescheiden" size="30">
   <button class="p" id="bScan">Zoek apparaat</button>
@@ -43,7 +59,19 @@ label{font-size:12px;color:var(--mut)}
   <label><input type="checkbox" id="autoN" checked> alle notify automatisch aan</label>
   <span id="st">Niet verbonden</span>
 </header>
-<main>
+<nav><button class="act" data-t="dash">Dashboard</button><button data-t="main">Ruwe data</button>
+<span style="flex:1"></span><button id="bRec">● Opnemen</button><button id="bInst" class="hide">Installeer app</button></nav>
+<div id="dash">
+  <div class="tile big"><div><div class="k">Hartslag</div><div class="v" id="dHr">--<small> bpm</small></div></div>
+    <div><div class="k">Sensorcontact</div><div id="dCt" class="nm">-</div></div></div>
+  <div class="tile"><div class="k">Min / gem / max</div><div class="v" id="dMm" style="font-size:22px">--</div></div>
+  <div class="tile"><div class="k">RR-interval</div><div class="v" id="dRr">--<small> ms</small></div></div>
+  <div class="tile"><div class="k">HRV (RMSSD, 60 s)</div><div class="v" id="dHrv">--<small> ms</small></div></div>
+  <div class="tile"><div class="k">Batterij</div><div class="v" id="dBat">--<small> %</small></div></div>
+  <div class="tile"><div class="k">Sessieduur</div><div class="v" id="dDur">0:00</div></div>
+  <div class="tile chart"><div class="k">Hartslag, laatste 5 min</div><canvas id="cv"></canvas></div>
+</div>
+<main class="hide">
   <section>
     <h2>Services &amp; characteristics</h2>
     <div id="tree"><span class="nm">Nog geen apparaat.</span></div>
@@ -62,6 +90,51 @@ label{font-size:12px;color:var(--mut)}
     <div id="log"></div>
   </section>
 </main>
+<script>
+// ---- Dashboard ----
+const S={hr:[],rr:[],t0:0,rec:false,recRows:[]};
+const fmtDur=s=>{s=Math.floor(s);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return (h?h+':'+String(m).padStart(2,'0'):m)+':'+String(x).padStart(2,'0')};
+function onHR(dv){
+  let i=0;const f=dv.getUint8(i++);const hr=f&1?dv.getUint16(i,true):dv.getUint8(i);i+=f&1?2:1;if(f&8)i+=2;
+  const rr=[];if(f&16)for(;i+1<dv.byteLength;i+=2)rr.push(dv.getUint16(i,true)/1024*1000);
+  const now=Date.now();if(!S.t0)S.t0=now;
+  if(hr>0)S.hr.push([now,hr]);rr.forEach(r=>S.rr.push([now,r]));
+  S.hr=S.hr.filter(x=>now-x[0]<4*3600e3);S.rr=S.rr.filter(x=>now-x[0]<300e3);
+  const e=$('dHr');e.innerHTML=(hr||'--')+'<small> bpm</small>';e.classList.remove('beat');void e.offsetWidth;e.classList.add('beat');
+  $('dCt').textContent=(f&4)?((f&2)?'goed':'geen contact'):'niet gemeld';
+  const v=S.hr.map(x=>x[1]);if(v.length)$('dMm').textContent=Math.min(...v)+' / '+Math.round(v.reduce((a,b)=>a+b)/v.length)+' / '+Math.max(...v);
+  if(rr.length)$('dRr').innerHTML=Math.round(rr.at(-1))+'<small> ms</small>';
+  const w=S.rr.filter(x=>now-x[0]<60e3).map(x=>x[1]);
+  if(w.length>4){let s=0,n=0;for(let k=1;k<w.length;k++){const d=w[k]-w[k-1];if(Math.abs(d)<300){s+=d*d;n++}}if(n)$('dHrv').innerHTML=Math.round(Math.sqrt(s/n))+'<small> ms</small>'}
+  if(S.rec)S.recRows.push([new Date(now).toISOString(),hr,rr.map(r=>r.toFixed(0)).join(' ')]);
+  draw();
+}
+function onBat(dv){$('dBat').innerHTML=dv.getUint8(0)+'<small> %</small>'}
+function draw(){
+  const c=$('cv'),r=devicePixelRatio||1,W=c.clientWidth,H=c.clientHeight;if(!W)return;
+  c.width=W*r;c.height=H*r;const g=c.getContext('2d');g.scale(r,r);
+  const cs=getComputedStyle(document.documentElement),now=Date.now(),win=300e3;
+  const pts=S.hr.filter(x=>now-x[0]<win);
+  const lo=pts.length?Math.max(30,Math.floor(Math.min(...pts.map(p=>p[1]))/10)*10-10):40,hi=pts.length?Math.ceil(Math.max(...pts.map(p=>p[1]))/10)*10+10:180;
+  g.font='11px system-ui';g.fillStyle=cs.getPropertyValue('--mut');g.strokeStyle=cs.getPropertyValue('--line');g.lineWidth=1;
+  for(let y=lo;y<=hi;y+=Math.max(10,Math.round((hi-lo)/50)*10)){const py=H-18-(y-lo)/(hi-lo)*(H-26);g.beginPath();g.moveTo(30,py);g.lineTo(W,py);g.stroke();g.fillText(y,2,py+4)}
+  g.fillText('-5 min',30,H-4);g.fillText('nu',W-16,H-4);
+  if(pts.length<2)return;
+  g.strokeStyle=cs.getPropertyValue('--err');g.lineWidth=2;g.beginPath();
+  pts.forEach(([t,v],k)=>{const x=30+(1-(now-t)/win)*(W-30),y=H-18-(v-lo)/(hi-lo)*(H-26);k?g.lineTo(x,y):g.moveTo(x,y)});g.stroke();
+}
+setInterval(()=>{if(S.t0&&srv?.connected)$('dDur').textContent=fmtDur((Date.now()-S.t0)/1000);draw()},1000);
+addEventListener('resize',draw);
+document.querySelectorAll('nav [data-t]').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav [data-t]').forEach(x=>x.classList.toggle('act',x===b));
+  $('dash').classList.toggle('hide',b.dataset.t!=='dash');document.querySelector('main').classList.toggle('hide',b.dataset.t!=='main');draw()});
+document.addEventListener('click',e=>{if(e.target.id!=='bRec')return;const b=e.target;
+  if(!S.rec){S.rec=true;S.recRows=[];b.textContent='■ Stop & opslaan';b.classList.add('on')}
+  else{S.rec=false;b.textContent='● Opnemen';b.classList.remove('on');
+    dl('hartslag-'+stamp()+'.csv','\ufefftijd;hr_bpm;rr_ms\n'+S.recRows.map(r=>r.join(';')).join('\n'),'text/csv')}});
+let instEvt=null;addEventListener('beforeinstallprompt',e=>{e.preventDefault();instEvt=e;$('bInst').classList.remove('hide')});
+document.addEventListener('click',async e=>{if(e.target.id==='bInst'&&instEvt){instEvt.prompt();await instEvt.userChoice;instEvt=null;$('bInst').classList.add('hide')}});
+if('serviceWorker' in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
 <script>
 // Bekende 16-bit UUID's (Bluetooth SIG) voor leesbare namen
 const NAMES={'1800':'Generic Access','1801':'Generic Attribute','180a':'Device Information','180f':'Battery','180d':'Heart Rate','1816':'Cycling Speed & Cadence','1818':'Cycling Power','181a':'Environmental Sensing','1809':'Health Thermometer','1810':'Blood Pressure','181d':'Weight Scale','1826':'Fitness Machine','1814':'Running Speed & Cadence','ffe0':'HM-10/CC254x seriële UART','fff0':'Vendor (fff0)','6e400001':'Nordic UART','61080001':'Whoop (eigen service, vermoedelijk)',
@@ -101,6 +174,7 @@ function fmtVal(dv,uuid){const b=bytes(dv),f=$('fmt').value,dec=uuid&&DECODE[sho
   if(f==='hex')return hex(b);if(f==='dec')return [...b].join(' ');return hex(b)+'  | '+interp(dv)}
 
 function addLog(kind,uuid,dv,note=''){
+  if(dv&&uuid){const s=short(uuid);try{if(s==='2a37')onHR(dv);else if(s==='2a19')onBat(dv)}catch(e){}}
   const now=performance.now(),ts=new Date().toISOString(),rel=((now-t0)/1000).toFixed(3);
   const b=dv?[...bytes(dv)]:[];
   const e={ts,t:+rel,kind,uuid,name:uuid?nameOf(uuid):'',len:b.length,hex:hex(b),bytes:b,note};
@@ -129,7 +203,7 @@ $('bDisc').onclick=()=>{userDisc=true;dev?.gatt.disconnect()};
 
 async function connect(){
   st('Verbinden met '+(dev.name||dev.id)+'…');
-  srv=await dev.gatt.connect();userDisc=false;
+  srv=await dev.gatt.connect();userDisc=false;if(!S.t0)S.t0=Date.now();
   st('Verbonden: '+(dev.name||'(naamloos)'),'ok');$('bDisc').disabled=false;
   addLog('INFO','',null,'verbonden met '+(dev.name||dev.id));
   await discover();
@@ -147,7 +221,8 @@ async function discover(){
     const d=document.createElement('div');d.className='svc';
     d.innerHTML=`<b>${short(s.uuid)}</b><span class="nm">${nameOf(s.uuid)}</span>`;tree.append(d);
     let chs=[];try{chs=await s.getCharacteristics()}catch(e){d.append(' (characteristics niet leesbaar: '+e.message+')');continue}
-    for(const c of chs){const r=chRow(c);d.append(r);if($('autoN').checked&&r._nb){try{await r._nb.onclick()}catch(e){}}}
+    for(const c of chs){const r=chRow(c);d.append(r);if($('autoN').checked&&r._nb){try{await r._nb.onclick()}catch(e){}}
+      if(short(c.uuid)==='2a19'&&c.properties.read){try{addLog('READ',c.uuid,await c.readValue())}catch(e){}}}
   }
   addLog('INFO','',null,svcs.length+' services gevonden');
 }

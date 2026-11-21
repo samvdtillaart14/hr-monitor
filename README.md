@@ -3,6 +3,9 @@
 Web Bluetooth-app (één HTML-bestand) die rechtstreeks verbindt met een BLE-apparaat, zoals een Whoop-band, en de ruwe data uitleest.
 
 ## Functies
+- Dashboard: hartslag, min/gem/max, RR-interval, HRV (RMSSD over 60 s), batterij, grafiek van 5 min
+- Opnemen naar CSV (tijd, bpm, RR)
+- Installeerbaar als app (PWA) in Chrome/Edge, werkt offline
 - Alle services en characteristics tonen
 - Lezen, pollen, notify/indicate, schrijven (hex of tekst)
 - Live log in hex, decimaal of geïnterpreteerd (u8/u16/u32/f32/ASCII)
