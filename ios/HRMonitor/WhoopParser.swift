@@ -94,9 +94,9 @@ final class WhoopParser: ObservableObject {
             liveHR = Int(b[16])
             let n = min(Int(b[17]), (b.count - 22) / 2)
             liveRR = (0..<max(0, n)).map { (u16(b, 18 + 2 * $0) * 1000 + 512) / 1024 }
-        case 0x32 where b.count > 24:
+        case 0x32 where b.count > 25:
             // Type 50: tekstlog van de firmware.
-            let txt = String(decoding: b[23..<(b.count - 4)].filter { $0 >= 0x20 && $0 < 0x7F || $0 == 0x0A }, as: UTF8.self)
+            let txt = String(decoding: b[21..<(b.count - 4)].filter { $0 >= 0x20 && $0 < 0x7F || $0 == 0x0A }, as: UTF8.self)
             for line in txt.split(separator: "\n") where !line.trimmingCharacters(in: .whitespaces).isEmpty {
                 logLines.append(String(line))
             }
