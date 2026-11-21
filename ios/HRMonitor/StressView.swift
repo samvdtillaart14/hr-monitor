@@ -34,7 +34,7 @@ struct StressDetailView: View {
     }
 
     private var current: Double? { pts.last?.v }
-    private func level(_ v: Double) -> Int { v >= 2 ? 2 : v >= 1 ? 1 : 0 }
+    static func level(_ v: Double) -> Int { v >= 2 ? 2 : v >= 1 ? 1 : 0 }
 
     private var gauge: some View {
         let v = current ?? 0
@@ -47,8 +47,8 @@ struct StressDetailView: View {
                 .rotationEffect(.degrees(-135 + 270 * v / 3))
             VStack(spacing: 4) {
                 Text(current.map { String(format: "%.1f", $0) } ?? "--").font(Theme.number(60)).monospacedDigit()
-                Text(current.map { Self.names[level($0)].uppercased() } ?? "GEEN DATA").font(Theme.label).tracking(2)
-                    .foregroundStyle(current.map { Self.colors[level($0)] } ?? Theme.muted)
+                Text(current.map { Self.names[Self.level($0)].uppercased() } ?? "GEEN DATA").font(Theme.label).tracking(2)
+                    .foregroundStyle(current.map { Self.colors[Self.level($0)] } ?? Theme.muted)
                 if let t = pts.last?.t { Text(DV.clock(t)).font(.caption).foregroundStyle(Theme.muted) }
             }
         }
@@ -120,19 +120,21 @@ struct StressDetailView: View {
         let raw = (store.samples(day: cal.date(byAdding: .day, value: -1, to: now)!) + store.samples(day: now))
             .filter { Double($0.t) >= from.timeIntervalSince1970 }
         let rhr = model.lastNight?.metrics.rhr ?? 60
-        pts = buckets(raw, rhr: rhr, sleep: model.lastNight.map { ($0.r.onset, $0.r.wake) })
-        today = split(buckets(store.samples(day: now), rhr: rhr, sleep: model.lastNight.map { ($0.r.onset, $0.r.wake) }))
+        pts = Self.buckets(raw, rhr: rhr, sleep: model.lastNight.map { ($0.r.onset, $0.r.wake) })
+        today = split(Self.buckets(store.samples(day: now), rhr: rhr, sleep: model.lastNight.map { ($0.r.onset, $0.r.wake) }))
         let lastWeek = cal.date(byAdding: .day, value: -7, to: now)!
         let lw = store.samples(day: lastWeek)
         let lwNight = model.nights.first { cal.isDate($0.date, inSameDayAs: lastWeek) }
-        typical = lw.count > 3600 ? split(buckets(lw, rhr: lwNight?.metrics.rhr ?? rhr, sleep: lwNight.map { ($0.r.onset, $0.r.wake) })) : nil
+        typical = lw.count > 3600 ? split(Self.buckets(lw, rhr: lwNight?.metrics.rhr ?? rhr, sleep: lwNight.map { ($0.r.onset, $0.r.wake) })) : nil
     }
 
-    private func buckets(_ s: [DayStore.Sample], rhr: Double, sleep: (Double, Double)?) -> [Pt] {
+    /// Stress per 5 minuten (0–3). Ook gebruikt door het tabblad Vandaag, zodat beide schermen hetzelfde tonen.
+    static func buckets(_ s: [DayStore.Sample], rhr: Double, sleep: (Double, Double)?) -> [Pt] {
         var b: [UInt32: (sum: Double, n: Int, act: Int)] = [:]
+        let profile = UserProfile.current
         for x in s where x.hr > 0 {
             let k = x.t / 300 * 300
-            let active = (x.motion ?? 0) >= 0.05 || Theme.zoneIndex(x.hr) >= 1
+            let active = (x.motion ?? 0) >= 0.05 || Theme.zoneIndex(x.hr, profile: profile) >= 1
             b[k, default: (0, 0, 0)].sum += max(0, min(3, (Double(x.hr) - rhr) / 12))
             b[k, default: (0, 0, 0)].n += 1
             if active { b[k, default: (0, 0, 0)].act += 1 }
@@ -149,7 +151,7 @@ struct StressDetailView: View {
     private func split(_ p: [Pt]) -> [[Int]] {
         var r = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
         for x in p {
-            let l = level(x.v)
+            let l = Self.level(x.v)
             r[0][l] += 5
             if !x.active { r[1][l] += 5 }
             if x.asleep { r[2][l] += 5 }
