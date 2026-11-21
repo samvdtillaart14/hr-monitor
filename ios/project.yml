@@ -33,6 +33,8 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSBluetoothAlwaysUsageDescription: HR Monitor verbindt via Bluetooth met je hartslagband.
         NSMotionUsageDescription: HR Monitor gebruikt je stappen en de bewegingsherkenning van je iPhone om activiteiten (zoals hardlopen) te herkennen en te tellen.
-        UIBackgroundModes: [bluetooth-central]
+        NSLocationWhenInUseUsageDescription: HR Monitor neemt je route op (kaart, afstand en tempo) tijdens een activiteit die je zelf start.
+        NSLocationAlwaysAndWhenInUseUsageDescription: HR Monitor neemt je route op tijdens een activiteit die je zelf start, ook met het scherm uit.
+        UIBackgroundModes: [bluetooth-central, location]
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true

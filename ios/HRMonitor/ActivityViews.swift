@@ -1,6 +1,8 @@
 import SwiftUI
 import Charts
 import WhoopScores
+import MapKit
+import CoreLocation
 
 private let actBlue = Theme.zones[1].color
 
@@ -94,6 +96,7 @@ struct ActivityEditSheet: View {
     @State private var startNow = false
     @State private var start = Date().addingTimeInterval(-3600)
     @State private var end = Date()
+    @State private var gps = false
 
     var body: some View {
         NavigationStack {
@@ -117,13 +120,15 @@ struct ActivityEditSheet: View {
                 }
                 Section {
                     if existing == nil { Toggle("Nu starten", isOn: $startNow) }
+                    if existing == nil && startNow { Toggle("GPS-route opnemen", isOn: $gps) }
                     if !startNow {
                         DatePicker("Begin", selection: $start, in: ...Date())
                         DatePicker("Einde", selection: $end, in: start...Date())
                     }
                 } footer: {
                     Text(startNow ? "Stop de activiteit op Vandaag als je klaar bent. Hartslag wordt alleen opgeslagen als de app met je band verbonden is."
-                                  : "Statistieken komen uit de opgeslagen hartslag in deze periode.")
+                                  + (gps ? " De route wordt opgenomen met de GPS van je iPhone, ook met het scherm uit (kost wat extra batterij)." : "")
+                                  : "Statistieken komen uit de opgeslagen hartslag in deze periode. Een GPS-route kan alleen bij Nu starten.")
                 }
                 if let existing {
                     Section {
@@ -138,8 +143,9 @@ struct ActivityEditSheet: View {
                 ToolbarItem(placement: .confirmationAction) { Button("Bewaar", action: saveAndClose).disabled(!startNow && end <= start) }
             }
             .onAppear {
-                if let e = existing { type = e.type; start = e.start; end = e.end ?? Date() }
+                if let e = existing { type = e.type; start = e.start; end = e.end ?? Date() } else { gps = type.outdoor }
             }
+            .onChange(of: type) { _, t in if existing == nil { gps = t.outdoor } }
         }
     }
 
@@ -149,7 +155,9 @@ struct ActivityEditSheet: View {
             if !e.isOngoing { e.start = start; e.end = end } else { e.start = start }
             acts.update(e, store: store)
         } else {
-            acts.add(Activity(type: type, start: startNow ? Date() : start, end: startNow ? nil : end), store: store)
+            var a = Activity(type: type, start: startNow ? Date() : start, end: startNow ? nil : end)
+            if startNow && gps { a.gps = true }
+            acts.add(a, store: store)
         }
         dismiss()
     }
@@ -229,6 +237,7 @@ struct ActivityDetailView: View {
                     big(a.steps.map { $0.formatted() } ?? "–", "Stappen", color: Theme.text,
                         avg: DV.mean(st).map { Int($0).formatted() }, delta: a.steps.flatMap { s in DV.mean(st).map { Double(s) - $0 } })
                 }
+                if a.gps == true { RouteCard(activity: a, recorder: acts.route, hr: hr) }
                 chart(a)
                 HStack {
                     Spacer()
@@ -364,5 +373,155 @@ struct DeltaPill: View {
         .foregroundStyle(Theme.text.opacity(0.85))
         .padding(.horizontal, 8).padding(.vertical, 4)
         .background(Theme.cardHi, in: RoundedRectangle(cornerRadius: 6))
+    }
+}
+
+// MARK: GPS-route
+
+/// Route op de kaart, gekleurd naar hartslagzone, met afstand, tempo, hartslag en km-splits.
+struct RouteCard: View {
+    let activity: Activity
+    @ObservedObject var recorder: RouteRecorder
+    /// hartslag per 15 s
+    let hr: [(Date, Double)]
+    @State private var saved: [RoutePoint] = []
+
+    private var live: Bool { recorder.activityId == activity.id }
+    private var pts: [RoutePoint] { live ? recorder.points : saved }
+
+    var body: some View {
+        let p = pts
+        VStack(alignment: .leading, spacing: Theme.gap) {
+            if recorder.denied && live {
+                Text("Geen toegang tot je locatie. Zet die aan in Instellingen › HR Monitor › Locatie.")
+                    .font(.subheadline).foregroundStyle(Theme.hr)
+            }
+            if p.count > 1 {
+                map(p)
+                grid(p)
+                splits(p)
+            } else {
+                Card { Text(live ? "Wachten op GPS…" : "Geen route opgenomen.").font(.subheadline).foregroundStyle(Theme.muted) }
+            }
+        }
+        .onAppear { if !live { saved = Route.load(activity.id) } }
+        .onChange(of: recorder.activityId) { _, _ in if !live { saved = Route.load(activity.id) } }
+    }
+
+    // Hartslag op tijdstip t (dichtstbijzijnde 15-s-blok).
+    private func hrAt(_ t: Double) -> Double? {
+        guard !hr.isEmpty else { return nil }
+        var lo = 0, hi = hr.count - 1
+        while lo < hi { let m = (lo + hi) / 2; if hr[m].0.timeIntervalSince1970 < t { lo = m + 1 } else { hi = m } }
+        return abs(hr[lo].0.timeIntervalSince1970 - t) < 60 ? hr[lo].1 : nil
+    }
+
+    private struct Segment: Identifiable { let id: Int; let zone: Int?; let coords: [CLLocationCoordinate2D] }
+
+    private func segments(_ p: [RoutePoint]) -> [Segment] {
+        let prof = UserProfile.current
+        var out: [Segment] = [], cur: [CLLocationCoordinate2D] = [p[0].coord]
+        var zone = hrAt(p[0].t).map { WhoopScores.hrZone($0, prof) }
+        for x in p.dropFirst() {
+            let z = hrAt(x.t).map { WhoopScores.hrZone($0, prof) }
+            cur.append(x.coord)
+            if z != zone { out.append(Segment(id: out.count, zone: zone, coords: cur)); cur = [x.coord]; zone = z }
+        }
+        if cur.count > 1 { out.append(Segment(id: out.count, zone: zone, coords: cur)) }
+        return out
+    }
+
+    private func map(_ p: [RoutePoint]) -> some View {
+        Map(initialPosition: .automatic, interactionModes: [.pan, .zoom]) {
+            ForEach(segments(p)) { s in
+                MapPolyline(coordinates: s.coords)
+                    .stroke(s.zone.map { Theme.zones[$0].color } ?? actBlue, style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
+            }
+            Annotation("Start", coordinate: p[0].coord) { Circle().fill(.green).frame(width: 12, height: 12).overlay(Circle().stroke(.white, lineWidth: 2)) }
+            Annotation(live ? "Nu" : "Finish", coordinate: p[p.count - 1].coord) {
+                Circle().fill(live ? Theme.accent : Theme.hr).frame(width: 12, height: 12).overlay(Circle().stroke(.white, lineWidth: 2))
+            }
+        }
+        .mapStyle(.standard(pointsOfInterest: .excludingAll))
+        .frame(height: 300)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+        .overlay(alignment: .bottomLeading) {
+            HStack(spacing: 8) {
+                ForEach(1...5, id: \.self) { z in
+                    HStack(spacing: 3) { Circle().fill(Theme.zones[z].color).frame(width: 7, height: 7); Text("Z\(z)") }
+                }
+            }
+            .font(.caption2.weight(.semibold)).padding(6)
+            .background(.black.opacity(0.55), in: Capsule()).padding(8)
+        }
+    }
+
+    private func grid(_ p: [RoutePoint]) -> some View {
+        let dist = live ? recorder.distance : Route.distance(p)
+        let secs = (activity.end ?? Date()).timeIntervalSince(activity.start)
+        let kmh = secs > 0 ? dist / secs * 3.6 : 0
+        let pace = dist > 0 ? secs / (dist / 1000) : 0
+        let hrs = hr.filter { $0.0 >= activity.start && $0.0 <= activity.effectiveEnd }.map(\.1)
+        // Hoogtemeters: gladgestreken hoogte, alleen stijgingen > 1 m
+        var climb = 0.0, ref = p[0].alt
+        for x in p.dropFirst() { if x.alt - ref > 1 { climb += x.alt - ref; ref = x.alt } else if x.alt < ref { ref = x.alt } }
+        let items: [(String, String)] = [
+            ("Afstand", String(format: "%.2f km", dist / 1000)),
+            ("Gem. snelheid", String(format: "%.1f km/h", kmh)),
+            ("Gem. tempo", pace > 0 && pace < 3600 ? "\(fmtPace(pace)) /km" : "–"),
+            ("Gem. HR", DV.mean(hrs).map { "\(Int($0.rounded())) bpm" } ?? "–"),
+            ("Max. HR", hrs.max().map { "\(Int($0.rounded())) bpm" } ?? "–"),
+            ("Stijging", "\(Int(climb.rounded())) m"),
+            ("Start", DV.clock(activity.start)),
+            ("Einde", activity.end.map(DV.clock) ?? "loopt"),
+            ("Duur", fmtDur(secs))
+        ]
+        return Card(title: "Route") {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 3), spacing: 14) {
+                ForEach(items, id: \.0) { i in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(i.0.uppercased()).font(Theme.label).tracking(1).foregroundStyle(Theme.muted)
+                        Text(i.1).font(.subheadline.weight(.bold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+                    }
+                }
+            }
+        }
+    }
+
+    private func splits(_ p: [RoutePoint]) -> some View {
+        let s = Route.splits(p)
+        // Begin- en eindtijd per km, voor de gemiddelde hartslag per km
+        var bounds: [(Double, Double)] = []
+        var t = p[0].t
+        for k in s.km { bounds.append((t, t + k)); t += k }
+        let fastest = s.km.min() ?? 1, slowest = s.km.max() ?? 1
+        return Group {
+            if !s.km.isEmpty {
+                Card(title: "Per kilometer") {
+                    ForEach(s.km.indices, id: \.self) { i in
+                        let kmHr = DV.mean(hr.filter { $0.0.timeIntervalSince1970 >= bounds[i].0 && $0.0.timeIntervalSince1970 < bounds[i].1 }.map(\.1))
+                        HStack(spacing: 10) {
+                            Text("\(i + 1)").font(.subheadline.weight(.bold)).frame(width: 22, alignment: .leading)
+                            Text("\(fmtPace(s.km[i])) /km").font(.subheadline.weight(.semibold)).monospacedDigit().frame(width: 80, alignment: .leading)
+                            GeometryReader { g in
+                                let f = slowest > fastest ? 0.35 + 0.65 * (slowest - s.km[i]) / (slowest - fastest) : 1
+                                Capsule().fill(s.km[i] == fastest ? Theme.accent : actBlue).frame(width: g.size.width * f, height: 8)
+                                    .frame(maxHeight: .infinity, alignment: .center)
+                            }
+                            .frame(height: 18)
+                            Text(kmHr.map { "\(Int($0.rounded())) bpm" } ?? "").font(.caption).foregroundStyle(Theme.muted).monospacedDigit()
+                                .frame(width: 60, alignment: .trailing)
+                        }
+                    }
+                    if s.restM > 50 {
+                        Text("+ \(Int(s.restM)) m in \(fmtPace(s.restSec))").font(.caption).foregroundStyle(Theme.muted)
+                    }
+                }
+            }
+        }
+    }
+
+    private func fmtPace(_ sec: Double) -> String {
+        let t = Int(sec.rounded()); return "\(t / 60):\(String(format: "%02d", t % 60))"
     }
 }

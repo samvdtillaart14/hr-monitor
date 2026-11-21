@@ -5,6 +5,8 @@ import WhoopScores
 enum ActivityType: String, Codable, CaseIterable, Identifiable {
     case running, tennis, padel, cycling, walking, strength, football, hiit, other
     var id: String { rawValue }
+    /// buitenactiviteit: standaard GPS-route opnemen
+    var outdoor: Bool { [.running, .cycling, .walking].contains(self) }
     var name: String {
         switch self {
         case .running: "Hardlopen"; case .tennis: "Tennis"; case .padel: "Padel"; case .cycling: "Fietsen"
@@ -31,6 +33,10 @@ struct Activity: Codable, Identifiable, Equatable {
     var auto = false
     var summary: ActivitySummary?
     var steps: Int?
+    /// GPS-route opnemen (alleen bij "Nu starten")
+    var gps: Bool?
+    /// afstand uit de GPS-route (m)
+    var distanceM: Double?
 
     var effectiveEnd: Date { end ?? Date() }
     var duration: TimeInterval { effectiveEnd.timeIntervalSince(start) }
@@ -46,15 +52,19 @@ final class ActivityStore: ObservableObject {
     private var busy = false
     private let pedometer = CMPedometer()
     private let motion = CMMotionActivityManager()
+    let route: RouteRecorder
 
     private struct File: Codable { var items: [Activity]; var dismissed: [[Double]] }
     nonisolated static var url: URL { Recorder.folder.appendingPathComponent("activities.json") }
 
     init() {
+        route = RouteRecorder()
         if let d = try? Data(contentsOf: Self.url), let f = try? JSONDecoder().decode(File.self, from: d) {
             items = f.items.sorted { $0.start < $1.start }
             dismissed = f.dismissed.compactMap { $0.count == 2 && $0[0] <= $0[1] ? $0[0]...$0[1] : nil }
         }
+        // App herstart tijdens een activiteit met GPS: opname hervatten.
+        if let o = ongoing, o.gps == true { route.start(o.id) }
     }
 
     private func save() {
@@ -79,6 +89,7 @@ final class ActivityStore: ObservableObject {
 
     func add(_ a: Activity, store: DayStore) {
         items.append(a); save()
+        if a.isOngoing && a.gps == true { route.start(a.id) }
         Task { await self.enrich(a.id, store: store) }
     }
 
@@ -92,13 +103,21 @@ final class ActivityStore: ObservableObject {
 
     func stop(_ id: UUID, store: DayStore) {
         guard let i = items.firstIndex(where: { $0.id == id }) else { return }
-        items[i].end = Date(); save()
+        items[i].end = Date()
+        if route.activityId == id {
+            route.stop()
+            let pts = Route.load(id)
+            if pts.count > 1 { items[i].distanceM = Route.distance(pts) }
+        }
+        save()
         Task { await self.enrich(id, store: store) }
     }
 
     func delete(_ id: UUID) {
         guard let i = items.firstIndex(where: { $0.id == id }) else { return }
         let a = items.remove(at: i)
+        if route.activityId == id { route.stop() }
+        Route.delete(id)
         if a.auto { dismissed.append(a.start.timeIntervalSince1970...a.effectiveEnd.timeIntervalSince1970) }
         save()
     }
