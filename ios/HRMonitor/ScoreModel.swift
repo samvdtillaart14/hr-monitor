@@ -59,14 +59,11 @@ final class ScoreModel: ObservableObject {
             let day = store.samples(day: d).map(Self.convert)
             input.append((d, night, day))
         }
-        var calib = Calibration.standard
-        let birth = UserDefaults.standard.double(forKey: "profile.birth")
-        if birth > 0 { calib.profile.age = (Date().timeIntervalSince1970 - birth) / 31_557_600 }
-        if UserDefaults.standard.object(forKey: "profile.male") != nil { calib.profile.male = UserDefaults.standard.bool(forKey: "profile.male") }
-        let fixedCal = calib
+        let fixedCal = UserProfile.calibration()
         Task {
             let (n, dl) = await Task.detached(priority: .utility) { Self.compute(input, fixedCal) }.value
             self.nights = n; self.days = dl; self.busy = false
+            UserProfile.updateRestHr(from: n.compactMap { $0.metrics.rhr })
         }
     }
 

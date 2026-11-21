@@ -1,4 +1,5 @@
 import SwiftUI
+import WhoopScores
 
 /// Centrale stijl (donker, sportief). Waarden volgen het webdashboard; pas ze hier aan en alles volgt.
 enum Theme {
@@ -26,13 +27,13 @@ enum Theme {
         ("Rust", hex(0x6B7280), 0.5), ("Zone 1", hex(0x3B82F6), 0.6), ("Zone 2", hex(0x00F19F), 0.7),
         ("Zone 3", hex(0xFACC15), 0.8), ("Zone 4", hex(0xFB923C), 0.9), ("Zone 5", hex(0xFF4D5E), 9)
     ]
-    static func zoneIndex(_ bpm: Int, max: Int = 190) -> Int {
-        let f = Double(bpm) / Double(max)
-        return zones.firstIndex { f < $0.upTo } ?? 5
+    /// Zone 0–5 op basis van de hartslagreserve, met max- en rust-HR uit je profiel (zelfde zones als de belasting).
+    static func zoneIndex(_ bpm: Int, profile: Calibration.Profile = UserProfile.current) -> Int {
+        WhoopScores.hrZone(Double(bpm), profile)
     }
-    static func zone(_ bpm: Int, max: Int = 190) -> (name: String, color: Color, frac: Double) {
-        let z = zones[zoneIndex(bpm, max: max)]
-        return (z.name, z.color, Double(bpm) / Double(max))
+    static func zone(_ bpm: Int, profile: Calibration.Profile = UserProfile.current) -> (name: String, color: Color, frac: Double) {
+        let z = zones[zoneIndex(bpm, profile: profile)]
+        return (z.name, z.color, Double(bpm) / profile.maxHr)
     }
 }
 
@@ -111,7 +112,8 @@ struct ZoneTime: View {
     let samples: [BLEManager.Sample]
     private var secs: [Int] {
         var s = Array(repeating: 0, count: Theme.zones.count)
-        for x in samples { s[Theme.zoneIndex(x.bpm)] += 1 }
+        let p = UserProfile.current
+        for x in samples { s[Theme.zoneIndex(x.bpm, profile: p)] += 1 }
         return s
     }
     var body: some View {

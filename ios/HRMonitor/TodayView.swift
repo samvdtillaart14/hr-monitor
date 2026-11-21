@@ -1,17 +1,22 @@
 import SwiftUI
+import WhoopScores
 import Charts
 
 /// Dagoverzicht: slaap, herstel en belasting als ringen, gezondheid/stress, stressverloop, 7 dagen en metrieken.
+/// Alles komt uit de scores-module (ScoreModel), dezelfde bron als de detailschermen.
 struct TodayView: View {
     @EnvironmentObject var store: DayStore
     @EnvironmentObject var ble: BLEManager
+    @EnvironmentObject var acts: ActivityStore
     @Environment(\.scenePhase) private var phase
-    @State private var week: [Analytics.Day] = []
     @StateObject private var scores = ScoreModel()
     @State private var lastCompute = Date.distantPast
+    @State private var stress: [StressDetailView.Pt] = []
+    @State private var measuredMin = 0
 
-    private var today: Analytics.Day? { week.last }
-    private var past: [Analytics.Day] { Array(week.dropLast()) }
+    private var night: Night? { scores.lastNight }
+    private var pastNights: [Night] { scores.nights.filter { !Calendar.current.isDateInToday($0.date) } }
+    private var pastDays: [DayLoad] { scores.days.filter { !Calendar.current.isDateInToday($0.date) } }
 
     var body: some View {
         NavigationStack {
@@ -19,6 +24,7 @@ struct TodayView: View {
                 VStack(spacing: Theme.gap) {
                     header
                     rings.padding(.vertical, 8)
+                    ActivitiesCard(scores: scores)
                     HStack(spacing: Theme.gap) {
                         NavigationLink { HealthMonitorView(model: scores) } label: { healthTile }
                         NavigationLink { StressDetailView(model: scores) } label: { stressTile }
@@ -42,13 +48,30 @@ struct TodayView: View {
             if phase == .active && Date().timeIntervalSince(lastCompute) > 30 { recompute() }
         }
         .onChange(of: phase) { _, p in if p == .active { recompute() } }
+        // Stress hangt af van de rust-HR van de laatste nacht: opnieuw zodra de nachten klaar zijn.
+        .onReceive(scores.$nights) { n in
+            updateStress()
+            // Activiteiten herkennen zodra de slaap bekend is (slaap telt nooit als activiteit).
+            acts.refresh(store: store, sleep: n.map { (start: $0.r.onset - 600, end: $0.r.wake + 600) })
+        }
     }
 
-    private func recompute() { lastCompute = Date(); week = Analytics.week(store: store); scores.refresh(store: store) }
+    private func recompute() {
+        lastCompute = Date()
+        scores.refresh(store: store)
+        updateStress()
+    }
 
-    private var sleepPerf: Int? { scores.lastNight?.performance.map { Int($0.rounded()) } ?? today?.sleepScore }
-    private var recoveryNow: Int? { scores.lastNight?.recovery ?? today?.recovery }
-    private var strainNow: Double? { scores.today?.strain ?? today?.strain }
+    /// Zelfde berekening als het stressscherm.
+    private func updateStress() {
+        let s = store.samples(day: Date())
+        measuredMin = Set(s.map { $0.t / 60 }).count
+        stress = StressDetailView.buckets(s, rhr: night?.metrics.rhr ?? 60, sleep: night.map { ($0.r.onset, $0.r.wake) })
+    }
+
+    private var sleepPerf: Int? { night?.performance.map { Int($0.rounded()) } }
+    private var recoveryNow: Int? { night?.recovery }
+    private var strainNow: Double? { scores.today?.strain }
 
     private var header: some View {
         HStack {
@@ -70,7 +93,7 @@ struct TodayView: View {
             }
             NavigationLink { RecoveryDetailView(model: scores) } label: {
                 ScoreRing(label: "Herstel", value: recoveryNow.map { Double($0) / 100 },
-                          text: recoveryNow.map { "\($0)%" } ?? "--", color: recoveryColor(recoveryNow))
+                          text: recoveryNow.map { "\($0)%" } ?? "--", color: DV.recoveryColor(recoveryNow))
             }
             NavigationLink { StrainDetailView(model: scores) } label: {
                 ScoreRing(label: "Belasting", value: strainNow.map { $0 / 21 },
@@ -80,20 +103,13 @@ struct TodayView: View {
         .buttonStyle(.plain)
     }
 
-    private func recoveryColor(_ r: Int?) -> Color {
-        guard let r else { return Theme.muted }
-        return r >= 67 ? Theme.accent : r >= 34 ? Theme.zones[3].color : Theme.hr
-    }
-
     // MARK: tegels
 
-    private var baselineRHR: Double? {
-        let v = past.compactMap(\.rhr); return v.isEmpty ? nil : Double(v.reduce(0, +)) / Double(v.count)
-    }
+    private var baselineRHR: Double? { DV.mean(pastNights.compactMap(\.metrics.rhr)) }
 
     private var healthTile: some View {
-        let rhr = today?.rhr
-        let delta = rhr.flatMap { r in baselineRHR.map { Double(r) - $0 } }
+        let rhr = night?.metrics.rhr
+        let delta = rhr.flatMap { r in baselineRHR.map { r - $0 } }
         let elevated = (delta ?? 0) > 3
         return Card(title: "Gezondheid", index: 1) {
             HStack(spacing: 10) {
@@ -102,14 +118,14 @@ struct TodayView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(rhr == nil ? "GEEN DATA" : elevated ? "VERHOOGD" : "NORMAAL")
                         .font(Theme.label).tracking(1.5).foregroundStyle(elevated ? Theme.zones[4].color : Theme.accent)
-                    Text(rhr.map { "Rust-HR \($0)" } ?? "Rust-HR").font(.subheadline).foregroundStyle(Theme.muted)
+                    Text(rhr.map { "Rust-HR \(Int($0.rounded()))" } ?? "Rust-HR").font(.subheadline).foregroundStyle(Theme.muted)
                 }
             }
         }
     }
 
     private var stressTile: some View {
-        let s = today?.currentStress
+        let s = stress.last?.v
         let (txt, col): (String, Color) = {
             guard let s else { return ("GEEN DATA", Theme.muted) }
             return s < 1 ? ("LAAG", Theme.accent) : s < 2 ? ("MIDDEL", Theme.zones[3].color) : ("HOOG", Theme.hr)
@@ -120,7 +136,7 @@ struct TodayView: View {
                     .padding(6).background(col.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(txt).font(Theme.label).tracking(1.5).foregroundStyle(col)
-                    Text(today?.stress.last.map { $0.0.formatted(date: .omitted, time: .shortened) } ?? "").font(.subheadline).foregroundStyle(Theme.muted)
+                    Text(stress.last.map { DV.clock($0.t) } ?? "").font(.subheadline).foregroundStyle(Theme.muted)
                 }
             }
         }
@@ -130,14 +146,14 @@ struct TodayView: View {
 
     private var stressChart: some View {
         Card(title: "Stress vandaag", index: 3) {
-            if let pts = today?.stress, pts.count > 1 {
+            if stress.count > 1 {
                 Chart {
-                    if let a = today?.sleepStart, let b = today?.sleepEnd {
-                        RectangleMark(xStart: .value("", a), xEnd: .value("", b))
+                    if let n = night {
+                        RectangleMark(xStart: .value("", max(n.onset, Calendar.current.startOfDay(for: Date()))), xEnd: .value("", n.wake))
                             .foregroundStyle(Theme.hex(0x8FA8C8).opacity(0.12))
                     }
-                    ForEach(pts.indices, id: \.self) { i in
-                        LineMark(x: .value("Tijd", pts[i].0), y: .value("Stress", pts[i].1))
+                    ForEach(stress.indices, id: \.self) { i in
+                        LineMark(x: .value("Tijd", stress[i].t), y: .value("Stress", stress[i].v))
                             .foregroundStyle(LinearGradient(colors: [Theme.accent, Theme.zones[3].color], startPoint: .bottom, endPoint: .top))
                             .interpolationMethod(.monotone)
                     }
@@ -146,23 +162,24 @@ struct TodayView: View {
                 .chartXAxis { AxisMarks(values: .stride(by: .hour, count: 4)) { _ in AxisGridLine(); AxisValueLabel(format: .dateTime.hour()) } }
                 .frame(height: 170)
             } else {
-                Text("Nog te weinig rustige metingen vandaag.").font(.subheadline).foregroundStyle(Theme.muted)
+                Text("Nog te weinig metingen vandaag.").font(.subheadline).foregroundStyle(Theme.muted)
             }
         }
     }
 
     private var weekChart: some View {
-        Card(title: "Belasting & herstel · 7 dagen", index: 4) {
+        let cal = Calendar.current
+        return Card(title: "Belasting & herstel · 7 dagen", index: 4) {
             Chart {
-                ForEach(week.indices, id: \.self) { i in
-                    let d = week[i]
+                ForEach(scores.days) { d in
                     LineMark(x: .value("Dag", d.date, unit: .day), y: .value("Belasting", d.strain), series: .value("s", "Belasting"))
                         .foregroundStyle(Theme.zones[1].color).symbol(.circle)
-                    if let r = d.recovery {
-                        LineMark(x: .value("Dag", d.date, unit: .day), y: .value("Herstel", Double(r) / 100 * 21), series: .value("s", "Herstel"))
-                            .foregroundStyle(recoveryColor(r)).symbol(.circle)
-                            .annotation(position: .top) { Text("\(r)%").font(.caption2).foregroundStyle(recoveryColor(r)) }
-                    }
+                }
+                ForEach(scores.nights.filter { $0.recovery != nil }) { n in
+                    let r = n.recovery ?? 0
+                    LineMark(x: .value("Dag", cal.startOfDay(for: n.date), unit: .day), y: .value("Herstel", Double(r) / 100 * 21), series: .value("s", "Herstel"))
+                        .foregroundStyle(Theme.accent).symbol(.circle)
+                        .annotation(position: .top) { Text("\(r)%").font(.caption2).foregroundStyle(DV.recoveryColor(r)) }
                 }
             }
             .chartYScale(domain: 0...21)
@@ -178,17 +195,22 @@ struct TodayView: View {
     // MARK: metrieken met baseline
 
     private var metrics: some View {
-        let hrvB = past.compactMap(\.hrv), sleepB = past.map(\.sleepMinutes).filter { $0 > 0 }
-        let avg = { (v: [Double]) -> Double? in v.isEmpty ? nil : v.reduce(0, +) / Double(v.count) }
-        let fmtMin = { (m: Int) in "\(m / 60):\(String(format: "%02d", m % 60))" }
+        let fmtMin = { (m: Double) in DV.hm(m) }
+        let z13 = scores.today?.zones13, z45 = scores.today?.zones45
         let rows: [(String, String, String)] = [
-            ("HRV", today?.hrv.map { "\(Int($0)) ms" } ?? "--", avg(hrvB).map { "\(Int($0)) ms" } ?? "–"),
-            ("Rust-HR", today?.rhr.map { "\($0) bpm" } ?? "--", baselineRHR.map { "\(Int($0)) bpm" } ?? "–"),
-            ("Slaap", today.map { $0.sleepMinutes > 0 ? fmtMin($0.sleepMinutes) : "--" } ?? "--", avg(sleepB.map { Double($0) }).map { fmtMin(Int($0)) } ?? "–"),
-            ("Zone 1–3", today.map { "\($0.zoneMinutes[1...3].reduce(0, +)) min" } ?? "--", "–"),
-            ("Zone 4–5", today.map { "\($0.zoneMinutes[4...5].reduce(0, +)) min" } ?? "--", "–"),
-            ("Huidtemp", today?.skin.map { String(format: "%.1f °C", $0) } ?? "--", avg(past.compactMap(\.skin)).map { String(format: "%.1f °C", $0) } ?? "–"),
-            ("Gemeten", today.map { fmtMin($0.measuredMinutes) } ?? "--", "")
+            ("HRV", night?.metrics.hrv.map { "\(Int($0.rounded())) ms" } ?? "--",
+             DV.mean(pastNights.compactMap(\.metrics.hrv)).map { "\(Int($0.rounded())) ms" } ?? "–"),
+            ("Rust-HR", night?.metrics.rhr.map { "\(Int($0.rounded())) bpm" } ?? "--",
+             baselineRHR.map { "\(Int($0.rounded())) bpm" } ?? "–"),
+            ("Slaap", night.map { fmtMin(Double($0.r.asleepMin)) } ?? "--",
+             DV.mean(pastNights.map { Double($0.r.asleepMin) }).map(fmtMin) ?? "–"),
+            ("Zone 1–3", z13.map { "\(Int($0.rounded())) min" } ?? "--",
+             DV.mean(pastDays.map(\.zones13)).map { "\(Int($0.rounded())) min" } ?? "–"),
+            ("Zone 4–5", z45.map { "\(Int($0.rounded())) min" } ?? "--",
+             DV.mean(pastDays.map(\.zones45)).map { "\(Int($0.rounded())) min" } ?? "–"),
+            ("Huidtemp (nacht)", night?.metrics.skinTemp.map { String(format: "%.1f °C", $0) } ?? "--",
+             DV.mean(pastNights.compactMap(\.metrics.skinTemp)).map { String(format: "%.1f °C", $0) } ?? "–"),
+            ("Gemeten", fmtMin(Double(measuredMin)), "")
         ]
         return Card(title: "Dashboard", index: 5) {
             HStack { Spacer(); Text("VANDAAG").frame(width: 90, alignment: .trailing); Text("BASELINE").frame(width: 90, alignment: .trailing) }

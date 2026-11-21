@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import WhoopScores
 
 /// Geschatte biologische leeftijd: kalenderleeftijd + bijdragen (in jaren) van slaap, belasting en fitheid.
 /// Eigen schatting met publieke vuistregels, afgesteld op één referentieweek; geen medische meting.
@@ -338,12 +339,26 @@ struct ProfileSheet: View {
     @State private var date = Calendar.current.date(byAdding: .year, value: -25, to: Date())!
     @State private var strengthText = ""
     @State private var stepsText = ""
+    @AppStorage(UserProfile.maxHrKey) private var maxHr: Double = 0
+    @AppStorage(UserProfile.restHrAutoKey) private var restHrAuto: Double = 0
+    @State private var maxHrText = ""
+    /// Schatting voor de max-HR met de geboortedatum die nu in het formulier staat.
+    private var estimate: Int { Int((208 - 0.7 * Date().timeIntervalSince(date) / 31_557_600).rounded()) }
     var body: some View {
         NavigationStack {
             Form {
                 Section("Over jou") {
                     DatePicker("Geboortedatum", selection: $date, in: ...Date(), displayedComponents: .date)
                     Picker("Geslacht (VO₂max-norm)", selection: $male) { Text("Man").tag(true); Text("Vrouw").tag(false) }
+                }
+                Section {
+                    LabeledContent("Max-hartslag") {
+                        TextField("\(estimate) (schatting)", text: $maxHrText).keyboardType(.numberPad).multilineTextAlignment(.trailing)
+                    }
+                    LabeledContent("Rust-hartslag (berekend)",
+                                   value: restHrAuto > 0 ? "\(Int(restHrAuto)) bpm" : "nog geen nacht · \(Int(Calibration.standard.profile.restingHr))")
+                } header: { Text("Hartslag") } footer: {
+                    Text("Bepaalt je hartslagzones, belasting en calorieën. De rust-hartslag rekent de app zelf uit: de mediaan van je rust-HR over de gemeten nachten (laagste stabiele hartslag in diepe slaap). Vul je max-hartslag in: je hoogste gemeten hartslag in (bv. uit een maximale inspanningstest of de Whoop-app). Leeg = schatting 208 − 0,7 × leeftijd.")
                 }
                 Section {
                     TextField("Krachttraining, minuten per week", text: $strengthText).keyboardType(.numberPad)
@@ -356,6 +371,7 @@ struct ProfileSheet: View {
                     birth = date.timeIntervalSince1970
                     strength = Double(strengthText) ?? -1
                     steps = Double(stepsText) ?? -1
+                    maxHr = Double(maxHrText).flatMap { (100...240).contains($0) ? $0 : nil } ?? 0
                     dismiss()
                 }
             }
@@ -363,6 +379,7 @@ struct ProfileSheet: View {
                 if birth > 0 { date = Date(timeIntervalSince1970: birth) }
                 if strength >= 0 { strengthText = String(Int(strength)) }
                 if steps >= 0 { stepsText = String(Int(steps)) }
+                if maxHr > 0 { maxHrText = String(Int(maxHr)) }
             }
         }
     }

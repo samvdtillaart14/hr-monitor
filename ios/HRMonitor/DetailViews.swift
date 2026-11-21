@@ -501,7 +501,7 @@ struct StrainDetailView: View {
                           color: { _ in Theme.zones[4].color }, label: { DV.hm($0) })
                 TrendCard(title: "Energie (geschat, kcal)", points: model.days.map { ($0.date, $0.kcal) },
                           color: { _ in Theme.zones[3].color }, label: { "\(Int($0))" })
-                Text("Belasting en zones: scores-module (HR-reserve, gekalibreerd). Energie: Mifflin (rust) plus Keytel (hartslag) met je leeftijd en geslacht uit het profiel en standaard 75 kg / 180 cm; een schatting.")
+                Text("Belasting en zones: scores-module (hartslagreserve met max- en rust-HR uit je profiel). Energie: Mifflin (rust) plus Keytel (hartslag) met je leeftijd en geslacht uit het profiel en standaard 75 kg / 180 cm; een schatting.")
                     .font(.caption).foregroundStyle(Theme.muted)
             }
         }
