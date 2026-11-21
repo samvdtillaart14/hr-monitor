@@ -29,7 +29,14 @@ Band: WG50_r45, firmware 50.43.2.0, iOS 27 (21-11-2026). Bron voor de basis: ope
 ## Datapakketten
 - **0x28 live HR/RR:** u32LE Unix-tijd @10, HR u8 @16, aantal RR @17, RR u16LE @18 in 1/1024 s.
 - **0x2F historisch, layout @9:**
-  - `0x12` (R18, 124 B, 1 per seconde): tijd u32LE @15, HR u8 @22, huidtemperatuur u16LE @73 / 100 °C. Gemeten waarden waren 31,4–31,95 °C.
+  - `0x12` (R18, 124 B, 1 per seconde), geverifieerd op 809 records:
+    - Unix-tijd u32LE @15; volgnummer @11.
+    - HR u8 @22 (kopie @37).
+    - Aantal RR-intervallen u8 @23; RR u16LE **in ms** @24+2i. Voorbeeld: 858 ms bij 70 bpm.
+    - 4× float32LE @41/45/49/53: oriëntatie of beweging. In rust is de norm ≈ 1,00, bij beweging wijkt die af. Mogelijk een quaternion.
+    - u16LE @69 / 10 en @71 / 10: ±29 en ±31 °C, extra temperaturen (voorlopig).
+    - Huidtemperatuur u16LE @73 / 100 °C (31,4–32,0 °C gemeten).
+    - Ongeduid: @33–35, @57–61, @105–109 (optisch/kwaliteit?), @113–115.
   - `0x1A` (R26, 88 B): ruwe optische data, nog niet gedecodeerd.
 - **0x31:** live status met tijd u32LE @11.
 - **0x32:** firmware-tekstlog, tekst vanaf byte 21.
