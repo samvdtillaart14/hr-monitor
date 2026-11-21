@@ -24,6 +24,9 @@ final class WhoopParser: ObservableObject {
     @Published private(set) var records = 0
     @Published private(set) var lastLiveTime: Date?
     @Published private(set) var lastResponse: String?
+    @Published private(set) var liveHR: Int?
+    @Published private(set) var liveRR: [Int] = []
+    @Published private(set) var logLines: [String] = []
     private var seq: UInt8 = 0
 
     /// Bouwt een commandoframe (type 0x23) met geldige CRC16-header en CRC32-trailer.
@@ -85,6 +88,19 @@ final class WhoopParser: ObservableObject {
         case 0x31 where b.count >= 15:
             let t = u32(b, 11)
             lastLiveTime = Date(timeIntervalSince1970: TimeInterval(t))
+        case 0x28 where b.count >= 18:
+            // Type 40: realtime HR/RR (na cmd 3). Tijd u32LE @10, HR u8 @16, aantal RR u8 @17, RR u16LE @18 in 1/1024 s.
+            lastLiveTime = Date(timeIntervalSince1970: TimeInterval(u32(b, 10)))
+            liveHR = Int(b[16])
+            let n = min(Int(b[17]), (b.count - 22) / 2)
+            liveRR = (0..<max(0, n)).map { (u16(b, 18 + 2 * $0) * 1000 + 512) / 1024 }
+        case 0x32 where b.count > 24:
+            // Type 50: tekstlog van de firmware.
+            let txt = String(decoding: b[23..<(b.count - 4)].filter { $0 >= 0x20 && $0 < 0x7F || $0 == 0x0A }, as: UTF8.self)
+            for line in txt.split(separator: "\n") where !line.trimmingCharacters(in: .whitespaces).isEmpty {
+                logLines.append(String(line))
+            }
+            if logLines.count > 50 { logLines.removeFirst(logLines.count - 50) }
         case 0x24 where b.count >= 13:
             let res = ["mislukt", "ok", "bezig", "niet ondersteund"]
             lastResponse = "cmd \(b[10]) → " + (Int(b[12]) < res.count ? res[Int(b[12])] : "code \(b[12])")

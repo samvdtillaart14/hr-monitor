@@ -44,6 +44,14 @@ struct ExplorerView: View {
                     LabeledContent(String(format: "Type 0x%02X", k), value: "\(whoop.typeCounts[k] ?? 0)")
                 }
                 if let r = whoop.lastResponse { LabeledContent("Laatste antwoord", value: r) }
+                if let hr = whoop.liveHR {
+                    LabeledContent("Live HR (Whoop-kanaal)", value: "\(hr) bpm" + (whoop.liveRR.isEmpty ? "" : " · RR \(whoop.liveRR.map(String.init).joined(separator: ", ")) ms"))
+                }
+                if !whoop.logLines.isEmpty {
+                    DisclosureGroup("Firmware-log (\(whoop.logLines.count))") {
+                        ForEach(Array(whoop.logLines.enumerated().reversed()), id: \.offset) { Text($0.element).font(.caption2.monospaced()) }
+                    }
+                }
                 Button("Stuur hello (veilig, alleen info)") { error = ble.sendWhoop(cmd: 0x91, body: [0x01]) }
                 Button("Realtime-hartslag aan (cmd 3)") { error = ble.sendWhoop(cmd: 3, body: [0x01]) }
                 Button("Historie opvragen (cmd 22)") { error = ble.sendWhoop(cmd: 22, body: [0x00]) }
