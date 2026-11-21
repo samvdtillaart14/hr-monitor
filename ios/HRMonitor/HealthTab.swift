@@ -1,6 +1,7 @@
 import SwiftUI
 import Charts
 import WhoopScores
+import UniformTypeIdentifiers
 
 /// Geschatte biologische leeftijd: kalenderleeftijd + bijdragen (in jaren) van slaap, belasting en fitheid.
 /// Eigen schatting met publieke vuistregels, afgesteld op één referentieweek; geen medische meting.
@@ -31,9 +32,13 @@ enum AgeModel {
                            years: hours.map { clamp(abs($0 / 60 - 7.5) * 0.85 - 0.4, 2) } ?? 0, lo: 300, hi: 480, fmt: hm,
                            info: "Advies is 7–8 uur. Hoe verder je ervan af zit, hoe meer het meetelt."))
         // Belasting (per week)
-        let n = Double(max(1, days.count))
-        let z13 = days.isEmpty ? nil : days.map(\.zones13).reduce(0, +) * 7 / n
-        let z45 = days.isEmpty ? nil : days.map(\.zones45).reduce(0, +) * 7 / n
+        // Alleen dagen met metingen tellen; vandaag telt naar rato van het verstreken deel van de dag.
+        let measuredDays = days.filter { $0.measuredMin > 0 }
+        let n = measuredDays.reduce(0.0) { acc, d in
+            acc + (Calendar.current.isDateInToday(d.date) ? max(0.05, Date().timeIntervalSince(d.date) / 86400) : 1)
+        }
+        let z13 = measuredDays.isEmpty ? nil : measuredDays.map(\.zones13).reduce(0, +) * 7 / n
+        let z45 = measuredDays.isEmpty ? nil : measuredDays.map(\.zones45).reduce(0, +) * 7 / n
         f.append(AgeFactor(group: "Belasting", name: "Zones 1–3 per week", value: z13,
                            years: z13.map { clamp((150 - $0) / 67, 2) } ?? 0, lo: 0, hi: 300, fmt: hm,
                            info: "Matige inspanning. De WHO adviseert minstens 150 minuten per week."))
@@ -83,7 +88,7 @@ enum AgeHistory {
 
 struct HealthTab: View {
     @EnvironmentObject var store: DayStore
-    @StateObject private var model = ScoreModel()
+    @EnvironmentObject var model: ScoreModel
     @AppStorage("profile.birth") private var birth: Double = 0
     @AppStorage("profile.male") private var male = true
     @AppStorage("profile.strength") private var strength: Double = -1
@@ -342,6 +347,12 @@ struct ProfileSheet: View {
     @AppStorage(UserProfile.maxHrKey) private var maxHr: Double = 0
     @AppStorage(UserProfile.restHrAutoKey) private var restHrAuto: Double = 0
     @State private var maxHrText = ""
+    @AppStorage(UserProfile.weightKey) private var weight: Double = 0
+    @AppStorage(UserProfile.heightKey) private var height: Double = 0
+    @State private var weightText = ""
+    @State private var heightText = ""
+    @State private var importing = false
+    @State private var calStatus = UserProfile.importedCalibration == nil ? "Niet geladen (standaard)" : "Geladen"
     /// Schatting voor de max-HR met de geboortedatum die nu in het formulier staat.
     private var estimate: Int { Int((208 - 0.7 * Date().timeIntervalSince(date) / 31_557_600).rounded()) }
     var body: some View {
@@ -356,9 +367,28 @@ struct ProfileSheet: View {
                         TextField("\(estimate) (schatting)", text: $maxHrText).keyboardType(.numberPad).multilineTextAlignment(.trailing)
                     }
                     LabeledContent("Rust-hartslag (berekend)",
-                                   value: restHrAuto > 0 ? "\(Int(restHrAuto)) bpm" : "nog geen nacht · \(Int(Calibration.standard.profile.restingHr))")
+                                   value: restHrAuto > 0 ? "\(Int(restHrAuto)) bpm" : "nog geen nacht · \(Int(UserProfile.restHr))")
                 } header: { Text("Hartslag") } footer: {
                     Text("Bepaalt je hartslagzones, belasting en calorieën. De rust-hartslag rekent de app zelf uit: de mediaan van je rust-HR over de gemeten nachten (laagste stabiele hartslag in diepe slaap). Vul je max-hartslag in: je hoogste gemeten hartslag in (bv. uit een maximale inspanningstest of de Whoop-app). Leeg = schatting 208 − 0,7 × leeftijd.")
+                }
+                Section {
+                    LabeledContent("Gewicht (kg)") {
+                        TextField("75", text: $weightText).keyboardType(.decimalPad).multilineTextAlignment(.trailing)
+                    }
+                    LabeledContent("Lengte (cm)") {
+                        TextField("180", text: $heightText).keyboardType(.numberPad).multilineTextAlignment(.trailing)
+                    }
+                } header: { Text("Lichaam") } footer: { Text("Voor het rustverbruik en de calorieën. Leeg = 75 kg / 180 cm.") }
+                Section {
+                    LabeledContent("Kalibratie", value: calStatus)
+                    Button("Kalibratiebestand kiezen…") { importing = true }
+                    if UserProfile.importedCalibration != nil {
+                        Button("Kalibratie verwijderen", role: .destructive) {
+                            UserProfile.removeCalibration(); calStatus = "Niet geladen (standaard)"
+                        }
+                    }
+                } header: { Text("Afstemming op Whoop") } footer: {
+                    Text("Kies whoop-calibration.json (gemaakt uit je Whoop-export) via de Bestanden-app. Dan rekenen belasting, slaap en herstel met jouw afgestemde formules. Het bestand blijft alleen op je iPhone.")
                 }
                 Section {
                     TextField("Krachttraining, minuten per week", text: $strengthText).keyboardType(.numberPad)
@@ -372,6 +402,8 @@ struct ProfileSheet: View {
                     strength = Double(strengthText) ?? -1
                     steps = Double(stepsText) ?? -1
                     maxHr = Double(maxHrText).flatMap { (100...240).contains($0) ? $0 : nil } ?? 0
+                    weight = Double(weightText.replacingOccurrences(of: ",", with: ".")).flatMap { (30...250).contains($0) ? $0 : nil } ?? 0
+                    height = Double(heightText).flatMap { (120...230).contains($0) ? $0 : nil } ?? 0
                     dismiss()
                 }
             }
@@ -380,6 +412,16 @@ struct ProfileSheet: View {
                 if strength >= 0 { strengthText = String(Int(strength)) }
                 if steps >= 0 { stepsText = String(Int(steps)) }
                 if maxHr > 0 { maxHrText = String(Int(maxHr)) }
+                if weight > 0 { weightText = String(format: "%g", weight) }
+                if height > 0 { heightText = String(Int(height)) }
+            }
+            .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
+                switch result {
+                case .success(let url):
+                    do { try UserProfile.importCalibration(from: url); calStatus = "Geladen" }
+                    catch { calStatus = "Ongeldig bestand" }
+                case .failure: calStatus = "Niet gelukt"
+                }
             }
         }
     }

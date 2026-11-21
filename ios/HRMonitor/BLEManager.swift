@@ -66,6 +66,9 @@ final class BLEManager: NSObject, ObservableObject {
     private var rrWindow: [(Date, Double)] = []
     private var sum = 0.0, count = 0
     private var userDisconnected = false
+    /// laatste automatische historie-aanvraag (cmd 22), om niet bij elke korte herverbinding alles opnieuw op te halen
+    private var lastHistoryRequest = Date.distantPast
+    private var historyRequestedThisConnection = false
 
     override init() {
         super.init()
@@ -117,6 +120,10 @@ final class BLEManager: NSObject, ObservableObject {
         guard clean.count % 2 == 0, !clean.isEmpty else { return "Oneven of leeg aantal hex-tekens" }
         var bytes = [UInt8](); var i = clean.startIndex
         while i < clean.endIndex { let j = clean.index(i, offsetBy: 2); bytes.append(UInt8(clean[i..<j], radix: 16)!); i = j }
+        // Nooit cmd 23 (historie bevestigen) naar de band: dat kan data wissen voordat de Whoop-app heeft gesynchroniseerd.
+        if ch.uuid.uuidString.hasPrefix("FD4B0002"), bytes.count > 10, bytes[0] == 0xAA, bytes[8] == 0x23, bytes[10] == 23 {
+            return "Cmd 23 is geblokkeerd: dat kan data op de band wissen."
+        }
         let type: CBCharacteristicWriteType = ch.properties.contains(.write) ? .withResponse : .withoutResponse
         p.writeValue(Data(bytes), for: ch, type: type)
         raw.log(service: ch.service?.uuid.uuidString ?? "", char: ch.uuid.uuidString, kind: "WRITE", data: Data(bytes))
@@ -125,6 +132,7 @@ final class BLEManager: NSObject, ObservableObject {
 
     /// Stuurt een Whoop-commando naar FD4B0002 (met CRC's). Alleen voor veilige, lezende commando's.
     func sendWhoop(cmd: UInt8, body: [UInt8]) -> String? {
+        guard cmd != 23 else { return "Cmd 23 is geblokkeerd: dat kan data op de band wissen." }
         guard let p = peripheral, let ch = charRefs.first(where: { $0.key.hasPrefix("FD4B0001") && $0.key.hasSuffix("FD4B0002-CCE1-4033-93CE-002D5875F58A") })?.value
         else { return "Whoop-service niet gevonden. Verbind eerst." }
         let f = whoop.frame(cmd: cmd, body: body)
@@ -211,7 +219,8 @@ extension BLEManager: CBCentralManagerDelegate {
             if let p = peripheral {
                 // Na herstart door iOS: verbinding opnieuw opbouwen of abonnementen herstellen.
                 if p.state == .disconnected && !userDisconnected { state = .connecting; c.connect(p, options: nil) }
-                else if p.state == .connected && p.services == nil { p.discoverServices(nil) }
+                // Ook na herstel door iOS: characteristics opnieuw zoeken, anders kan de app de band geen commando's sturen.
+                else if p.state == .connected && (p.services == nil || charRefs.isEmpty) { p.discoverServices(nil) }
             } else { reconnectLast() }
         case .unauthorized: state = .unauthorized
         default: state = .off
@@ -243,6 +252,7 @@ extension BLEManager: CBCentralManagerDelegate {
         deviceName = p.name
         if sessionStart == nil { sessionStart = Date() }
         chars = []; charRefs = [:]
+        whoop.resetBuffers()
         p.discoverServices(nil)
     }
 
@@ -252,6 +262,8 @@ extension BLEManager: CBCentralManagerDelegate {
 
     func centralManager(_ c: CBCentralManager, didDisconnectPeripheral p: CBPeripheral, error: Error?) {
         bpm = nil
+        contact = "-"
+        historyRequestedThisConnection = false
         if userDisconnected { state = .idle; return }
         state = .connecting
         c.connect(p, options: nil)   // wacht tot de band terug in bereik is
@@ -281,6 +293,7 @@ extension BLEManager: CBPeripheralDelegate {
             if pr.contains(.notify) || pr.contains(.indicate) { p.setNotifyValue(true, for: ch) }
             if pr.contains(.read) { p.readValue(for: ch) }
         }
+        requestHistoryIfReady()
     }
 
     func peripheral(_ p: CBPeripheral, didUpdateNotificationStateFor ch: CBCharacteristic, error: Error?) {
@@ -303,3 +316,23 @@ extension BLEManager: CBPeripheralDelegate {
         else if ch.uuid == Self.batteryLevel, let v = d.first { battery = Int(v) }
     }
 }
+
+extension BLEManager {
+    /// Haalt na (her)verbinden de opgeslagen historie van de band op (cmd 22, alleen lezen; er wordt nooit
+    /// cmd 23 gestuurd, dus de band wist niets). Zo vullen gaten door een weggevallen verbinding zich vanzelf.
+    /// Hooguit eens per 10 minuten.
+    fileprivate func requestHistoryIfReady() {
+        guard !historyRequestedThisConnection,
+              Date().timeIntervalSince(lastHistoryRequest) > 600,
+              charRefs.keys.contains(where: { $0.hasPrefix("FD4B0001") && $0.hasSuffix("FD4B0002-CCE1-4033-93CE-002D5875F58A") })
+        else { return }
+        historyRequestedThisConnection = true
+        // Even wachten tot de notificaties van de band aan staan, anders gaan de eerste records verloren.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            guard let self, self.state == .connected else { self?.historyRequestedThisConnection = false; return }
+            if self.sendWhoop(cmd: 22, body: [0x00]) == nil { self.lastHistoryRequest = Date() }
+            else { self.historyRequestedThisConnection = false }
+        }
+    }
+}
+

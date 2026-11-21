@@ -1,11 +1,35 @@
 import SwiftUI
 import Charts
 
+/// Bluetooth, dagopslag, scores en activiteiten bestaan vanaf de start van de app, ook als iOS de app
+/// op de achtergrond opnieuw start voor de band (dan verschijnt er geen scherm en loopt onAppear niet).
+@MainActor
+final class AppServices {
+    static let shared = AppServices()
+    let store = DayStore()
+    let ble = BLEManager()
+    let acts = ActivityStore()
+    let scores = ScoreModel()
+    private init() {
+        ble.store = store
+        store.onLive = { [weak acts] in acts?.live(hr: $0) }
+    }
+}
+
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        // Direct aanmaken: CoreBluetooth moet de centrale met het herstel-ID bij het opstarten terugzien.
+        _ = AppServices.shared
+        return true
+    }
+}
+
 @main
 struct HRMonitorApp: App {
-    @StateObject private var ble = BLEManager()
-    @StateObject private var store = DayStore()
-    @StateObject private var acts = ActivityStore()
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
+    @Environment(\.scenePhase) private var phase
+    private let services = AppServices.shared
     var body: some Scene {
         WindowGroup {
             TabView {
@@ -13,19 +37,18 @@ struct HRMonitorApp: App {
                 ContentView().tabItem { Label("Live", systemImage: "heart.fill") }
                 HealthTab().tabItem { Label("Gezondheid", systemImage: "heart.text.square.fill") }
             }
-                .onAppear {
-                    ble.store = store
-                    store.onLive = { [weak acts] in acts?.live(hr: $0) }
-                }
-                .environmentObject(store)
-                .environmentObject(acts)
-                .environmentObject(ble)
-                .environmentObject(ble.recorder)
-                .environmentObject(ble.raw)
-                .environmentObject(ble.whoop)
+                .environmentObject(services.store)
+                .environmentObject(services.acts)
+                .environmentObject(services.scores)
+                .environmentObject(services.ble)
+                .environmentObject(services.ble.recorder)
+                .environmentObject(services.ble.raw)
+                .environmentObject(services.ble.whoop)
                 .preferredColorScheme(.dark)
                 .tint(Theme.accent)
         }
+        // Openstaande metingen direct wegschrijven als de app naar de achtergrond gaat.
+        .onChange(of: phase) { _, p in if p != .active { services.store.flush(); services.acts.route.persist() } }
     }
 }
 
@@ -161,6 +184,7 @@ struct ContentView: View {
             if rec.isRecording {
                 Text("\(rec.rows) metingen opgeslagen · loopt door met scherm uit").font(.footnote).foregroundStyle(.secondary)
             }
+            if let e = rec.error { Text(e).font(.footnote).foregroundStyle(Theme.hr) }
             Button("Sessie-statistieken wissen") { ble.resetSession() }.font(.footnote)
         }
     }

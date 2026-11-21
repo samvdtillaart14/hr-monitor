@@ -50,6 +50,7 @@ final class ActivityStore: ObservableObject {
     /// verwijderde automatische activiteiten: niet opnieuw herkennen
     private var dismissed: [ClosedRange<Double>] = []
     private var busy = false
+    private var stepsTried = Set<UUID>()
     private let pedometer = CMPedometer()
     private let motion = CMMotionActivityManager()
     let route: RouteRecorder
@@ -69,8 +70,16 @@ final class ActivityStore: ObservableObject {
             guard r.count == 3, let id = UUID(uuidString: r[0]), let s = Double(r[1]), let e = Double(r[2]) else { return nil }
             return (id, s, e)
         }
+        // App afgesloten tijdens een automatische GPS-opname: die opname alsnog laten koppelen.
+        if let r = UserDefaults.standard.array(forKey: Self.autoSessionKey) as? [String], r.count == 2,
+           let id = UUID(uuidString: r[0]), let st = Double(r[1]) {
+            let end = Route.load(id).last?.t ?? st
+            pending.append((id, st, max(st, end)))
+            UserDefaults.standard.removeObject(forKey: Self.autoSessionKey)
+            savePending()
+        }
         autoGps = UserDefaults.standard.bool(forKey: Self.autoGpsKey)
-        if autoGps { startMotion() }
+        if autoGps { startMotion(); route.requestAlways() }
     }
 
     private func save() {
@@ -119,7 +128,7 @@ final class ActivityStore: ObservableObject {
             if pts.count > 1 { items[i].distanceM = Route.distance(pts) }
         }
         save()
-        Task { await self.enrich(id, store: store) }
+        Task { await self.enrich(id, store: store, forceSummary: true) }
     }
 
     func delete(_ id: UUID) {
@@ -139,8 +148,8 @@ final class ActivityStore: ObservableObject {
         guard !busy else { return }
         busy = true
         let cal = Calendar.current, today = cal.startOfDay(for: Date())
-        let raw: [Sample] = (0..<7).reversed().flatMap { k in
-            store.samples(day: cal.date(byAdding: .day, value: -k, to: today)!).map(ScoreModel.convert)
+        let rawStore: [DayStore.Sample] = (0..<7).reversed().flatMap { k in
+            store.samples(day: cal.date(byAdding: .day, value: -k, to: today)!)
         }
         let known = items.map { (start: $0.start.timeIntervalSince1970 - 120, end: $0.effectiveEnd.timeIntervalSince1970 + 120) }
         let exclude = sleep + known + dismissed.map { (start: $0.lowerBound, end: $0.upperBound) }
@@ -148,8 +157,11 @@ final class ActivityStore: ObservableObject {
         let ongoing = items.filter(\.isOngoing).map { (id: $0.id, s: $0.start.timeIntervalSince1970, e: Date().timeIntervalSince1970) }
         let c = UserProfile.calibration()
         Task {
-            let (found, sums) = await Task.detached(priority: .utility) { () -> ([DetectedActivity], [UUID: ActivitySummary]) in
-                let found = WhoopScores.detectActivities(raw, c, exclude: exclude)
+            let (found, sums) = await Task.detached(priority: .utility) { () -> ([(DetectedActivity, ActivitySummary)], [UUID: ActivitySummary]) in
+                let raw = rawStore.map(ScoreModel.convert)
+                let found = WhoopScores.detectActivities(raw, c, exclude: exclude).map {
+                    ($0, WhoopScores.activitySummary(raw, start: $0.start, end: $0.end, c))
+                }
                 var sums: [UUID: ActivitySummary] = [:]
                 for x in toSummarize + ongoing {
                     let s = WhoopScores.activitySummary(raw, start: x.s, end: x.e, c)
@@ -164,10 +176,10 @@ final class ActivityStore: ObservableObject {
                 }
             }
             var newIds: [UUID] = []
-            for f in found {
+            for (f, sum) in found {
                 var a = Activity(type: .other, start: Date(timeIntervalSince1970: f.start), end: Date(timeIntervalSince1970: f.end), auto: true)
                 self.attachRoute(&a)
-                a.summary = WhoopScores.activitySummary(raw, start: f.start, end: f.end, c)
+                a.summary = sum
                 self.items.append(a); newIds.append(a.id)
             }
             self.prunePending()
@@ -175,23 +187,26 @@ final class ActivityStore: ObservableObject {
             self.busy = false
             for id in newIds { await self.enrich(id, store: store, guessType: true) }
             // Stappen ontbreken nog bij eerdere activiteiten (bv. toestemming net gegeven)
-            for a in self.items where a.steps == nil && !a.isOngoing && a.start > Date().addingTimeInterval(-6.5 * 86400) {
+            // (één poging per activiteit per app-start, anders elke 30 s opnieuw zonder toestemming)
+            for a in self.items where a.steps == nil && !a.isOngoing && !self.stepsTried.contains(a.id)
+                && a.start > Date().addingTimeInterval(-6.5 * 86400) {
                 await self.enrich(a.id, store: store)
             }
         }
     }
 
     /// Statistieken, stappen (iPhone) en eventueel het type (iPhone-bewegingsherkenning) aanvullen.
-    private func enrich(_ id: UUID, store: DayStore, guessType: Bool = false) async {
+    private func enrich(_ id: UUID, store: DayStore, guessType: Bool = false, forceSummary: Bool = false) async {
         guard let a = items.first(where: { $0.id == id }) else { return }
         let s = a.start, e = a.effectiveEnd
-        if a.summary == nil || a.isOngoing {
+        if a.summary == nil || a.isOngoing || forceSummary {
             let raw = store.samples(day: s).map(ScoreModel.convert) +
                 (Calendar.current.isDate(s, inSameDayAs: e) ? [] : store.samples(day: e).map(ScoreModel.convert))
             let sum = WhoopScores.activitySummary(raw, start: s.timeIntervalSince1970, end: e.timeIntervalSince1970, UserProfile.calibration())
             if sum.measuredSec > 0 { set(id) { $0.summary = sum } }
         }
         guard !a.isOngoing else { return }
+        stepsTried.insert(id)
         if let steps = await Self.steps(pedometer, s, e) { set(id) { $0.steps = steps } }
         if guessType, let t = await Self.guessType(motion, s, e, steps: items.first { $0.id == id }?.steps) {
             set(id) { if $0.type == .other { $0.type = t } }
@@ -208,6 +223,9 @@ final class ActivityStore: ObservableObject {
 
     static let autoGpsKey = "activity.autoGps"
     private static let pendingKey = "activity.autoRoutes"
+    private static let autoSessionKey = "activity.autoSession"
+    /// controleert elke 30 s of een automatische opname moet stoppen (ook zonder hartslag of bewegingsmelding)
+    private var autoTimer: Timer?
     /// GPS automatisch aanzetten zodra je hartslag verhoogd is of de iPhone hardlopen/fietsen ziet.
     @Published var autoGps = false {
         didSet {
@@ -259,14 +277,21 @@ final class ActivityStore: ObservableObject {
     private func startAuto(_ now: Double) {
         let id = UUID()
         autoSession = (id, now)
+        UserDefaults.standard.set([id.uuidString, String(now)], forKey: Self.autoSessionKey)
         route.start(id)
+        autoTimer?.invalidate()
+        autoTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.tick(Date().timeIntervalSince1970, active: false) }
+        }
     }
 
     private func stopAuto() {
         guard let s = autoSession else { return }
+        autoTimer?.invalidate(); autoTimer = nil
         if route.activityId == s.id { route.stop() }
         pending.append((s.id, s.start, Date().timeIntervalSince1970))
         autoSession = nil
+        UserDefaults.standard.removeObject(forKey: Self.autoSessionKey)
         savePending()
         // Activiteit al herkend terwijl de opname nog liep: volledige route alsnog koppelen.
         for i in items.indices where items[i].auto && !items[i].isOngoing {
@@ -290,7 +315,8 @@ final class ActivityStore: ObservableObject {
         a.gps = true
         a.distanceM = Route.distance(pts)
         // Snel en weinig stappen: waarschijnlijk fietsen (het type kan daarna nog door de iPhone worden bepaald)
-        let kmh = a.distanceM! / max(1, e - s) * 3.6
+        // Snelheid over de tijd dat de GPS liep (die start later dan de herkende activiteit, bv. na de aanloop).
+        let kmh = a.distanceM! / max(1, min(e, pts[pts.count - 1].t) - max(s, pts[0].t)) * 3.6
         if a.type == .other { if kmh > 16 { a.type = .cycling } else if kmh > 7.5 { a.type = .running } }
     }
 
@@ -300,6 +326,15 @@ final class ActivityStore: ObservableObject {
         for p in pending where p.end < cutoff { Route.delete(p.id) }
         pending.removeAll { $0.end < cutoff }
         savePending()
+        // Losse routebestanden (bv. van een opname die werd afgebroken) opruimen.
+        var keep = Set(items.map(\.id.uuidString) + pending.map(\.id.uuidString))
+        if let id = route.activityId { keep.insert(id.uuidString) }
+        if let s = autoSession { keep.insert(s.id.uuidString) }
+        let files = (try? FileManager.default.contentsOfDirectory(at: Route.folder, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        for f in files where f.pathExtension == "json" && !keep.contains(f.deletingPathExtension().lastPathComponent) {
+            let m = (try? f.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            if m.timeIntervalSince1970 < cutoff { try? FileManager.default.removeItem(at: f) }
+        }
     }
 
     private func savePending() {

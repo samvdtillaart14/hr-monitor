@@ -28,6 +28,8 @@ struct DayLoad: Identifiable {
     var strain = 0.0
     var zoneMin = [Double](repeating: 0, count: 6)
     var kcal = 0.0
+    /// minuten met metingen op deze dag
+    var measuredMin = 0.0
     var zones13: Double { zoneMin[1] + zoneMin[2] + zoneMin[3] }
     var zones45: Double { zoneMin[4] + zoneMin[5] }
 }
@@ -51,19 +53,24 @@ final class ScoreModel: ObservableObject {
         let cal = Calendar.current
         let today = cal.startOfDay(for: Date())
         let dates = (0..<7).reversed().map { cal.date(byAdding: .day, value: -$0, to: today)! }
-        // Invoer op de main actor verzamelen, rekenen los daarvan.
-        var input: [(Date, [Sample], [Sample])] = []
+        // Invoer op de main actor verzamelen (alleen kopieën), omrekenen en rekenen los daarvan.
+        var input: [(Date, [DayStore.Sample], [DayStore.Sample])] = []
         for d in dates {
-            let start = d.timeIntervalSince1970
-            let night = store.samples(day: d, includeNight: true).filter { Double($0.t) < start + 14 * 3600 }.map(Self.convert)
-            let day = store.samples(day: d).map(Self.convert)
-            input.append((d, night, day))
+            let end = UInt32((cal.date(byAdding: .hour, value: 14, to: d) ?? d).timeIntervalSince1970)
+            input.append((d, store.samples(day: d, includeNight: true).filter { $0.t < end }, store.samples(day: d)))
         }
         let fixedCal = UserProfile.calibration()
+        // Eerdere nachten (buiten dit venster) als basislijn voor herstel, zoals "laatste 30 dagen".
+        let firstKey = DayStore.dayFmt.string(from: dates[0])
+        let prior = NightArchive.shared.metrics(before: firstKey, limit: fixedCal.recovery.windowDays)
         Task {
-            let (n, dl) = await Task.detached(priority: .utility) { Self.compute(input, fixedCal) }.value
+            let (n, dl) = await Task.detached(priority: .utility) { () -> ([Night], [DayLoad]) in
+                let conv = input.map { ($0.0, $0.1.map(Self.convert), $0.2.map(Self.convert)) }
+                return Self.compute(conv, fixedCal, prior: prior)
+            }.value
             self.nights = n; self.days = dl; self.busy = false
-            UserProfile.updateRestHr(from: n.compactMap { $0.metrics.rhr })
+            NightArchive.shared.store(n.map { (DayStore.dayFmt.string(from: $0.date), $0.metrics) })
+            UserProfile.updateRestHr(from: NightArchive.shared.recentRhr(30))
         }
     }
 
@@ -73,8 +80,8 @@ final class ScoreModel: ObservableObject {
 
     nonisolated static func fin(_ v: Double) -> Double? { v.isFinite ? v : nil }
 
-    nonisolated static func compute(_ input: [(Date, [Sample], [Sample])], _ c: Calibration) -> ([Night], [DayLoad]) {
-        var nights: [Night] = [], days: [DayLoad] = [], history: [NightMetrics] = []
+    nonisolated static func compute(_ input: [(Date, [Sample], [Sample])], _ c: Calibration, prior: [NightMetrics] = []) -> ([Night], [DayLoad]) {
+        var nights: [Night] = [], days: [DayLoad] = [], history: [NightMetrics] = prior
         var prevStrain = 0.0
         let tz = Double(TimeZone.current.secondsFromGMT()) / 60
         for (date, nightS, dayS) in input {
@@ -82,6 +89,14 @@ final class ScoreModel: ObservableObject {
             let st = WhoopScores.strain(dayS, c)
             var dl = DayLoad(date: date, strain: st.strain, zoneMin: st.zoneMin)
             dl.kcal = WhoopScores.calories(dayS, c)
+            // Tijd zonder metingen (band af, app niet verbonden) telt mee als rustverbruik.
+            let measured = WhoopScores.measuredSeconds(dayS)
+            dl.measuredMin = measured / 60
+            if !dayS.isEmpty {
+                let dayEnd = Calendar.current.date(byAdding: .day, value: 1, to: date) ?? date
+                let elapsed = max(0, min(Date(), dayEnd).timeIntervalSince(date))
+                dl.kcal += WhoopScores.restingKcalPerMin(c) * max(0, elapsed - measured) / 60 * c.profile.kcalScale
+            }
             defer { days.append(dl); prevStrain = st.strain }
 
             let base = WhoopScores.baseline(from: history, c)
@@ -125,5 +140,35 @@ final class ScoreModel: ObservableObject {
             nights.append(n)
         }
         return (nights, days)
+    }
+}
+
+/// Nachtwaarden per dag (Documenten/nights.json), zodat herstel en rust-HR met meer dan de
+/// geladen ~7 nachten kunnen vergelijken. Houdt 90 dagen bij.
+@MainActor
+final class NightArchive {
+    static let shared = NightArchive()
+    private var byDay: [String: NightMetrics] = [:]
+    private static var url: URL { Recorder.folder.appendingPathComponent("nights.json") }
+
+    private init() {
+        if let d = try? Data(contentsOf: Self.url), let v = try? JSONDecoder().decode([String: NightMetrics].self, from: d) { byDay = v }
+    }
+
+    /// Nachten vóór `key` (jjjj-mm-dd), oudste eerst, hooguit `limit`.
+    func metrics(before key: String, limit: Int) -> [NightMetrics] {
+        byDay.keys.filter { $0 < key }.sorted().suffix(limit).compactMap { byDay[$0] }
+    }
+
+    func recentRhr(_ n: Int) -> [Double] {
+        byDay.keys.sorted().suffix(n).compactMap { byDay[$0]?.rhr }
+    }
+
+    func store(_ items: [(String, NightMetrics)]) {
+        guard !items.isEmpty else { return }
+        for (k, m) in items { byDay[k] = m }
+        let keys = byDay.keys.sorted()
+        if keys.count > 90 { for k in keys.prefix(keys.count - 90) { byDay[k] = nil } }
+        if let d = try? JSONEncoder().encode(byDay) { try? d.write(to: Self.url, options: .atomic) }
     }
 }

@@ -402,8 +402,15 @@ struct RouteCard: View {
         let p = pts
         VStack(alignment: .leading, spacing: Theme.gap) {
             if recorder.denied && live {
-                Text("Geen toegang tot je locatie. Zet die aan in Instellingen › HR Monitor › Locatie.")
+                Text("Geen toegang tot je locatie. Zet die aan in Instellingen › HR Monitor › Locatie. Hartslag en statistieken lopen gewoon door.")
                     .font(.subheadline).foregroundStyle(Theme.hr)
+            } else if live, let f = recorder.lastFix {
+                TimelineView(.periodic(from: .now, by: 10)) { ctx in
+                    if ctx.date.timeIntervalSince(f) > 30 {
+                        Text("GPS-signaal kwijt sinds \(DV.clock(f)). De route gaat verder zodra er weer signaal is; het stuk ertussen wordt een rechte lijn.")
+                            .font(.subheadline).foregroundStyle(Theme.zones[3].color)
+                    }
+                }
             }
             if p.count > 1 {
                 map(p)
@@ -468,8 +475,13 @@ struct RouteCard: View {
     private func grid(_ p: [RoutePoint]) -> some View {
         let dist = live ? recorder.distance : Route.distance(p)
         let secs = (activity.end ?? Date()).timeIntervalSince(activity.start)
-        let kmh = secs > 0 ? dist / secs * 3.6 : 0
-        let pace = dist > 0 ? secs / (dist / 1000) : 0
+        // Snelheid en tempo over de tijd dat de GPS liep: bij een automatisch herkende activiteit start
+        // de GPS later dan het (teruggerekende) begin, en die tijd zonder route mag niet meetellen.
+        let gpsFrom = max(activity.start.timeIntervalSince1970, p[0].t)
+        let gpsTo = live ? Date().timeIntervalSince1970 : min(activity.effectiveEnd.timeIntervalSince1970, p[p.count - 1].t)
+        let moveSecs = max(0, gpsTo - gpsFrom)
+        let kmh = moveSecs > 0 ? dist / moveSecs * 3.6 : 0
+        let pace = dist > 0 ? moveSecs / (dist / 1000) : 0
         let hrs = hr.filter { $0.0 >= activity.start && $0.0 <= activity.effectiveEnd }.map(\.1)
         // Hoogtemeters: gladgestreken hoogte, alleen stijgingen > 1 m
         var climb = 0.0, ref = p[0].alt

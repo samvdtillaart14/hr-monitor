@@ -34,7 +34,7 @@ enum UserProfile {
     }
 
     /// Berekende rust-HR, of de standaard zolang er nog geen nacht is gemeten.
-    static var restHr: Double { measuredRestHr ?? Calibration.standard.profile.restingHr }
+    static var restHr: Double { measuredRestHr ?? (importedCalibration ?? .standard).profile.restingHr }
 
     /// Rust-HR uit de nachten: mediaan van de rust-HR per nacht (laagste stabiele hartslag tijdens diepe slaap).
     static func updateRestHr(from nights: [Double]) {
@@ -44,11 +44,47 @@ enum UserProfile {
         d.set(m.rounded(), forKey: restHrAutoKey)
     }
 
+    static let weightKey = "profile.weight", heightKey = "profile.height"
+
+    // MARK: kalibratie uit de Whoop-export (whoop-calibration.json)
+
+    /// Opgeslagen in Documenten (niet in de openbare repo).
+    static var calibrationURL: URL { Recorder.folder.appendingPathComponent("calibration.json") }
+    private static var cachedCal: Calibration?
+    private static var cacheLoaded = false
+
+    /// Geïmporteerde kalibratie, of nil.
+    static var importedCalibration: Calibration? {
+        if !cacheLoaded {
+            cachedCal = try? Calibration.load(from: calibrationURL)
+            cacheLoaded = true
+        }
+        return cachedCal
+    }
+
+    /// Leest en bewaart een kalibratiebestand; gooit een fout als het geen geldige kalibratie is.
+    static func importCalibration(from url: URL) throws {
+        let secured = url.startAccessingSecurityScopedResource()
+        defer { if secured { url.stopAccessingSecurityScopedResource() } }
+        let data = try Data(contentsOf: url)
+        let cal = try Calibration.decodeLenient(data)
+        try data.write(to: calibrationURL, options: .atomic)
+        cachedCal = cal; cacheLoaded = true
+    }
+
+    static func removeCalibration() {
+        try? FileManager.default.removeItem(at: calibrationURL)
+        cachedCal = nil; cacheLoaded = true
+    }
+
     /// Kalibratie voor de scores-module met jouw profiel erin.
     static func calibration() -> Calibration {
-        var c = Calibration.standard
+        var c = importedCalibration ?? Calibration.standard
         if let age { c.profile.age = age }
         if d.object(forKey: "profile.male") != nil { c.profile.male = d.bool(forKey: "profile.male") }
+        let w = d.double(forKey: weightKey), h = d.double(forKey: heightKey)
+        if w >= 30 && w <= 250 { c.profile.weightKg = w }
+        if h >= 120 && h <= 230 { c.profile.heightCm = h }
         c.profile.maxHr = maxHr
         c.profile.restingHr = min(restHr, maxHr - 20)
         return c

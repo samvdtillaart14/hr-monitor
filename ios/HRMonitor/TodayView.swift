@@ -9,7 +9,7 @@ struct TodayView: View {
     @EnvironmentObject var ble: BLEManager
     @EnvironmentObject var acts: ActivityStore
     @Environment(\.scenePhase) private var phase
-    @StateObject private var scores = ScoreModel()
+    @EnvironmentObject var scores: ScoreModel
     @State private var lastCompute = Date.distantPast
     @State private var stress: [StressDetailView.Pt] = []
     @State private var measuredMin = 0
@@ -49,7 +49,8 @@ struct TodayView: View {
         }
         .onChange(of: phase) { _, p in if p == .active { recompute() } }
         // Stress hangt af van de rust-HR van de laatste nacht: opnieuw zodra de nachten klaar zijn.
-        .onReceive(scores.$nights) { n in
+        // dropFirst: de beginwaarde (nog lege lijst) zou activiteiten herkennen zonder slaap uit te sluiten.
+        .onReceive(scores.$nights.dropFirst()) { n in
             updateStress()
             // Activiteiten herkennen zodra de slaap bekend is (slaap telt nooit als activiteit).
             acts.refresh(store: store, sleep: n.map { (start: $0.r.onset - 600, end: $0.r.wake + 600) })
