@@ -9,7 +9,7 @@ private struct Fixture: Decodable {
         let disturbances: Int, hrv: Double, rhr: Double, resp: Double, skinTemp: Double, stages: String
     }
     struct Workout: Decodable { let input: [Double]; let strain: Double; let load: Double; let zoneMin: [Double] }
-    struct Rec: Decodable { let history: [NightMetrics]; let night: NightMetrics; let score: Int }
+    struct Rec: Decodable { let history: [NightMetrics]; let night: NightMetrics; let calibration: Calibration; let score: Int; let scoreDefault: Int }
     struct Need: Decodable { let debtMin: Double; let prevDayStrain: Double; let napMin: Double; let need: Double }
     struct Perf: Decodable { let asleepMin: Double; let needMin: Double; let efficiency: Double; let consistency: Double; let perf: Double }
     struct Cons: Decodable { struct N: Decodable { let onset: Double; let wake: Double }; let nights: [N]; let value: Double }
@@ -97,7 +97,8 @@ final class WhoopScoresTests: XCTestCase {
 
     func testRecoveryAndNeedMatchJS() {
         let f = Fixture.shared, r = f.expected.recovery, n = f.expected.sleepNeed
-        XCTAssertEqual(WhoopScores.recovery(r.night, history: r.history, f.calibration), r.score)
+        XCTAssertEqual(WhoopScores.recovery(r.night, history: r.history, f.calibration), r.scoreDefault)
+        XCTAssertEqual(WhoopScores.recovery(r.night, history: r.history, r.calibration), r.score)
         XCTAssertEqual(WhoopScores.sleepNeedMin(debtMin: n.debtMin, prevDayStrain: n.prevDayStrain, napMin: n.napMin, f.calibration), n.need, accuracy: 1e-9)
     }
 

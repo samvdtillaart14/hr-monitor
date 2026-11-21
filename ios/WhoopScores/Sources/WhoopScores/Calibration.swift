@@ -31,7 +31,9 @@ public struct Calibration: Codable, Equatable, Sendable {
         public var windowDays: Int = 30
         public var intercept: Double = 0.4
         public var wHrv: Double = 1.0, wRhr: Double = -0.5, wResp: Double = -0.2, wSleep: Double = 1.5, wTemp: Double = 0
-        public var sleepRef: Double = 0.85
+        /// HRV × slaapprestatie, en de slaapdelen apart (toereikendheid, efficiëntie, consistentie)
+        public var wHrvSleep: Double = 0, wSuf: Double = 0, wEff: Double = 0, wCons: Double = 0
+        public var sleepRef: Double = 0.85, sufRef: Double = 0.8, effRef: Double = 0.85, consRef: Double = 0.7
         public var baseline = Baseline()
         public var minHistory: Int = 4
     }

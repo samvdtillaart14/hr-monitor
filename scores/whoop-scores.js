@@ -16,8 +16,8 @@ export const DEFAULT_CALIBRATION = {
   },
   recovery: {
     windowDays: 30, intercept: 0.4,
-    wHrv: 1.0, wRhr: -0.5, wResp: -0.2, wSleep: 1.5, wTemp: 0.0,
-    sleepRef: 0.85,
+    wHrv: 1.0, wRhr: -0.5, wResp: -0.2, wSleep: 1.5, wTemp: 0.0, wHrvSleep: 0, wSuf: 0, wEff: 0, wCons: 0,
+    sleepRef: 0.85, sufRef: 0.8, effRef: 0.85, consRef: 0.7,
     baseline: { lnHrvMean: Math.log(60), lnHrvSd: 0.25, rhrMean: 55, rhrSd: 3, respMean: 15, respSd: 0.8, tempMean: 33.5, tempSd: 0.3 },
     minHistory: 4,
   },
@@ -317,23 +317,32 @@ export function baselineFrom(history, cal = DEFAULT_CALIBRATION) {
   const [tempMean, tempSd] = pick(col((n) => n.skinTemp), 'tempMean', 'tempSd');
   return { lnHrvMean, lnHrvSd, rhrMean, rhrSd, respMean, respSd, tempMean, tempSd };
 }
-export function recoveryFeatures(n, b) {
+/** Ontwerpvector voor het Recovery-model (zelfde volgorde als RECOVERY_WEIGHTS).
+ *  Ontbrekende slaapdelen tellen als hun referentiewaarde, dus zonder bijdrage. */
+export function recoveryDesign(n, b, r) {
   const z = (v, m, s, fl) => (Number.isFinite(v) ? (v - m) / Math.max(s, fl) : 0);
+  const frac = (v, ref) => (Number.isFinite(v) ? v / 100 : ref);
+  const zH = n.hrv > 0 ? z(Math.log(n.hrv), b.lnHrvMean, b.lnHrvSd, FLOORS.lnHrvSd) : 0;
+  const sp = frac(n.sleepPerf, r.sleepRef);
   return [
-    1,
-    n.hrv > 0 ? z(Math.log(n.hrv), b.lnHrvMean, b.lnHrvSd, FLOORS.lnHrvSd) : 0,
+    1, zH,
     z(n.rhr, b.rhrMean, b.rhrSd, FLOORS.rhrSd),
     z(n.resp, b.respMean, b.respSd, FLOORS.respSd),
-    Number.isFinite(n.sleepPerf) ? n.sleepPerf / 100 : NaN,
+    sp - r.sleepRef,
     z(n.skinTemp, b.tempMean, b.tempSd, FLOORS.tempSd),
+    zH * sp, // HRV telt zwaarder na een goede nacht (gevonden in Sams export)
+    frac(n.sufficiency, r.sufRef) - r.sufRef,
+    frac(n.efficiency, r.effRef) - r.effRef,
+    frac(n.consistency, r.consRef) - r.consRef,
   ];
 }
-/** Recovery 1–99 %. `night`: {hrv, rhr, resp, sleepPerf, skinTemp}; `history`: eerdere nachten. */
+export const RECOVERY_WEIGHTS = ['intercept', 'wHrv', 'wRhr', 'wResp', 'wSleep', 'wTemp', 'wHrvSleep', 'wSuf', 'wEff', 'wCons'];
+
+/** Recovery 1–99 %. `night`: {hrv, rhr, resp, skinTemp, sleepPerf, sufficiency, efficiency, consistency} (slaap in %);
+ *  `history`: eerdere nachten [{hrv, rhr, resp, skinTemp}]. */
 export function recovery(night, history = [], cal = DEFAULT_CALIBRATION) {
-  const r = cal.recovery, b = baselineFrom(history, cal);
-  const f = recoveryFeatures(night, b);
-  const sleep = Number.isFinite(f[4]) ? f[4] - r.sleepRef : 0;
-  const x = r.intercept + r.wHrv * f[1] + r.wRhr * f[2] + r.wResp * f[3] + r.wSleep * sleep + r.wTemp * f[5];
+  const r = cal.recovery, d = recoveryDesign(night, baselineFrom(history, cal), r);
+  const x = RECOVERY_WEIGHTS.reduce((s, k, i) => s + (r[k] ?? 0) * d[i], 0);
   return clamp(Math.round(100 * sigmoid(x)), 1, 99);
 }
 

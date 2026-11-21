@@ -1,5 +1,5 @@
 // Kalibratie: fit de parameters van whoop-scores.js op een Whoop-data-export.
-import { DEFAULT_CALIBRATION, recoveryFeatures, loadFromZoneMinutes, strainFromLoad, percentile } from './whoop-scores.js';
+import { DEFAULT_CALIBRATION, recoveryDesign, RECOVERY_WEIGHTS, loadFromZoneMinutes, strainFromLoad, percentile } from './whoop-scores.js';
 
 // ---------- CSV ----------
 export function parseCSV(text) {
@@ -30,7 +30,13 @@ export function col(row, ...names) {
   return NaN;
 }
 const str = (row, name) => { const k = Object.keys(row).find((x) => x.toLowerCase().startsWith(name.toLowerCase())); return k ? row[k] : ''; };
-const time = (s) => (s ? Date.parse(s.replace(' ', 'T')) : NaN);
+/** Tijd uit de export (lokale tijd) als ms; met de kolom 'Cycle timezone' (bv. UTC+01:00) wordt het echte UTC. */
+const time = (s, tz = '') => {
+  if (!s) return NaN;
+  const m = /([+-]\d\d:\d\d)/.exec(tz || '');
+  return Date.parse(s.replace(' ', 'T') + (m ? m[1] : 'Z'));
+};
+const tzOf = (r) => str(r, 'Cycle timezone');
 const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
 const sd = (a) => { const m = mean(a); return Math.sqrt(a.reduce((s, v) => s + (v - m) ** 2, 0) / Math.max(1, a.length - 1)); };
 const rmse = (p, y) => Math.sqrt(mean(p.map((v, i) => (v - y[i]) ** 2)));
@@ -70,12 +76,13 @@ export function nelderMead(f, x0, { step = 0.5, iters = 2000, tol = 1e-10 } = {}
 // ---------- exportbestanden inlezen ----------
 export function readCycles(rows) {
   return rows.map((r) => ({
-    start: time(str(r, 'Cycle start time')), recovery: col(r, 'Recovery score'),
+    start: time(str(r, 'Cycle start time'), tzOf(r)), recovery: col(r, 'Recovery score'),
     rhr: col(r, 'Resting heart rate'), hrv: col(r, 'Heart rate variability'), skinTemp: col(r, 'Skin temp'),
     spo2: col(r, 'Blood oxygen'), dayStrain: col(r, 'Day Strain'), maxHr: col(r, 'Max HR'),
     resp: col(r, 'Respiratory rate'), sleepPerf: col(r, 'Sleep performance'),
     asleep: col(r, 'Asleep duration'), need: col(r, 'Sleep need'), debt: col(r, 'Sleep debt'),
-    deep: col(r, 'Deep (SWS) duration', 'Deep'), rem: col(r, 'REM duration'), wakeOnset: time(str(r, 'Wake onset')),
+    efficiency: col(r, 'Sleep efficiency'), consistency: col(r, 'Sleep consistency'),
+    deep: col(r, 'Deep (SWS) duration', 'Deep'), rem: col(r, 'REM duration'), wakeOnset: time(str(r, 'Wake onset'), tzOf(r)),
   })).filter((c) => Number.isFinite(c.start)).sort((a, b) => a.start - b.start);
 }
 export function readWorkouts(rows) {
@@ -86,16 +93,16 @@ export function readWorkouts(rows) {
 }
 export function readSleeps(rows) {
   return rows.map((r) => ({
-    cycleStart: time(str(r, 'Cycle start time')), nap: /true|yes|1/i.test(str(r, 'Nap')),
+    cycleStart: time(str(r, 'Cycle start time'), tzOf(r)), onset: time(str(r, 'Sleep onset'), tzOf(r)), wake: time(str(r, 'Wake onset'), tzOf(r)), inBed: col(r, 'In bed duration'), resp: col(r, 'Respiratory rate'), nap: /true|yes|1/i.test(str(r, 'Nap')),
     asleep: col(r, 'Asleep duration'), need: col(r, 'Sleep need'), debt: col(r, 'Sleep debt'), perf: col(r, 'Sleep performance'),
     efficiency: col(r, 'Sleep efficiency'), consistency: col(r, 'Sleep consistency'),
     light: col(r, 'Light sleep'), deep: col(r, 'Deep (SWS)', 'Deep'), rem: col(r, 'REM duration'), awake: col(r, 'Awake duration'),
-  })).filter((s) => !s.nap && s.asleep > 0);
+  })).filter((s) => !s.nap && s.asleep > 0).sort((a, b) => a.cycleStart - b.cycleStart); // export staat nieuwste eerst
 }
 
 // ---------- fits ----------
 const logit = (p) => Math.log(p / (1 - p));
-function recoveryRows(cycles, W, minN) {
+function recoveryRows(cycles, W, minN, refs) {
   const out = [];
   const valid = cycles.filter((c) => c.hrv > 0 && Number.isFinite(c.rhr));
   for (let i = 0; i < valid.length; i++) {
@@ -103,11 +110,11 @@ function recoveryRows(cycles, W, minN) {
     if (!Number.isFinite(c.recovery)) continue;
     const h = valid.slice(Math.max(0, i - W), i);
     if (h.length < minN) continue;
-    const b = baselineOf(h);
-    out.push({ x: recoveryFeatures(c, b), y: c.recovery, b });
+    out.push({ x: recoveryDesign(withSufficiency(c), baselineOf(h), refs), y: c.recovery });
   }
   return out;
 }
+const withSufficiency = (c) => ({ ...c, sufficiency: c.need > 0 && c.asleep > 0 ? Math.min(100, (100 * c.asleep) / c.need) : NaN });
 export function baselineOf(h) {
   const v = (f) => h.map(f).filter(Number.isFinite);
   const ms = (a, dm, ds) => (a.length >= 2 ? [mean(a), sd(a)] : [dm, ds]);
@@ -118,39 +125,37 @@ export function baselineOf(h) {
   const [tempMean, tempSd] = ms(v((c) => c.skinTemp), D.tempMean, D.tempSd);
   return { lnHrvMean, lnHrvSd, rhrMean, rhrSd, respMean, respSd, tempMean, tempSd };
 }
-function fitRecoveryRows(rows, sleepRef) {
-  const X = rows.map((r) => { const x = r.x.slice(); x[4] = Number.isFinite(x[4]) ? x[4] - sleepRef : 0; return x; });
-  const y = rows.map((r) => logit(Math.min(0.99, Math.max(0.01, r.y / 100))));
-  return ridge(X, y);
-}
-const predictRec = (w, x, sleepRef) => {
-  const s = Number.isFinite(x[4]) ? x[4] - sleepRef : 0;
-  const v = w[0] + w[1] * x[1] + w[2] * x[2] + w[3] * x[3] + w[4] * s + w[5] * x[5];
-  return Math.min(99, Math.max(1, Math.round(100 / (1 + Math.exp(-v)))));
-};
+const fitRows = (rows) => ridge(rows.map((r) => r.x), rows.map((r) => logit(Math.min(0.99, Math.max(0.01, r.y / 100)))));
+const predictRec = (w, x) => Math.min(99, Math.max(1, Math.round(100 / (1 + Math.exp(-x.reduce((s, v, i) => s + w[i] * v, 0))))));
 
 export function fitRecovery(cycles) {
-  const sleepRef = DEFAULT_CALIBRATION.recovery.sleepRef;
+  // referenties = gemiddelden, zodat ontbrekende slaapdelen neutraal uitvallen
+  const avg = (f, d) => { const v = cycles.map(f).filter(Number.isFinite); return v.length ? mean(v) / 100 : d; };
+  const D = DEFAULT_CALIBRATION.recovery;
+  const refs = {
+    sleepRef: avg((c) => c.sleepPerf, D.sleepRef), sufRef: avg((c) => withSufficiency(c).sufficiency, D.sufRef),
+    effRef: avg((c) => c.efficiency, D.effRef), consRef: avg((c) => c.consistency, D.consRef),
+  };
   let best = null;
   for (const W of [7, 14, 21, 30, 60]) {
-    const rows = recoveryRows(cycles, W, Math.min(W, 5));
+    const rows = recoveryRows(cycles, W, Math.min(W, 5), refs);
     if (rows.length < 12) continue;
     const cut = rows.length >= 40 ? Math.floor(rows.length * 0.8) : rows.length;
-    const w = fitRecoveryRows(rows.slice(0, cut), sleepRef);
+    const w = fitRows(rows.slice(0, cut));
     const test = cut < rows.length ? rows.slice(cut) : rows;
-    const err = rmse(test.map((r) => predictRec(w, r.x, sleepRef)), test.map((r) => r.y));
+    const err = rmse(test.map((r) => predictRec(w, r.x)), test.map((r) => r.y));
     if (!best || err < best.err) best = { W, err, n: rows.length, holdout: cut < rows.length };
   }
   if (!best) return null;
-  const rows = recoveryRows(cycles, best.W, Math.min(best.W, 5));
-  const w = fitRecoveryRows(rows, sleepRef);
+  const rows = recoveryRows(cycles, best.W, Math.min(best.W, 5), refs);
+  const w = fitRows(rows);
   const valid = cycles.filter((c) => c.hrv > 0 && Number.isFinite(c.rhr));
   return {
     params: {
-      windowDays: best.W, intercept: w[0], wHrv: w[1], wRhr: w[2], wResp: w[3], wSleep: w[4], wTemp: w[5], sleepRef,
+      windowDays: best.W, ...Object.fromEntries(RECOVERY_WEIGHTS.map((k, i) => [k, w[i]])), ...refs,
       baseline: baselineOf(valid.slice(-best.W)), minHistory: 4,
     },
-    stats: { n: rows.length, rmseInSample: rmse(rows.map((r) => predictRec(w, r.x, sleepRef)), rows.map((r) => r.y)), rmseHoldout: best.holdout ? best.err : null },
+    stats: { n: rows.length, rmseInSample: rmse(rows.map((r) => predictRec(w, r.x)), rows.map((r) => r.y)), rmseHoldout: best.holdout ? best.err : null },
   };
 }
 

@@ -36,8 +36,12 @@ public struct StrainResult: Sendable { public var strain: Double; public var loa
 /// Nachtwaarden voor Recovery en de basislijn.
 public struct NightMetrics: Codable, Sendable {
     public var hrv: Double?, rhr: Double?, resp: Double?, sleepPerf: Double?, skinTemp: Double?
-    public init(hrv: Double? = nil, rhr: Double? = nil, resp: Double? = nil, sleepPerf: Double? = nil, skinTemp: Double? = nil) {
+    /// slaapdelen in %
+    public var sufficiency: Double?, efficiency: Double?, consistency: Double?
+    public init(hrv: Double? = nil, rhr: Double? = nil, resp: Double? = nil, sleepPerf: Double? = nil, skinTemp: Double? = nil,
+                sufficiency: Double? = nil, efficiency: Double? = nil, consistency: Double? = nil) {
         self.hrv = hrv; self.rhr = rhr; self.resp = resp; self.sleepPerf = sleepPerf; self.skinTemp = skinTemp
+        self.sufficiency = sufficiency; self.efficiency = efficiency; self.consistency = consistency
     }
 }
 
@@ -363,8 +367,13 @@ public enum WhoopScores {
         let zR = z(night.rhr, b.rhrMean, b.rhrSd, floors.rhrSd)
         let zP = z(night.resp, b.respMean, b.respSd, floors.respSd)
         let zT = z(night.skinTemp, b.tempMean, b.tempSd, floors.tempSd)
-        let sleep = night.sleepPerf.map { $0.isFinite ? $0 / 100 - r.sleepRef : 0 } ?? 0
-        let x = r.intercept + r.wHrv * zH + r.wRhr * zR + r.wResp * zP + r.wSleep * sleep + r.wTemp * zT
+        func frac(_ v: Double?, _ ref: Double) -> Double { v.flatMap { $0.isFinite ? $0 / 100 : nil } ?? ref }
+        let sp = frac(night.sleepPerf, r.sleepRef)
+        let x = r.intercept + r.wHrv * zH + r.wRhr * zR + r.wResp * zP + r.wSleep * (sp - r.sleepRef) + r.wTemp * zT
+            + r.wHrvSleep * zH * sp
+            + r.wSuf * (frac(night.sufficiency, r.sufRef) - r.sufRef)
+            + r.wEff * (frac(night.efficiency, r.effRef) - r.effRef)
+            + r.wCons * (frac(night.consistency, r.consRef) - r.consRef)
         return Int(M.clamp((100 * M.sigmoid(x)).rounded(), 1, 99))
     }
 

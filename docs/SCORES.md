@@ -16,7 +16,7 @@ Gebaseerd op Whoop's eigen uitleg; de vorm van de formules is een eigen keuze, d
 | **Slaapbehoefte** | basis + k·slaapschuld + k·(strain gisteren − 10) − dutjes. | alle drie de coëfficiënten |
 | **Slaapprestatie** | c0 + c1·toereikendheid (geslapen/behoefte) + c2·efficiëntie + c3·consistentie, zoals Whoop sinds 2023. | c0…c3 |
 | **Consistentie** | Gemiddelde overlap (doorsnede/vereniging op de 24-uursklok) van vannacht met elk van de 3 nachten ervoor. | – |
-| **Recovery** | Logistisch model op z-scores t.o.v. je eigen basislijn: ln HRV, rust-HR, ademfrequentie, huidtemp, plus slaapprestatie. | gewichten + venster (7–60 dagen) |
+| **Recovery** | Logistisch model op z-scores t.o.v. je eigen basislijn (ln HRV, rust-HR, ademfrequentie, huidtemp), slaapprestatie, de slaapdelen apart (toereikendheid, efficiëntie, consistentie) en de interactie HRV × slaapprestatie. | gewichten + venster (7–60 dagen) |
 | **SpO₂** | Ratio-of-ratios, pas bruikbaar als de ruwe optische data gedecodeerd is. | – |
 
 Recovery is het best te benaderen: `physiological_cycles.csv` bevat Whoop's eigen invoer én uitkomst, dus het model wordt direct op Whoop's functie gefit. Hoe dicht we uiteindelijk zitten, hangt dan vooral af van hoe goed onze HRV en rust-HR die van Whoop volgen; daarvoor dienen de correcties.
@@ -30,9 +30,9 @@ Fout van ons model t.o.v. Whoop, met Whoop's eigen invoerwaarden:
 | Slaapprestatie | 5,7 %-punt (alleen geslapen/behoefte: 7,6) |
 | Slaapbehoefte | 19 min |
 | Consistentie (eigen formule, zonder fit) | 9,6 %-punt, r = 0,89 |
-| Recovery | 10,2 %-punt (holdout laatste 20 %: 9,5) |
+| Recovery | 8,3 %-punt (holdout laatste 20 %: 7,2) |
 
-Recovery blijft steken rond 10 punten, ook met andere basislijnen (7–120 dagen, exponentieel, rangorde) en extra invoer (strain, slaapschuld, fases). Whoop gebruikt dus informatie die niet in de export staat. HRV weegt verreweg het zwaarst (r = 0,73 met de 30-dagen-z-score); rust-HR en ademfrequentie dragen in Sams data nauwelijks bij.
+Recovery: het belangrijkste inzicht is de interactie HRV × slaapprestatie. Een hoge HRV telt bij Whoop pas echt mee na een goede nacht. Daarmee zakt de fout van 10,2 naar 8,3 punten (holdout van 9,5 naar 7,2). Daarnaast weegt de toereikendheid (geslapen/behoefte) zwaar. Rust-HR en ademfrequentie dragen in Sams data nauwelijks bij. Andere basislijnen (7–120 dagen, exponentieel, rangorde) en extra invoer (strain, slaapschuld, fases) hielpen niet.
 
 De kalibratie zelf staat niet in deze (openbare) repo; `whoop-calibration*.json` staat in `.gitignore`.
 
@@ -40,7 +40,8 @@ De kalibratie zelf staat niet in deze (openbare) repo; `whoop-calibration*.json`
 1. Whoop-app → Profiel → App Settings → Data Export; zip uitpakken.
 2. `node scores/calibrate.mjs <export-map> > whoop-calibration.json` (het rapport met de fitfout gaat naar stderr).
 3. Na een paar eigen nachten: `node scores/analyze.mjs whoop_historie_….csv whoop-calibration.json` per nacht. Verzamel de `eigen-nachten.csv`-regels en kalibreer opnieuw met `node scores/calibrate.mjs <export-map> eigen-nachten.csv`. Dat voegt per meetwaarde een lineaire correctie toe naar de Whoop-waarde.
-4. In de app: `try Calibration.load(from: url)`; in JS: `JSON.parse(...)` als laatste argument.
+4. Eén nacht naast Whoop zetten: `node scores/compare.mjs whoop_historie_….csv <export-map> whoop-calibration.json`. Dat geeft een tabel met slaaptijden, fases, HRV, rust-HR, ademfrequentie, prestatie en Recovery, eigen tegenover Whoop. De export moet van ná die nacht zijn.
+5. In de app: `try Calibration.load(from: url)`; in JS: `JSON.parse(...)` als laatste argument.
 
 ## Tests
 - JS: `cd scores && node --test test/*.test.mjs`
