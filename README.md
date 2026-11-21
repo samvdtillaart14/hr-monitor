@@ -1,4 +1,4 @@
-# Whoop BLE Reader
+# HR Monitor
 
 Web Bluetooth-app (één HTML-bestand) die rechtstreeks verbindt met een BLE-apparaat, zoals een Whoop-band, en de ruwe data uitleest.
 
