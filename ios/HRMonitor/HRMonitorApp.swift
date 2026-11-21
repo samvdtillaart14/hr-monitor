@@ -5,6 +5,7 @@ import Charts
 struct HRMonitorApp: App {
     @StateObject private var ble = BLEManager()
     @StateObject private var store = DayStore()
+    @StateObject private var acts = ActivityStore()
     var body: some Scene {
         WindowGroup {
             TabView {
@@ -12,8 +13,12 @@ struct HRMonitorApp: App {
                 ContentView().tabItem { Label("Live", systemImage: "heart.fill") }
                 HealthTab().tabItem { Label("Gezondheid", systemImage: "heart.text.square.fill") }
             }
-                .onAppear { ble.store = store }
+                .onAppear {
+                    ble.store = store
+                    store.onLive = { [weak acts] in acts?.live(hr: $0) }
+                }
                 .environmentObject(store)
+                .environmentObject(acts)
                 .environmentObject(ble)
                 .environmentObject(ble.recorder)
                 .environmentObject(ble.raw)
