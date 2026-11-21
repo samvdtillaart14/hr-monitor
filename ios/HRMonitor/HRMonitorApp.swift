@@ -5,6 +5,7 @@ import Charts
 struct HRMonitorApp: App {
     @StateObject private var ble = BLEManager()
     @StateObject private var store = DayStore()
+    @StateObject private var acts = ActivityStore()
     var body: some Scene {
         WindowGroup {
             TabView {
@@ -14,6 +15,7 @@ struct HRMonitorApp: App {
             }
                 .onAppear { ble.store = store }
                 .environmentObject(store)
+                .environmentObject(acts)
                 .environmentObject(ble)
                 .environmentObject(ble.recorder)
                 .environmentObject(ble.raw)

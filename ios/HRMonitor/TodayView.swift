@@ -7,6 +7,7 @@ import Charts
 struct TodayView: View {
     @EnvironmentObject var store: DayStore
     @EnvironmentObject var ble: BLEManager
+    @EnvironmentObject var acts: ActivityStore
     @Environment(\.scenePhase) private var phase
     @StateObject private var scores = ScoreModel()
     @State private var lastCompute = Date.distantPast
@@ -23,6 +24,7 @@ struct TodayView: View {
                 VStack(spacing: Theme.gap) {
                     header
                     rings.padding(.vertical, 8)
+                    ActivitiesCard(scores: scores)
                     HStack(spacing: Theme.gap) {
                         NavigationLink { HealthMonitorView(model: scores) } label: { healthTile }
                         NavigationLink { StressDetailView(model: scores) } label: { stressTile }
@@ -47,7 +49,11 @@ struct TodayView: View {
         }
         .onChange(of: phase) { _, p in if p == .active { recompute() } }
         // Stress hangt af van de rust-HR van de laatste nacht: opnieuw zodra de nachten klaar zijn.
-        .onReceive(scores.$nights) { _ in updateStress() }
+        .onReceive(scores.$nights) { n in
+            updateStress()
+            // Activiteiten herkennen zodra de slaap bekend is (slaap telt nooit als activiteit).
+            acts.refresh(store: store, sleep: n.map { (start: $0.r.onset - 600, end: $0.r.wake + 600) })
+        }
     }
 
     private func recompute() {
