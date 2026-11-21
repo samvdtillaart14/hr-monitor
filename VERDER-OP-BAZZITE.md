@@ -39,9 +39,8 @@ idevicedevmodectl list   # toont of devmode aan/uit staat
 idevicedevmodectl reveal # maakt de schakelaar zichtbaar in Instellingen
 ```
 3. Op de iPhone: *Instellingen → Privacy en beveiliging → Ontwikkelaarsmodus* → aan → **Herstart** → na het opstarten **Zet aan** + code.
-4. Daarna kan dit op Windows of Bazzite: HR Monitor openen.
+4. Terug naar Windows en HR Monitor openen.
    - Staat HR Monitor nog niet op de iPhone: AltStore → *My Apps* → **+** → `HRMonitor.ipa`.
-   - Op Bazzite kan het ook zonder AltStore: in de container `ideviceinstaller` werkt alleen met een ondertekende ipa. Gebruik daarom op Linux **xtool** of **AltServer-Linux** om te ondertekenen en te installeren.
 
 Lukt `reveal` niet? Probeer `idevicedevmodectl enable`. Dat zet de modus direct aan en de iPhone herstart.
 
