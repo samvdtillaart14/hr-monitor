@@ -13,7 +13,10 @@ struct HRMonitorApp: App {
                 ContentView().tabItem { Label("Live", systemImage: "heart.fill") }
                 HealthTab().tabItem { Label("Gezondheid", systemImage: "heart.text.square.fill") }
             }
-                .onAppear { ble.store = store }
+                .onAppear {
+                    ble.store = store
+                    store.onLive = { [weak acts] in acts?.live(hr: $0) }
+                }
                 .environmentObject(store)
                 .environmentObject(acts)
                 .environmentObject(ble)

@@ -65,6 +65,12 @@ final class ActivityStore: ObservableObject {
         }
         // App herstart tijdens een activiteit met GPS: opname hervatten.
         if let o = ongoing, o.gps == true { route.start(o.id) }
+        pending = (UserDefaults.standard.array(forKey: Self.pendingKey) as? [[String]] ?? []).compactMap { r in
+            guard r.count == 3, let id = UUID(uuidString: r[0]), let s = Double(r[1]), let e = Double(r[2]) else { return nil }
+            return (id, s, e)
+        }
+        autoGps = UserDefaults.standard.bool(forKey: Self.autoGpsKey)
+        if autoGps { startMotion() }
     }
 
     private func save() {
@@ -89,7 +95,10 @@ final class ActivityStore: ObservableObject {
 
     func add(_ a: Activity, store: DayStore) {
         items.append(a); save()
-        if a.isOngoing && a.gps == true { route.start(a.id) }
+        if a.isOngoing && a.gps == true {
+            if autoSession != nil { stopAuto() }
+            route.start(a.id)
+        }
         Task { await self.enrich(a.id, store: store) }
     }
 
@@ -157,9 +166,11 @@ final class ActivityStore: ObservableObject {
             var newIds: [UUID] = []
             for f in found {
                 var a = Activity(type: .other, start: Date(timeIntervalSince1970: f.start), end: Date(timeIntervalSince1970: f.end), auto: true)
+                self.attachRoute(&a)
                 a.summary = WhoopScores.activitySummary(raw, start: f.start, end: f.end, c)
                 self.items.append(a); newIds.append(a.id)
             }
+            self.prunePending()
             self.save()
             self.busy = false
             for id in newIds { await self.enrich(id, store: store, guessType: true) }
@@ -191,6 +202,108 @@ final class ActivityStore: ObservableObject {
     private func set(_ id: UUID, _ f: (inout Activity) -> Void) {
         guard let i = items.firstIndex(where: { $0.id == id }) else { return }
         f(&items[i])
+    }
+
+    // MARK: automatisch GPS tijdens een activiteit
+
+    static let autoGpsKey = "activity.autoGps"
+    private static let pendingKey = "activity.autoRoutes"
+    /// GPS automatisch aanzetten zodra je hartslag verhoogd is of de iPhone hardlopen/fietsen ziet.
+    @Published var autoGps = false {
+        didSet {
+            guard autoGps != oldValue else { return }
+            UserDefaults.standard.set(autoGps, forKey: Self.autoGpsKey)
+            if autoGps { route.requestAlways(); startMotion() } else { motion.stopActivityUpdates(); if autoSession != nil { stopAuto() } }
+        }
+    }
+    /// lopende automatische GPS-opname (nog niet aan een activiteit gekoppeld)
+    @Published private(set) var autoSession: (id: UUID, start: Double)?
+    /// afgeronde automatische opnamen die nog aan een herkende activiteit gekoppeld moeten worden
+    private var pending: [(id: UUID, start: Double, end: Double)] = []
+    private var liveHr: [(t: Double, hr: Double)] = []
+    private var lastActive = 0.0
+    private var moving = false
+
+    /// Live hartslag (per seconde). Start GPS na 2 min verhoogde hartslag, stopt na 5 min rust.
+    func live(hr: Int) {
+        guard autoGps else { return }
+        let now = Date().timeIntervalSince1970
+        liveHr.append((now, Double(hr)))
+        liveHr.removeAll { $0.t < now - 120 }
+        let p = UserProfile.current
+        let v = liveHr.map(\.hr).sorted()
+        let active = v.count >= 60 && (v[v.count / 2] - p.restingHr) / max(1, p.maxHr - p.restingHr) >= ActivityDetectionParams().activeReserve
+        tick(now, active: active)
+    }
+
+    private func tick(_ now: Double, active: Bool) {
+        if active || moving { lastActive = now }
+        if autoSession == nil {
+            if (active || moving) && ongoing == nil && route.activityId == nil { startAuto(now) }
+        } else if now - lastActive > 300 {
+            stopAuto()
+        }
+    }
+
+    private func startMotion() {
+        guard CMMotionActivityManager.isActivityAvailable() else { return }
+        motion.startActivityUpdates(to: .main) { [weak self] a in
+            guard let self, let a else { return }
+            MainActor.assumeIsolated {
+                self.moving = (a.running || a.cycling) && a.confidence != .low
+                if self.autoGps { self.tick(Date().timeIntervalSince1970, active: false) }
+            }
+        }
+    }
+
+    private func startAuto(_ now: Double) {
+        let id = UUID()
+        autoSession = (id, now)
+        route.start(id)
+    }
+
+    private func stopAuto() {
+        guard let s = autoSession else { return }
+        if route.activityId == s.id { route.stop() }
+        pending.append((s.id, s.start, Date().timeIntervalSince1970))
+        autoSession = nil
+        savePending()
+        // Activiteit al herkend terwijl de opname nog liep: volledige route alsnog koppelen.
+        for i in items.indices where items[i].auto && !items[i].isOngoing {
+            let a = items[i]
+            guard a.start.timeIntervalSince1970 < Date().timeIntervalSince1970, a.effectiveEnd.timeIntervalSince1970 > s.start else { continue }
+            var b = a; attachRoute(&b); items[i] = b
+        }
+        save()
+    }
+
+    /// Koppelt een automatische GPS-opname aan een herkende activiteit (route ingekort tot de activiteit).
+    private func attachRoute(_ a: inout Activity) {
+        let s = a.start.timeIntervalSince1970, e = a.effectiveEnd.timeIntervalSince1970
+        var pts: [RoutePoint] = []
+        for p in pending where p.start < e && p.end > s { pts += Route.load(p.id) }
+        // ook een opname die nog loopt (activiteit herkend terwijl je nog bezig bent)
+        if let cur = autoSession, cur.start < e, route.activityId == cur.id { pts += route.points }
+        pts = pts.filter { $0.t >= s - 60 && $0.t <= e + 60 }.sorted { $0.t < $1.t }
+        guard pts.count > 1 else { return }
+        Route.save(pts, a.id)
+        a.gps = true
+        a.distanceM = Route.distance(pts)
+        // Snel en weinig stappen: waarschijnlijk fietsen (het type kan daarna nog door de iPhone worden bepaald)
+        let kmh = a.distanceM! / max(1, e - s) * 3.6
+        if a.type == .other { if kmh > 16 { a.type = .cycling } else if kmh > 7.5 { a.type = .running } }
+    }
+
+    /// Opnamen ouder dan een dag zonder herkende activiteit weggooien.
+    private func prunePending() {
+        let cutoff = Date().timeIntervalSince1970 - 86400
+        for p in pending where p.end < cutoff { Route.delete(p.id) }
+        pending.removeAll { $0.end < cutoff }
+        savePending()
+    }
+
+    private func savePending() {
+        UserDefaults.standard.set(pending.map { [$0.id.uuidString, String($0.start), String($0.end)] }, forKey: Self.pendingKey)
     }
 
     // MARK: iPhone-beweging (CoreMotion, laatste 7 dagen)

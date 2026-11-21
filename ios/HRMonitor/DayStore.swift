@@ -64,8 +64,12 @@ final class DayStore: ObservableObject {
         revision += 1
     }
 
+    /// Wordt aangeroepen bij elke live hartslag (voor automatisch GPS bij een activiteit).
+    var onLive: ((Int) -> Void)?
+
     func addLive(hr: Int, rr: [Int]) {
         guard hr > 0 else { return }
+        onLive?(hr)
         let t = UInt32(Date().timeIntervalSince1970)
         add(Sample(t: t, hr: hr, rr: rr))
     }

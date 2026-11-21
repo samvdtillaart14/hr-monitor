@@ -69,6 +69,13 @@ final class RouteRecorder: NSObject, ObservableObject, CLLocationManagerDelegate
         lm.pausesLocationUpdatesAutomatically = false
     }
 
+    var status: CLAuthorizationStatus { lm.authorizationStatus }
+    /// "Altijd" nodig om GPS op de achtergrond te kunnen starten (automatische activiteit).
+    func requestAlways() {
+        if lm.authorizationStatus == .notDetermined { lm.requestWhenInUseAuthorization() }
+        lm.requestAlwaysAuthorization()
+    }
+
     func start(_ id: UUID) {
         activityId = id
         points = Route.load(id)            // hervatten na herstart van de app
