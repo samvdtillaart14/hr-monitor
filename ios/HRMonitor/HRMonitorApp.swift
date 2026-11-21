@@ -4,9 +4,15 @@ import Charts
 @main
 struct HRMonitorApp: App {
     @StateObject private var ble = BLEManager()
+    @StateObject private var store = DayStore()
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            TabView {
+                TodayView().tabItem { Label("Vandaag", systemImage: "sun.max.fill") }
+                ContentView().tabItem { Label("Live", systemImage: "heart.fill") }
+            }
+                .onAppear { ble.store = store }
+                .environmentObject(store)
                 .environmentObject(ble)
                 .environmentObject(ble.recorder)
                 .environmentObject(ble.raw)

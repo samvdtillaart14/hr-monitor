@@ -54,6 +54,7 @@ final class WhoopParser: ObservableObject {
         return ~c
     }
 
+    var onRecord: ((Record) -> Void)?
     private var seen = Set<UInt32>()
     private var file: FileHandle?
     private let iso = ISO8601DateFormatter()
@@ -113,6 +114,7 @@ final class WhoopParser: ObservableObject {
             if seen.insert(t).inserted {
                 records += 1
                 write(rec)
+                onRecord?(rec)
             }
         case 0x2B where b.count >= 1244:
             imu(b)

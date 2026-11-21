@@ -44,6 +44,8 @@ final class BLEManager: NSObject, ObservableObject {
     let recorder = Recorder()
     let raw = RawLogger()
     let whoop = WhoopParser()
+    /// Dagopslag voor de scores (wordt door de app gezet).
+    var store: DayStore?
 
     /// Alle gevonden characteristics, voor de verkenner.
     struct CharInfo: Identifiable {
@@ -67,6 +69,10 @@ final class BLEManager: NSObject, ObservableObject {
 
     override init() {
         super.init()
+        whoop.onRecord = { [weak self] r in
+            guard let st = self?.store else { return }
+            MainActor.assumeIsolated { st.addRecord(r) }
+        }
         central = CBCentralManager(delegate: self, queue: .main,
                                    options: [CBCentralManagerOptionRestoreIdentifierKey: Self.restoreID,
                                              CBCentralManagerOptionShowPowerAlertKey: true])
@@ -190,6 +196,10 @@ final class BLEManager: NSObject, ObservableObject {
             if n > 0 { rmssd = (s / Double(n)).squareRoot() }
         }
         recorder.append(time: now, bpm: hr, rr: rrs, battery: battery)
+        if let st = store {
+            let rrInt = rrs.map { Int($0.rounded()) }
+            MainActor.assumeIsolated { st.addLive(hr: hr, rr: rrInt) }
+        }
     }
 }
 
