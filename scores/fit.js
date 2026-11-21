@@ -201,15 +201,27 @@ export function fitSleep(sleeps, cycles) {
     const w = ridge(X, pr.map((s) => s.perf), 1e-6);
     perf = { perfIntercept: w[0], perfSufficiency: w[1], perfEfficiency: w[2], perfConsistency: w[3], rmse: rmse(X.map((x) => Math.min(100, Math.max(0, w[0] + w[1] * x[1] + w[2] * x[2] + w[3] * x[3]))), pr.map((s) => s.perf)) };
   }
+  // slaapschuld: rasterzoeken op schuld(t) = min(cap, a·schuld(t−1) + b·tekort(t−1))
+  let debt = null;
+  const dr = sleeps.filter((s) => Number.isFinite(s.debt) && s.need > 0);
+  if (dr.length >= 8) {
+    const cap = Math.max(...dr.map((s) => s.debt));
+    for (let a = 0; a <= 1.0001; a += 0.05) for (let b = 0; b <= 1.0001; b += 0.05) {
+      const e = dr.slice(1).map((s, i) => Math.min(cap, Math.max(0, a * dr[i].debt + b * (dr[i].need - dr[i].asleep))) - s.debt);
+      const r = Math.sqrt(mean(e.map((v) => v * v)));
+      if (!debt || r < debt.rmse) debt = { debtCarry: a, debtFromDeficit: b, debtCapMin: cap, rmse: r };
+    }
+  }
   const recent = sleeps.slice(-30).filter((s) => s.asleep > 0 && Number.isFinite(s.deep) && Number.isFinite(s.rem));
   const perfErr = sleeps.filter((s) => s.need > 0 && Number.isFinite(s.perf)).map((s) => Math.min(100, (100 * s.asleep) / s.need) - s.perf);
   return {
     params: {
       ...(need ? { needBaseMin: need.needBaseMin, needPerDebtMin: need.needPerDebtMin, needPerStrainMin: need.needPerStrainMin, strainRef: ref } : {}),
       ...(perf ? { perfIntercept: perf.perfIntercept, perfSufficiency: perf.perfSufficiency, perfEfficiency: perf.perfEfficiency, perfConsistency: perf.perfConsistency } : {}),
+      ...(debt ? { debtCarry: debt.debtCarry, debtFromDeficit: debt.debtFromDeficit, debtCapMin: debt.debtCapMin } : {}),
       ...(recent.length ? { deepFrac: mean(recent.map((s) => s.deep / s.asleep)), remFrac: mean(recent.map((s) => s.rem / s.asleep)) } : {}),
     },
-    stats: { n: rows.length, needRmse: need?.rmse ?? null, sufficiencyOnlyMeanAbsErr: perfErr.length ? mean(perfErr.map(Math.abs)) : null, perfRmse: perf?.rmse ?? null },
+    stats: { n: rows.length, needRmse: need?.rmse ?? null, debtRmse: debt?.rmse ?? null, sufficiencyOnlyMeanAbsErr: perfErr.length ? mean(perfErr.map(Math.abs)) : null, perfRmse: perf?.rmse ?? null },
   };
 }
 
