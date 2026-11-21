@@ -140,22 +140,28 @@ export function fitRecovery(cycles) {
   for (const W of [7, 14, 21, 30, 60]) {
     const rows = recoveryRows(cycles, W, Math.min(W, 5), refs);
     if (rows.length < 12) continue;
-    const cut = rows.length >= 40 ? Math.floor(rows.length * 0.8) : rows.length;
-    const w = fitRows(rows.slice(0, cut));
-    const test = cut < rows.length ? rows.slice(cut) : rows;
-    const err = rmse(test.map((r) => predictRec(w, r.x)), test.map((r) => r.y));
-    if (!best || err < best.err) best = { W, err, n: rows.length, holdout: cut < rows.length };
+    // venster kiezen op 5-voudige kruisvalidatie (om-en-om verdeeld)
+    const p = [], y = [];
+    for (let k = 0; k < 5; k++) {
+      const w = fitRows(rows.filter((_, i) => i % 5 !== k));
+      rows.forEach((r, i) => { if (i % 5 === k) { p.push(predictRec(w, r.x)); y.push(r.y); } });
+    }
+    const err = rmse(p, y);
+    if (!best || err < best.err) best = { W, err };
   }
   if (!best) return null;
   const rows = recoveryRows(cycles, best.W, Math.min(best.W, 5), refs);
   const w = fitRows(rows);
+  // chronologische holdout: fit op de eerste 80 %, test op de laatste 20 %
+  const cut = Math.floor(rows.length * 0.8), wh = fitRows(rows.slice(0, cut)), test = rows.slice(cut);
+  const holdout = rows.length >= 40 ? rmse(test.map((r) => predictRec(wh, r.x)), test.map((r) => r.y)) : null;
   const valid = cycles.filter((c) => c.hrv > 0 && Number.isFinite(c.rhr));
   return {
     params: {
       windowDays: best.W, ...Object.fromEntries(RECOVERY_WEIGHTS.map((k, i) => [k, w[i]])), ...refs,
       baseline: baselineOf(valid.slice(-best.W)), minHistory: 4,
     },
-    stats: { n: rows.length, rmseInSample: rmse(rows.map((r) => predictRec(w, r.x)), rows.map((r) => r.y)), rmseHoldout: best.holdout ? best.err : null },
+    stats: { n: rows.length, rmseInSample: rmse(rows.map((r) => predictRec(w, r.x)), rows.map((r) => r.y)), rmseCv: best.err, rmseHoldout: holdout },
   };
 }
 

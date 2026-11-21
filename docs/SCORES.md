@@ -30,9 +30,9 @@ Fout van ons model t.o.v. Whoop, met Whoop's eigen invoerwaarden:
 | Slaapprestatie | 5,7 %-punt (alleen geslapen/behoefte: 7,6) |
 | Slaapbehoefte | 19 min |
 | Consistentie (eigen formule, zonder fit) | 9,6 %-punt, r = 0,89 |
-| Recovery | 8,3 %-punt (holdout laatste 20 %: 7,2) |
+| Recovery | 8,1 %-punt (kruisvalidatie; laatste 20 % als holdout: 8,9) |
 
-Recovery: het belangrijkste inzicht is de interactie HRV × slaapprestatie. Een hoge HRV telt bij Whoop pas echt mee na een goede nacht. Daarmee zakt de fout van 10,2 naar 8,3 punten (holdout van 9,5 naar 7,2). Daarnaast weegt de toereikendheid (geslapen/behoefte) zwaar. Rust-HR en ademfrequentie dragen in Sams data nauwelijks bij. Andere basislijnen (7–120 dagen, exponentieel, rangorde) en extra invoer (strain, slaapschuld, fases) hielpen niet.
+Recovery: het belangrijkste inzicht is de interactie HRV × slaapprestatie. Een hoge HRV telt bij Whoop pas echt mee na een goede nacht. Daarmee zakt de fout van 10,2 naar 8,1 punten. Het basislijnvenster komt uit op 30 dagen, gelijk aan de basislijn die de Whoop-app toont. Daarnaast weegt de toereikendheid (geslapen/behoefte) zwaar. Rust-HR en ademfrequentie dragen in Sams data nauwelijks bij. Andere basislijnen (7–120 dagen, exponentieel, rangorde) en extra invoer (strain, slaapschuld, fases) hielpen niet.
 
 De kalibratie zelf staat niet in deze (openbare) repo; `whoop-calibration*.json` staat in `.gitignore`.
 
