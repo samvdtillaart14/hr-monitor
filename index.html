@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BLE Uitlezer</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1b1f24;--mut:#667085;--line:#d9dde3;--acc:#2563eb;--ok:#16a34a;--err:#dc2626;--mono:ui-monospace,Consolas,monospace}
+@media (prefers-color-scheme:dark){:root{--bg:#111418;--card:#1a1e24;--fg:#e6e8eb;--mut:#98a2b3;--line:#2c323b;--acc:#60a5fa;--ok:#4ade80;--err:#f87171}}
+*{box-sizing:border-box}body{margin:0;font:14px/1.45 system-ui,Segoe UI,sans-serif;background:var(--bg);color:var(--fg)}
+header{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap;align-items:center;background:var(--card)}
+h1{font-size:16px;margin:0 12px 0 0}
+button,select,input{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg)}
+button{cursor:pointer}button.p{background:var(--acc);color:#fff;border-color:var(--acc)}button:disabled{opacity:.5;cursor:default}
+#st{margin-left:auto;color:var(--mut)}#st.ok{color:var(--ok)}#st.err{color:var(--err)}
+main{display:grid;grid-template-columns:minmax(320px,1fr) minmax(320px,1.2fr);gap:12px;padding:12px 16px}
+@media (max-width:900px){main{grid-template-columns:1fr}}
+section{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px;min-width:0}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);margin:0 0 8px}
+.svc{border-top:1px solid var(--line);padding:8px 0}.svc:first-child{border-top:0}
+.svc>b{font-family:var(--mono);font-size:12px}.nm{color:var(--mut);font-size:12px;margin-left:6px}
+.ch{margin:6px 0 0 10px;padding:6px;border-left:3px solid var(--line)}
+.ch code{font-family:var(--mono);font-size:12px}.props{font-size:11px;color:var(--mut)}
+.ch .row{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}.ch button{padding:2px 8px;font-size:12px}
+.ch input{padding:2px 6px;font-size:12px;font-family:var(--mono);width:140px}
+.val{font-family:var(--mono);font-size:12px;margin-top:4px;word-break:break-all}
+.on{background:var(--ok)!important;color:#fff!important;border-color:var(--ok)!important}
+#log{font-family:var(--mono);font-size:12px;height:62vh;overflow:auto;white-space:pre;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px}
+.tools{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center}
+label{font-size:12px;color:var(--mut)}
+.warn{padding:10px 16px;background:#fef3c7;color:#78350f;display:none}
+</style>
+</head>
+<body>
+<div class="warn" id="warn"></div>
+<header>
+  <h1>BLE Uitlezer</h1>
+  <input id="flt" placeholder="Naamfilter (optioneel)" size="16">
+  <input id="extra" placeholder="Extra service-UUIDs, komma-gescheiden" size="30">
+  <button class="p" id="bScan">Zoek apparaat</button>
+  <button id="bDisc" disabled>Verbreek</button>
+  <label><input type="checkbox" id="auto" checked> auto-herverbinden</label>
+  <span id="st">Niet verbonden</span>
+</header>
+<main>
+  <section>
+    <h2>Services &amp; characteristics</h2>
+    <div id="tree"><span class="nm">Nog geen apparaat.</span></div>
+  </section>
+  <section>
+    <h2>Live log</h2>
+    <div class="tools">
+      <label>Weergave</label>
+      <select id="fmt"><option value="hex">Hex</option><option value="dec">Decimaal (bytes)</option><option value="all">Hex + uint/int + ASCII</option></select>
+      <button id="bPause">Pauze</button>
+      <button id="bClr">Wis</button>
+      <button id="bCsv">Export CSV</button>
+      <button id="bJson">Export JSON</button>
+      <span id="cnt" class="nm">0 regels</span>
+    </div>
+    <div id="log"></div>
+  </section>
+</main>
+<script>
+// Bekende 16-bit UUID's (Bluetooth SIG) voor leesbare namen
+const NAMES={'1800':'Generic Access','1801':'Generic Attribute','180a':'Device Information','180f':'Battery','180d':'Heart Rate','1816':'Cycling Speed & Cadence','1818':'Cycling Power','181a':'Environmental Sensing','1809':'Health Thermometer','1810':'Blood Pressure','181d':'Weight Scale','1826':'Fitness Machine','1814':'Running Speed & Cadence','ffe0':'HM-10/CC254x seriële UART','fff0':'Vendor (fff0)','6e400001':'Nordic UART','61080001':'Whoop (eigen service, vermoedelijk)',
+'2a00':'Device Name','2a01':'Appearance','2a19':'Battery Level','2a24':'Model Number','2a25':'Serial Number','2a26':'Firmware Rev','2a27':'Hardware Rev','2a28':'Software Rev','2a29':'Manufacturer','2a37':'Heart Rate Meas.','2a5b':'CSC Measurement','2a63':'Cycling Power Meas.','2a6e':'Temperature','2a6f':'Humidity','2a6d':'Pressure','2a1c':'Temperature Meas.','2a9d':'Weight Meas.','2ad2':'Indoor Bike Data','ffe1':'HM-10 data','6e400002':'Nordic UART RX (write)','6e400003':'Nordic UART TX (notify)'};
+// Services die Chrome alleen toont als ze vooraf zijn opgegeven (optionalServices)
+const OPT=['generic_access','generic_attribute','device_information','battery_service','heart_rate','cycling_speed_and_cadence','cycling_power','environmental_sensing','health_thermometer','blood_pressure','weight_scale','fitness_machine','running_speed_and_cadence','human_interface_device','tx_power','immediate_alert','link_loss','current_time',
+0xffe0,0xffe5,0xfff0,0xffa0,0xffb0,0xffc0,0xffd0,0xfee0,0xfee7,0xfe59,0x1820,0x181c,
+'6e400001-b5a3-f393-e0a9-e50e24dcca9e','61080001-8d6d-82b8-614a-1c8cb0f8dcc6','0000ffe0-0000-1000-8000-00805f9b34fb','49535343-fe7d-4ae5-8fa9-9fafd205e455','0000fff0-0000-1000-8000-00805f9b34fb','f000aa00-0451-4000-b000-000000000000','f000ffc0-0451-4000-b000-000000000000'];
+
+const $=id=>document.getElementById(id);
+let dev=null,srv=null,log=[],paused=false,t0=0,userDisc=false;
+const short=u=>{const m=u.match(/^0000([0-9a-f]{4})-0000-1000-8000-00805f9b34fb$/);return m?m[1]:u};
+const nameOf=u=>{const s=short(u);return NAMES[s]||NAMES[u.slice(0,8)]||''};
+const st=(t,c='')=>{$('st').textContent=t;$('st').className=c};
+
+if(!navigator.bluetooth){$('warn').style.display='block';$('warn').textContent='Web Bluetooth niet beschikbaar. Gebruik Chrome of Edge op Windows/Android/macOS, via https:// of http://localhost (niet file://). Firefox/Safari ondersteunen het niet.';$('bScan').disabled=true}
+
+function bytes(dv){return new Uint8Array(dv.buffer,dv.byteOffset,dv.byteLength)}
+function hex(b){return [...b].map(x=>x.toString(16).padStart(2,'0')).join(' ')}
+function interp(dv){
+  const b=bytes(dv),o=[],n=b.length;
+  o.push('ascii="'+[...b].map(x=>x>=32&&x<127?String.fromCharCode(x):'.').join('')+'"');
+  if(n>=1)o.push('u8='+dv.getUint8(0)+' i8='+dv.getInt8(0));
+  if(n>=2)o.push('u16LE='+dv.getUint16(0,true)+' i16LE='+dv.getInt16(0,true)+' u16BE='+dv.getUint16(0,false));
+  if(n>=4)o.push('u32LE='+dv.getUint32(0,true)+' f32LE='+dv.getFloat32(0,true).toPrecision(6));
+  return o.join(' ');
+}
+// Heart Rate Measurement 0x2A37 (Bluetooth SIG): flags, HR, (energie), RR-intervallen in 1/1024 s
+function hrm(dv){let i=0;const f=dv.getUint8(i++);const hr=f&1?dv.getUint16(i,true):dv.getUint8(i);i+=f&1?2:1;
+  const o=['HR='+hr+' bpm'];if((f&6)===6)o.push('contact='+((f&2)?'ja':'nee'));
+  if(f&8){o.push('E='+dv.getUint16(i,true)+' kJ');i+=2}
+  if(f&16){const rr=[];for(;i+1<dv.byteLength;i+=2)rr.push((dv.getUint16(i,true)/1024*1000).toFixed(0));if(rr.length)o.push('RR='+rr.join(',')+' ms')}
+  return o.join(' ')}
+const DECODE={'2a37':hrm,'2a19':dv=>'batterij='+dv.getUint8(0)+' %'};
+function fmtVal(dv,uuid){const b=bytes(dv),f=$('fmt').value,dec=uuid&&DECODE[short(uuid)];
+  if(dec){try{return hex(b)+'  → '+dec(dv)}catch(e){}}
+  if(f==='hex')return hex(b);if(f==='dec')return [...b].join(' ');return hex(b)+'  | '+interp(dv)}
+
+function addLog(kind,uuid,dv,note=''){
+  const now=performance.now(),ts=new Date().toISOString(),rel=((now-t0)/1000).toFixed(3);
+  const b=dv?[...bytes(dv)]:[];
+  const e={ts,t:+rel,kind,uuid,name:uuid?nameOf(uuid):'',len:b.length,hex:hex(b),bytes:b,note};
+  log.push(e);
+  $('cnt').textContent=log.length+' regels';
+  if(paused)return;
+  const line=`${rel.padStart(9)}s ${kind.padEnd(6)} ${uuid?short(uuid):''}${e.name?' ('+e.name+')':''} ${dv?'['+b.length+'] '+fmtVal(dv,uuid):''}${note?' '+note:''}\n`;
+  const L=$('log'),atBottom=L.scrollTop+L.clientHeight>=L.scrollHeight-20;
+  L.insertAdjacentText('beforeend',line);
+  if(L.childNodes.length>4000)L.textContent=L.textContent.split('\n').slice(-3000).join('\n');
+  if(atBottom)L.scrollTop=L.scrollHeight;
+}
+
+$('bScan').onclick=async()=>{
+  try{
+    const extra=$('extra').value.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean).map(s=>/^[0-9a-f]{4}$/.test(s)?parseInt(s,16):s);
+    const f=$('flt').value.trim();
+    const opts=f?{filters:[{namePrefix:f}],optionalServices:[...OPT,...extra]}:{acceptAllDevices:true,optionalServices:[...OPT,...extra]};
+    dev=await navigator.bluetooth.requestDevice(opts);
+    dev.addEventListener('gattserverdisconnected',onDisc);
+    t0=performance.now();
+    await connect();
+  }catch(e){st(e.message,'err');addLog('FOUT','',null,e.message)}
+};
+$('bDisc').onclick=()=>{userDisc=true;dev?.gatt.disconnect()};
+
+async function connect(){
+  st('Verbinden met '+(dev.name||dev.id)+'…');
+  srv=await dev.gatt.connect();userDisc=false;
+  st('Verbonden: '+(dev.name||'(naamloos)'),'ok');$('bDisc').disabled=false;
+  addLog('INFO','',null,'verbonden met '+(dev.name||dev.id));
+  await discover();
+}
+async function onDisc(){
+  st('Verbinding verbroken','err');$('bDisc').disabled=true;addLog('INFO','',null,'verbinding verbroken');
+  if(!userDisc&&$('auto').checked){for(let i=1;i<=5;i++){await new Promise(r=>setTimeout(r,1000*i));try{await connect();return}catch(e){addLog('INFO','',null,'herverbinden poging '+i+' mislukt')}}}
+}
+
+async function discover(){
+  const tree=$('tree');tree.innerHTML='';
+  let svcs=[];
+  try{svcs=await srv.getPrimaryServices()}catch(e){tree.textContent='Geen services zichtbaar: '+e.message+'. Voeg de service-UUID toe in "Extra service-UUIDs" en zoek opnieuw.';return}
+  for(const s of svcs){
+    const d=document.createElement('div');d.className='svc';
+    d.innerHTML=`<b>${short(s.uuid)}</b><span class="nm">${nameOf(s.uuid)}</span>`;tree.append(d);
+    let chs=[];try{chs=await s.getCharacteristics()}catch(e){d.append(' (characteristics niet leesbaar: '+e.message+')');continue}
+    for(const c of chs)d.append(chRow(c));
+  }
+  addLog('INFO','',null,svcs.length+' services gevonden');
+}
+
+function chRow(c){
+  const p=c.properties,props=['read','write','writeWithoutResponse','notify','indicate'].filter(k=>p[k]);
+  const el=document.createElement('div');el.className='ch';
+  el.innerHTML=`<code>${short(c.uuid)}</code><span class="nm">${nameOf(c.uuid)}</span> <span class="props">${props.join(' · ')}</span><div class="row"></div><div class="val"></div>`;
+  const row=el.querySelector('.row'),val=el.querySelector('.val');
+  const show=dv=>val.textContent=fmtVal(dv,c.uuid);
+  if(p.read){const b=btn('Lees',async()=>{try{const v=await c.readValue();show(v);addLog('READ',c.uuid,v)}catch(e){addLog('FOUT',c.uuid,null,e.message)}});row.append(b);
+    const pb=btn('Poll',()=>{if(pb._t){clearInterval(pb._t);pb._t=0;pb.classList.remove('on');return}
+      const ms=+prompt('Interval in ms','1000')||1000;pb.classList.add('on');pb._t=setInterval(()=>b.click(),Math.max(50,ms))});row.append(pb)}
+  if(p.notify||p.indicate){let on=false;
+    const h=e=>{show(e.target.value);addLog('NOTIFY',c.uuid,e.target.value)};
+    const nb=btn(p.notify?'Notify':'Indicate',async()=>{try{
+      if(!on){c.addEventListener('characteristicvaluechanged',h);await c.startNotifications();on=true;nb.classList.add('on');addLog('INFO',c.uuid,null,'notificaties aan')}
+      else{await c.stopNotifications();c.removeEventListener('characteristicvaluechanged',h);on=false;nb.classList.remove('on');addLog('INFO',c.uuid,null,'notificaties uit')}
+    }catch(e){addLog('FOUT',c.uuid,null,e.message)}});row.append(nb)}
+  if(p.write||p.writeWithoutResponse){
+    const inp=document.createElement('input');inp.placeholder='hex bv. 01 a0 ff';
+    const asText=document.createElement('select');asText.innerHTML='<option value="h">hex</option><option value="t">tekst</option><option value="tc">tekst+CRLF</option>';
+    row.append(inp,asText,btn('Schrijf',async()=>{
+      let data;const v=inp.value;
+      if(asText.value==='h'){const h=v.replace(/0x/gi,'').replace(/[^0-9a-f]/gi,'');if(h.length%2){addLog('FOUT',c.uuid,null,'oneven aantal hex-tekens');return}data=new Uint8Array(h.match(/../g)?.map(x=>parseInt(x,16))||[])}
+      else data=new TextEncoder().encode(v+(asText.value==='tc'?'\r\n':''));
+      try{if(p.write)await c.writeValueWithResponse(data);else await c.writeValueWithoutResponse(data);addLog('WRITE',c.uuid,new DataView(data.buffer))}catch(e){addLog('FOUT',c.uuid,null,e.message)}
+    }))}
+  return el;
+}
+function btn(t,f){const b=document.createElement('button');b.textContent=t;b.onclick=f;return b}
+
+$('bPause').onclick=()=>{paused=!paused;$('bPause').textContent=paused?'Hervat':'Pauze';$('bPause').classList.toggle('on',paused)};
+$('bClr').onclick=()=>{log=[];$('log').textContent='';$('cnt').textContent='0 regels'};
+function dl(name,txt,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+const stamp=()=>new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+$('bCsv').onclick=()=>{
+  const max=Math.max(0,...log.map(e=>e.len));
+  const head=['timestamp','t_s','type','uuid','naam','len','hex','opmerking',...Array.from({length:max},(_,i)=>'b'+i)];
+  const rows=log.map(e=>[e.ts,e.t,e.kind,e.uuid,e.name,e.len,e.hex,e.note,...e.bytes].map(x=>/[;"\n]/.test(String(x))?'"'+String(x).replace(/"/g,'""')+'"':x).join(';'));
+  dl(`ble-log-${stamp()}.csv`,'﻿'+head.join(';')+'\n'+rows.join('\n'),'text/csv')};
+$('bJson').onclick=()=>dl(`ble-log-${stamp()}.json`,JSON.stringify({device:dev?{name:dev.name,id:dev.id}:null,entries:log},null,1),'application/json');
+</script>
+</body>
+</html>
