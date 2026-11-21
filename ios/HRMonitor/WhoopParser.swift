@@ -15,6 +15,9 @@ final class WhoopParser: ObservableObject {
         let time: UInt32
         let hr: Int
         let skinTemp: Double?
+        var rr: [Int] = []
+        var motion: [Float] = []
+        var temp2: Double = 0, temp3: Double = 0
     }
 
     @Published private(set) var frames = 0
@@ -98,7 +101,14 @@ final class WhoopParser: ObservableObject {
             let t = u32(b, 15)
             let hr = Int(b[22])
             let raw = Double(u16(b, 73)) / 100
-            let rec = Record(time: t, hr: hr, skinTemp: (5...45).contains(raw) ? raw : nil)
+            var rec = Record(time: t, hr: hr, skinTemp: (5...45).contains(raw) ? raw : nil)
+            // Gevonden in Sams data: RR-aantal @23, RR u16LE in ms @24+2i; 4 floats @41 (oriëntatie/beweging, |q|≈1 in rust);
+            // u16 @69 en @71 / 10 ≈ 29–31 °C (extra temperaturen, voorlopig).
+            let n = min(Int(b[23]), 4)
+            rec.rr = (0..<n).map { u16(b, 24 + 2 * $0) }
+            rec.motion = (0..<4).map { Float(bitPattern: u32(b, 41 + 4 * $0)) }
+            rec.temp2 = Double(u16(b, 69)) / 10
+            rec.temp3 = Double(u16(b, 71)) / 10
             lastRecord = rec
             if seen.insert(t).inserted {
                 records += 1
@@ -144,13 +154,16 @@ final class WhoopParser: ObservableObject {
         if file == nil {
             let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd_HH-mm-ss"
             let url = Recorder.folder.appendingPathComponent("whoop_historie_\(df.string(from: Date())).csv")
-            FileManager.default.createFile(atPath: url.path, contents: Data("tijd;hr_bpm;huidtemp_c\n".utf8))
+            FileManager.default.createFile(atPath: url.path, contents: Data("tijd;hr_bpm;huidtemp_c;rr_ms;q0;q1;q2;q3;temp2_c;temp3_c\n".utf8))
             file = try? FileHandle(forWritingTo: url)
             file?.seekToEndOfFile()
         }
         let t = iso.string(from: Date(timeIntervalSince1970: TimeInterval(r.time)))
         let temp = r.skinTemp.map { String(format: "%.2f", $0).replacingOccurrences(of: ".", with: ",") } ?? ""
-        file?.write(Data("\(t);\(r.hr);\(temp)\n".utf8))
+        let nl = { (d: Double) in String(format: "%.3f", d).replacingOccurrences(of: ".", with: ",") }
+        let q = r.motion.map { nl(Double($0)) }.joined(separator: ";")
+        let rr = r.rr.map(String.init).joined(separator: " ")
+        file?.write(Data("\(t);\(r.hr);\(temp);\(rr);\(q);\(nl(r.temp2));\(nl(r.temp3))\n".utf8))
     }
 
     func reset() {
