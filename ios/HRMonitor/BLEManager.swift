@@ -42,6 +42,20 @@ final class BLEManager: NSObject, ObservableObject {
     @Published var sessionStart: Date?
 
     let recorder = Recorder()
+    let raw = RawLogger()
+
+    /// Alle gevonden characteristics, voor de verkenner.
+    struct CharInfo: Identifiable {
+        var id: String { service + "/" + uuid }
+        let service: String
+        let uuid: String
+        let props: String
+        var notifying = false
+        var last = ""
+        var count = 0
+    }
+    @Published var chars: [CharInfo] = []
+    private var charRefs: [String: CBCharacteristic] = [:]
 
     private var central: CBCentralManager!
     private var peripheral: CBPeripheral?
@@ -88,6 +102,21 @@ final class BLEManager: NSObject, ObservableObject {
         // connect() verloopt niet: iOS verbindt zodra de band in bereik is, ook op de achtergrond.
         central.connect(p, options: nil)
     }
+
+    /// Schrijft hex-bytes naar een characteristic (voor commando's aan de band).
+    func write(hex: String, to id: String) -> String? {
+        guard let ch = charRefs[id], let p = peripheral else { return "Characteristic niet gevonden" }
+        let clean = hex.replacingOccurrences(of: "0x", with: "").filter(\.isHexDigit)
+        guard clean.count % 2 == 0, !clean.isEmpty else { return "Oneven of leeg aantal hex-tekens" }
+        var bytes = [UInt8](); var i = clean.startIndex
+        while i < clean.endIndex { let j = clean.index(i, offsetBy: 2); bytes.append(UInt8(clean[i..<j], radix: 16)!); i = j }
+        let type: CBCharacteristicWriteType = ch.properties.contains(.write) ? .withResponse : .withoutResponse
+        p.writeValue(Data(bytes), for: ch, type: type)
+        raw.log(service: ch.service?.uuid.uuidString ?? "", char: ch.uuid.uuidString, kind: "WRITE", data: Data(bytes))
+        return nil
+    }
+
+    func read(_ id: String) { if let ch = charRefs[id] { peripheral?.readValue(for: ch) } }
 
     func disconnect() {
         userDisconnected = true
@@ -188,7 +217,8 @@ extension BLEManager: CBCentralManagerDelegate {
         state = .connected
         deviceName = p.name
         if sessionStart == nil { sessionStart = Date() }
-        p.discoverServices([Self.hrService, Self.batteryService])
+        chars = []; charRefs = [:]
+        p.discoverServices(nil)
     }
 
     func centralManager(_ c: CBCentralManager, didFailToConnect p: CBPeripheral, error: Error?) {
@@ -206,19 +236,43 @@ extension BLEManager: CBCentralManagerDelegate {
 extension BLEManager: CBPeripheralDelegate {
     func peripheral(_ p: CBPeripheral, didDiscoverServices error: Error?) {
         for s in p.services ?? [] {
-            p.discoverCharacteristics(s.uuid == Self.hrService ? [Self.hrMeasurement] : [Self.batteryLevel], for: s)
+            p.discoverCharacteristics(nil, for: s)
         }
     }
 
     func peripheral(_ p: CBPeripheral, didDiscoverCharacteristicsFor s: CBService, error: Error?) {
         for ch in s.characteristics ?? [] {
-            if ch.properties.contains(.notify) { p.setNotifyValue(true, for: ch) }
-            if ch.uuid == Self.batteryLevel, ch.properties.contains(.read) { p.readValue(for: ch) }
+            let pr = ch.properties
+            var names: [String] = []
+            if pr.contains(.read) { names.append("read") }
+            if pr.contains(.write) { names.append("write") }
+            if pr.contains(.writeWithoutResponse) { names.append("writeNR") }
+            if pr.contains(.notify) { names.append("notify") }
+            if pr.contains(.indicate) { names.append("indicate") }
+            let info = CharInfo(service: s.uuid.uuidString, uuid: ch.uuid.uuidString, props: names.joined(separator: " · "))
+            charRefs[info.id] = ch
+            if !chars.contains(where: { $0.id == info.id }) { chars.append(info) }
+            // Alles op notify/indicate zetten, zodat de verkenner alle data ziet.
+            if pr.contains(.notify) || pr.contains(.indicate) { p.setNotifyValue(true, for: ch) }
+            if pr.contains(.read) { p.readValue(for: ch) }
         }
+    }
+
+    func peripheral(_ p: CBPeripheral, didUpdateNotificationStateFor ch: CBCharacteristic, error: Error?) {
+        let id = (ch.service?.uuid.uuidString ?? "") + "/" + ch.uuid.uuidString
+        if let k = chars.firstIndex(where: { $0.id == id }) { chars[k].notifying = ch.isNotifying }
+        if let error { raw.log(service: ch.service?.uuid.uuidString ?? "", char: ch.uuid.uuidString, kind: "ERROR", data: Data(), note: error.localizedDescription) }
     }
 
     func peripheral(_ p: CBPeripheral, didUpdateValueFor ch: CBCharacteristic, error: Error?) {
         guard let d = ch.value else { return }
+        let sid = ch.service?.uuid.uuidString ?? ""
+        let id = sid + "/" + ch.uuid.uuidString
+        if let k = chars.firstIndex(where: { $0.id == id }) {
+            chars[k].last = d.map { String(format: "%02x", $0) }.joined(separator: " ")
+            chars[k].count += 1
+        }
+        raw.log(service: sid, char: ch.uuid.uuidString, kind: ch.isNotifying ? "NOTIFY" : "READ", data: d)
         if ch.uuid == Self.hrMeasurement { handleHR(d) }
         else if ch.uuid == Self.batteryLevel, let v = d.first { battery = Int(v) }
     }

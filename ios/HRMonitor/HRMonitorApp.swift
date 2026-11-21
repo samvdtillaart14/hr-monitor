@@ -9,6 +9,7 @@ struct HRMonitorApp: App {
             ContentView()
                 .environmentObject(ble)
                 .environmentObject(ble.recorder)
+                .environmentObject(ble.raw)
         }
     }
 }
@@ -37,6 +38,9 @@ struct ContentView: View {
             }
             .navigationTitle("HR Monitor")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    NavigationLink("Verkenner") { ExplorerView() }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink("Opnames") { FilesView() }
                 }
