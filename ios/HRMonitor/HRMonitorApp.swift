@@ -57,6 +57,7 @@ struct ContentView: View {
     @EnvironmentObject var rec: Recorder
     @EnvironmentObject var whoop: WhoopParser
     @State private var showDevices = false
+    @AppStorage(SettingsView.devKey) private var devMode = false
 
     var body: some View {
         NavigationStack {
@@ -75,7 +76,7 @@ struct ContentView: View {
                     }
                     chart
                     Card(title: "Tijd per zone", index: 8) { ZoneTime(samples: ble.samples) }
-                    recordSection
+                    if devMode || rec.isRecording { recordSection }
                 }
                 .padding()
             }
@@ -83,12 +84,14 @@ struct ContentView: View {
             .scrollContentBackground(.hidden)
             .navigationTitle("HR Monitor")
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    NavigationLink("Verkenner") { ExplorerView() }
+                if devMode {
+                    ToolbarItem(placement: .topBarLeading) {
+                        NavigationLink("Verkenner") { ExplorerView() }
+                    }
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    NavigationLink { UpdateView() } label: { Image(systemName: "arrow.down.circle") }
-                    NavigationLink("Opnames") { FilesView() }
+                    if devMode { NavigationLink("Opnames") { FilesView() } }
+                    NavigationLink { SettingsView() } label: { Image(systemName: "gearshape") }
                 }
             }
             .sheet(isPresented: $showDevices) { DeviceSheet(isPresented: $showDevices) }
