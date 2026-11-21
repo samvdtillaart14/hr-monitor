@@ -1,0 +1,54 @@
+name: iOS build
+
+on:
+  push:
+    branches: [main]
+    paths: ['ios/**', '.github/workflows/ios.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: XcodeGen installeren en project genereren
+        working-directory: ios
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Bouwen (zonder ondertekening; AltStore ondertekent met je Apple ID)
+        working-directory: ios
+        run: |
+          xcodebuild -project HRMonitor.xcodeproj -scheme HRMonitor \
+            -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+
+      - name: IPA maken
+        working-directory: ios
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/HRMonitor.app Payload/
+          zip -qry HRMonitor.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HRMonitor-ipa
+          path: ios/HRMonitor.ipa
+
+      - name: Publiceren als release 'latest'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: HR Monitor (laatste build)
+          prerelease: false
+          make_latest: true
+          files: ios/HRMonitor.ipa
+          body: |
+            Automatische build van commit ${{ github.sha }}.
+            Installeer HRMonitor.ipa met AltStore of Sideloadly; zie README.
