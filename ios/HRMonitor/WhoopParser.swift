@@ -66,6 +66,25 @@ final class WhoopParser: ObservableObject {
         UInt32(b[i]) | UInt32(b[i + 1]) << 8 | UInt32(b[i + 2]) << 16 | UInt32(b[i + 3]) << 24
     }
 
+    private var buffers: [String: [UInt8]] = [:]
+    @Published private(set) var imuFrames = 0
+    @Published private(set) var lastAccel: (Int, Int, Int)?
+
+    /// Voegt fragmenten samen: grote frames (bv. IMU, 1244 B) komen verdeeld over meerdere notificaties.
+    func handle(_ data: Data, channel: String) {
+        var buf = buffers[channel, default: []] + [UInt8](data)
+        while !buf.isEmpty {
+            if buf[0] != 0xAA { buf.removeFirst(); continue }
+            guard buf.count >= 4 else { break }
+            let total = u16(buf, 2) + 8
+            guard total >= 12, total <= 4096 else { buf.removeFirst(); badFrames += 1; continue }
+            guard buf.count >= total else { break }
+            handle(Data(buf[0..<total]))
+            buf.removeFirst(total)
+        }
+        buffers[channel] = buf
+    }
+
     func handle(_ data: Data) {
         let b = [UInt8](data)
         guard b.count >= 12, b[0] == 0xAA, b[1] == 0x01, u16(b, 2) + 8 == b.count,
@@ -85,6 +104,10 @@ final class WhoopParser: ObservableObject {
                 records += 1
                 write(rec)
             }
+        case 0x2B where b.count >= 1244:
+            imu(b)
+        case 0x2F where b[9] == 0x15 && b.count >= 1244:
+            imu(b)
         case 0x31 where b.count >= 15:
             let t = u32(b, 11)
             lastLiveTime = Date(timeIntervalSince1970: TimeInterval(t))
@@ -107,6 +130,13 @@ final class WhoopParser: ObservableObject {
         default:
             break
         }
+    }
+
+    /// R21 IMU: accel X/Y/Z i16LE @28/228/428 (+2i), aantal @24.
+    private func imu(_ b: [UInt8]) {
+        imuFrames += 1
+        let i16 = { (i: Int) in Int(Int16(bitPattern: UInt16(self.u16(b, i)))) }
+        lastAccel = (i16(28), i16(228), i16(428))
     }
 
     /// Historische records worden direct naar whoop_historie_<datum>.csv geschreven.

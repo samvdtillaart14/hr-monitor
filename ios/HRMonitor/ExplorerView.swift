@@ -55,6 +55,12 @@ struct ExplorerView: View {
                 Button("Stuur hello (veilig, alleen info)") { error = ble.sendWhoop(cmd: 0x91, body: [0x01]) }
                 Button("Realtime-hartslag aan (cmd 3)") { error = ble.sendWhoop(cmd: 3, body: [0x01]) }
                 Button("Historie opvragen (cmd 22)") { error = ble.sendWhoop(cmd: 22, body: [0x00]) }
+                Button("Bewegingsdata aan (cmd 106)") { error = ble.sendWhoop(cmd: 106, body: [0x01, 0x01]) }
+                Button("Ruwe sensordata aan (cmd 81)") { error = ble.sendWhoop(cmd: 81, body: [0x01]) }
+                Button("Ruwe sensordata uit (cmd 82)") { error = ble.sendWhoop(cmd: 82, body: [0x01]) }
+                if whoop.imuFrames > 0, let a = whoop.lastAccel {
+                    LabeledContent("IMU-frames", value: "\(whoop.imuFrames) · acc \(a.0)/\(a.1)/\(a.2)")
+                }
             } header: { Text("Whoop-decoder") } footer: {
                 Text("Historische records worden opgeslagen in whoop_historie_<datum>.csv (zie Opnames). Decodering van HR en huidtemperatuur is nog voorlopig.")
             }
