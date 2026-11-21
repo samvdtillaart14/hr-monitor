@@ -402,8 +402,15 @@ struct RouteCard: View {
         let p = pts
         VStack(alignment: .leading, spacing: Theme.gap) {
             if recorder.denied && live {
-                Text("Geen toegang tot je locatie. Zet die aan in Instellingen › HR Monitor › Locatie.")
+                Text("Geen toegang tot je locatie. Zet die aan in Instellingen › HR Monitor › Locatie. Hartslag en statistieken lopen gewoon door.")
                     .font(.subheadline).foregroundStyle(Theme.hr)
+            } else if live, let f = recorder.lastFix {
+                TimelineView(.periodic(from: .now, by: 10)) { ctx in
+                    if ctx.date.timeIntervalSince(f) > 30 {
+                        Text("GPS-signaal kwijt sinds \(DV.clock(f)). De route gaat verder zodra er weer signaal is; het stuk ertussen wordt een rechte lijn.")
+                            .font(.subheadline).foregroundStyle(Theme.zones[3].color)
+                    }
+                }
             }
             if p.count > 1 {
                 map(p)

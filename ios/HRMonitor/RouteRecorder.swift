@@ -57,14 +57,19 @@ final class RouteRecorder: NSObject, ObservableObject, CLLocationManagerDelegate
     @Published private(set) var points: [RoutePoint] = []
     @Published private(set) var distance = 0.0
     @Published private(set) var denied = false
+    /// tijd van het laatste bruikbare GPS-punt (voor "GPS-signaal kwijt" in beeld)
+    @Published private(set) var lastFix: Date?
     private let lm = CLLocationManager()
     private var unsaved = 0
+    private var lastSave = Date()
 
     override init() {
         super.init()
         lm.delegate = self
         lm.desiredAccuracy = kCLLocationAccuracyBest
-        lm.distanceFilter = 5
+        // Geen afstandsfilter: dan komt er ook bij stilstand elke seconde een punt, zodat we signaalverlies herkennen.
+        // Ruis bij stilstand filtert add() zelf weg.
+        lm.distanceFilter = kCLDistanceFilterNone
         lm.activityType = .fitness
         lm.pausesLocationUpdatesAutomatically = false
     }
@@ -86,7 +91,7 @@ final class RouteRecorder: NSObject, ObservableObject, CLLocationManagerDelegate
         activityId = id
         points = Route.load(id)            // hervatten na herstart van de app
         distance = Route.distance(points)
-        unsaved = 0
+        unsaved = 0; lastSave = Date(); lastFix = nil
         switch lm.authorizationStatus {
         case .notDetermined: lm.requestWhenInUseAuthorization()
         case .denied, .restricted: denied = true; return
@@ -120,8 +125,26 @@ final class RouteRecorder: NSObject, ObservableObject, CLLocationManagerDelegate
         MainActor.assumeIsolated {
             let s = m.authorizationStatus
             if s == .authorizedWhenInUse && wantAlways { wantAlways = false; m.requestAlwaysAuthorization() }
-            if s == .denied || s == .restricted { denied = activityId != nil } else { begin() }
+            if s == .denied || s == .restricted {
+                // Toestemming of locatievoorzieningen uitgezet tijdens een activiteit: wat er is bewaren.
+                // Hartslag, activiteit en scores lopen gewoon door; komt de toestemming terug, dan gaat de route verder.
+                denied = activityId != nil
+                persist()
+            } else { begin() }
         }
+    }
+
+    /// Fouten: `locationUnknown` is tijdelijk (tunnel, binnen) en iOS blijft zoeken; bij `denied` stopt iOS de updates.
+    nonisolated func locationManager(_ m: CLLocationManager, didFailWithError error: Error) {
+        MainActor.assumeIsolated {
+            if (error as? CLError)?.code == .denied { denied = activityId != nil; persist() }
+        }
+    }
+
+    /// Bewaart de punten tot nu toe (ook bij naar de achtergrond gaan), zodat er niets verloren gaat als iOS de app afsluit.
+    func persist() {
+        guard let id = activityId, unsaved > 0 else { return }
+        Route.save(points, id); unsaved = 0; lastSave = Date()
     }
 
     nonisolated func locationManager(_ m: CLLocationManager, didUpdateLocations locs: [CLLocation]) {
@@ -131,6 +154,7 @@ final class RouteRecorder: NSObject, ObservableObject, CLLocationManagerDelegate
     private func add(_ locs: [CLLocation]) {
         guard let id = activityId else { return }
         for l in locs where l.horizontalAccuracy > 0 && l.horizontalAccuracy <= 25 && l.timestamp.timeIntervalSinceNow > -30 {
+            lastFix = l.timestamp
             let p = RoutePoint(t: l.timestamp.timeIntervalSince1970, lat: l.coordinate.latitude, lon: l.coordinate.longitude,
                                alt: l.altitude, acc: l.horizontalAccuracy)
             if let last = points.last {
@@ -141,6 +165,7 @@ final class RouteRecorder: NSObject, ObservableObject, CLLocationManagerDelegate
             }
             points.append(p); unsaved += 1
         }
-        if unsaved >= 20 { Route.save(points, id); unsaved = 0 }
+        // Elke 20 punten of elke 30 s opslaan: bij een slecht signaal komen er weinig punten binnen.
+        if unsaved >= 20 || (unsaved > 0 && Date().timeIntervalSince(lastSave) > 30) { Route.save(points, id); unsaved = 0; lastSave = Date() }
     }
 }
