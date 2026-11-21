@@ -11,6 +11,7 @@ final class DayStore: ObservableObject {
         var rr: [Int] = []     // ms
         var motion: Float?     // beweging t.o.v. vorige seconde (0 = stil)
         var skin: Double?
+        var q: [Float]?        // 4 oriëntatie-floats (R18), voor slaapdetectie
     }
 
     @Published private(set) var revision = 0
@@ -49,6 +50,10 @@ final class DayStore: ObservableObject {
                     if !rr.isEmpty { s.rr = rr }
                     if let m = Float(p[3]) { s.motion = m }
                     if let sk = Double(p[4]) { s.skin = sk }
+                    if p.count >= 6 {
+                        let q = p[5].split(separator: " ").compactMap { Float($0) }
+                        if q.count == 4 { s.q = q }
+                    }
                     d[t] = s
                 }
                 out[k] = d
@@ -71,7 +76,8 @@ final class DayStore: ObservableObject {
             if let q = lastQ { m = zip(r.motion, q).map { abs($0 - $1) }.reduce(0, +) }
             lastQ = r.motion
         }
-        add(Sample(t: r.time, hr: r.hr, rr: r.rr, motion: m, skin: r.skinTemp))
+        let q: [Float]? = r.motion.count == 4 && r.motion.allSatisfy({ $0.isFinite }) ? r.motion : nil
+        add(Sample(t: r.time, hr: r.hr, rr: r.rr, motion: m, skin: r.skinTemp, q: q))
     }
 
     private func add(_ s: Sample) {
@@ -81,8 +87,9 @@ final class DayStore: ObservableObject {
         if !s.rr.isEmpty { cur.rr = s.rr }
         if s.motion != nil { cur.motion = s.motion }
         if s.skin != nil { cur.skin = s.skin }
+        if s.q != nil { cur.q = s.q }
         byDay[k, default: [:]][s.t] = cur
-        let line = "\(s.t);\(s.hr);\(s.rr.map(String.init).joined(separator: " "));\(s.motion.map { String($0) } ?? "");\(s.skin.map { String($0) } ?? "")\n"
+        let line = "\(s.t);\(s.hr);\(s.rr.map(String.init).joined(separator: " "));\(s.motion.map { String($0) } ?? "");\(s.skin.map { String($0) } ?? "");\(s.q.map { $0.map { String($0) }.joined(separator: " ") } ?? "")\n"
         pending[k, default: ""] += line
         scheduleFlush()
     }
