@@ -1,0 +1,10 @@
+{
+  "name": "whoop-scores",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "fixture": "node test/make-fixture.mjs",
+    "calibrate": "node calibrate.mjs"
+  }
+}
