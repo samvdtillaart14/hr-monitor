@@ -20,22 +20,26 @@ struct HRMonitorApp: App {
 struct ContentView: View {
     @EnvironmentObject var ble: BLEManager
     @EnvironmentObject var rec: Recorder
+    @EnvironmentObject var whoop: WhoopParser
     @State private var showDevices = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 14) {
+                VStack(spacing: Theme.gap) {
                     statusBar
                     HeartRing(bpm: ble.bpm).padding(.vertical, 12)
                     hrTile
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                        Tile(title: "Min / gem / max", value: mmText, unit: "", small: true)
-                        Tile(title: "RR-interval", value: ble.lastRR.map { "\(Int($0))" } ?? "--", unit: "ms")
-                        Tile(title: "HRV (RMSSD, 60 s)", value: ble.rmssd.map { "\(Int($0))" } ?? "--", unit: "ms")
-                        Tile(title: "Batterij", value: ble.battery.map(String.init) ?? "--", unit: "%")
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: Theme.gap), GridItem(.flexible())], spacing: Theme.gap) {
+                        Tile(title: "Min / gem / max", value: mmText, unit: "", small: true, index: 1)
+                        Tile(title: "RR-interval", value: ble.lastRR.map { "\(Int($0))" } ?? "--", unit: "ms", index: 2)
+                        Tile(title: "HRV (RMSSD)", value: ble.rmssd.map { "\(Int($0))" } ?? "--", unit: "ms", index: 3)
+                        Tile(title: "Huidtemp", value: whoop.lastRecord?.skinTemp.map { String(format: "%.1f", $0) } ?? "--", unit: "°C", index: 4)
+                        Tile(title: "Batterij", value: ble.battery.map(String.init) ?? "--", unit: "%", index: 5)
+                        Tile(title: "Zone", value: ble.bpm.map { Theme.zone($0).name } ?? "--", unit: "", small: true, index: 6)
                     }
                     chart
+                    Card(title: "Tijd per zone", index: 8) { ZoneTime(samples: ble.samples) }
                     recordSection
                 }
                 .padding()
@@ -98,13 +102,13 @@ struct ContentView: View {
         Card {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("CONTACT").font(Theme.label).foregroundStyle(Theme.muted)
+                    Text("CONTACT").font(Theme.label).foregroundStyle(Theme.muted).tracking(2)
                     Text(ble.contact).font(.headline)
                 }
                 Spacer()
                 if let s = ble.sessionStart {
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text("SESSIE").font(Theme.label).foregroundStyle(Theme.muted)
+                        Text("SESSIE").font(Theme.label).foregroundStyle(Theme.muted).tracking(2)
                         Text(s, style: .timer).font(.headline).monospacedDigit()
                     }
                 }
@@ -113,13 +117,14 @@ struct ContentView: View {
     }
 
     private var chart: some View {
-        Card(title: "Hartslag · laatste 5 min") {
+        let zc = ble.bpm.map { Theme.zone($0).color } ?? Theme.hr
+        return Card(title: "Hartslag · laatste 5 min", index: 7) {
             Chart(ble.samples) {
                 AreaMark(x: .value("Tijd", $0.time), y: .value("bpm", $0.bpm))
-                    .foregroundStyle(LinearGradient(colors: [Theme.hr.opacity(0.35), .clear], startPoint: .top, endPoint: .bottom))
+                    .foregroundStyle(LinearGradient(colors: [zc.opacity(0.35), .clear], startPoint: .top, endPoint: .bottom))
                     .interpolationMethod(.catmullRom)
                 LineMark(x: .value("Tijd", $0.time), y: .value("bpm", $0.bpm))
-                    .foregroundStyle(Theme.hr).lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    .foregroundStyle(zc).lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
                     .interpolationMethod(.catmullRom)
             }
             .chartYScale(domain: .automatic(includesZero: false))
@@ -151,10 +156,11 @@ struct ContentView: View {
 struct Tile: View {
     let title: String, value: String, unit: String
     var small = false
+    var index = 0
     var body: some View {
-        Card(title: title) {
+        Card(title: title, index: index) {
             HStack(alignment: .firstTextBaseline, spacing: 3) {
-                Text(value).font(Theme.number(small ? 20 : 30)).monospacedDigit()
+                Text(value).font(Theme.number(small ? 22 : 32)).monospacedDigit()
                     .lineLimit(1).minimumScaleFactor(0.6)
                     .contentTransition(.numericText()).animation(Theme.spring, value: value)
                 Text(unit).font(.footnote).foregroundStyle(Theme.muted)
