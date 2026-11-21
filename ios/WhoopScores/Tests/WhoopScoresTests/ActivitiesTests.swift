@@ -23,6 +23,14 @@ final class ActivitiesTests: XCTestCase {
         XCTAssertEqual(d[0].end, t0 + 52 * 60, accuracy: 1)
     }
 
+    func testWarmUpCounts() {
+        // 5 min opwarmen op 85 bpm (25% reserve, onder de actieve drempel) telt mee in de activiteit
+        let hr = Array(repeating: 60.0, count: 10) + Array(repeating: 85.0, count: 5) + Array(repeating: 130.0, count: 20) + Array(repeating: 60.0, count: 10)
+        let d = WhoopScores.detectActivities(series(t0, hr), cal, now: t0 + 1e5)
+        XCTAssertEqual(d.count, 1)
+        XCTAssertEqual(d[0].start, t0 + 10 * 60, accuracy: 1)
+    }
+
     func testShortBurstIgnored() {
         let hr = Array(repeating: 60.0, count: 10) + Array(repeating: 140.0, count: 8) + Array(repeating: 60.0, count: 10)
         XCTAssertTrue(WhoopScores.detectActivities(series(t0, hr), cal, now: t0 + 1e5).isEmpty)
