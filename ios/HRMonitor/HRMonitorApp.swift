@@ -11,6 +11,8 @@ struct HRMonitorApp: App {
                 .environmentObject(ble.recorder)
                 .environmentObject(ble.raw)
                 .environmentObject(ble.whoop)
+                .preferredColorScheme(.dark)
+                .tint(Theme.accent)
         }
     }
 }
@@ -23,8 +25,9 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 12) {
+                VStack(spacing: 14) {
                     statusBar
+                    HeartRing(bpm: ble.bpm).padding(.vertical, 12)
                     hrTile
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                         Tile(title: "Min / gem / max", value: mmText, unit: "", small: true)
@@ -37,6 +40,8 @@ struct ContentView: View {
                 }
                 .padding()
             }
+            .background(Theme.bg.ignoresSafeArea())
+            .scrollContentBackground(.hidden)
             .navigationTitle("HR Monitor")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -58,6 +63,7 @@ struct ContentView: View {
     private var statusBar: some View {
         HStack {
             Circle().fill(statusColor).frame(width: 10, height: 10)
+                .shadow(color: statusColor, radius: ble.state == .connected ? 6 : 0)
             Text(statusText).font(.subheadline)
             Spacer()
             if ble.state == .connected || ble.state == .connecting {
@@ -89,42 +95,38 @@ struct ContentView: View {
     }
 
     private var hrTile: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading) {
-                Text("HARTSLAG").font(.caption).foregroundStyle(.secondary)
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(ble.bpm.map(String.init) ?? "--")
-                        .font(.system(size: 80, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.red).monospacedDigit()
-                        .contentTransition(.numericText())
-                    Text("bpm").foregroundStyle(.secondary)
+        Card {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("CONTACT").font(Theme.label).foregroundStyle(Theme.muted)
+                    Text(ble.contact).font(.headline)
                 }
-            }
-            Spacer()
-            VStack(alignment: .trailing) {
-                Text("CONTACT").font(.caption).foregroundStyle(.secondary)
-                Text(ble.contact)
+                Spacer()
                 if let s = ble.sessionStart {
-                    Text("SESSIE").font(.caption).foregroundStyle(.secondary).padding(.top, 4)
-                    Text(s, style: .timer).monospacedDigit()
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("SESSIE").font(Theme.label).foregroundStyle(Theme.muted)
+                        Text(s, style: .timer).font(.headline).monospacedDigit()
+                    }
                 }
             }
         }
-        .padding().background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
-        .animation(.default, value: ble.bpm)
     }
 
     private var chart: some View {
-        VStack(alignment: .leading) {
-            Text("HARTSLAG, LAATSTE 5 MIN").font(.caption).foregroundStyle(.secondary)
+        Card(title: "Hartslag · laatste 5 min") {
             Chart(ble.samples) {
+                AreaMark(x: .value("Tijd", $0.time), y: .value("bpm", $0.bpm))
+                    .foregroundStyle(LinearGradient(colors: [Theme.hr.opacity(0.35), .clear], startPoint: .top, endPoint: .bottom))
+                    .interpolationMethod(.catmullRom)
                 LineMark(x: .value("Tijd", $0.time), y: .value("bpm", $0.bpm))
-                    .foregroundStyle(.red).interpolationMethod(.monotone)
+                    .foregroundStyle(Theme.hr).lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    .interpolationMethod(.catmullRom)
             }
             .chartYScale(domain: .automatic(includesZero: false))
-            .frame(height: 200)
+            .chartXAxis(.hidden)
+            .frame(height: 180)
+            .animation(.easeInOut(duration: 0.6), value: ble.samples.count)
         }
-        .padding().background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
     }
 
     private var recordSection: some View {
@@ -136,7 +138,8 @@ struct ContentView: View {
                       systemImage: rec.isRecording ? "stop.circle.fill" : "record.circle")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent).tint(rec.isRecording ? .gray : .red).controlSize(.large)
+            .buttonStyle(.borderedProminent).tint(rec.isRecording ? Theme.cardHi : Theme.hr).controlSize(.large)
+            .clipShape(Capsule())
             if rec.isRecording {
                 Text("\(rec.rows) metingen opgeslagen · loopt door met scherm uit").font(.footnote).foregroundStyle(.secondary)
             }
@@ -149,16 +152,14 @@ struct Tile: View {
     let title: String, value: String, unit: String
     var small = false
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title.uppercased()).font(.caption).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.7)
+        Card(title: title) {
             HStack(alignment: .firstTextBaseline, spacing: 3) {
-                Text(value).font(.system(size: small ? 20 : 28, weight: .semibold, design: .rounded)).monospacedDigit()
+                Text(value).font(Theme.number(small ? 20 : 30)).monospacedDigit()
                     .lineLimit(1).minimumScaleFactor(0.6)
-                Text(unit).font(.footnote).foregroundStyle(.secondary)
+                    .contentTransition(.numericText()).animation(Theme.spring, value: value)
+                Text(unit).font(.footnote).foregroundStyle(Theme.muted)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding().background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
     }
 }
 
