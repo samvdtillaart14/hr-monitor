@@ -3,11 +3,16 @@ options:
   bundleIdPrefix: nl.samvdtillaart
   deploymentTarget:
     iOS: "17.0"
+packages:
+  WhoopScores:
+    path: WhoopScores
 targets:
   HRMonitor:
     type: application
     platform: iOS
     sources: [HRMonitor]
+    dependencies:
+      - package: WhoopScores
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: nl.samvdtillaart.hrmonitor

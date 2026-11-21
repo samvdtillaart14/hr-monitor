@@ -2,3 +2,5 @@ ios/HRMonitor.xcodeproj/
 ios/build/
 ios/Payload/
 ios/*.ipa
+ios/WhoopScores/.build/
+whoop-calibration*.json
