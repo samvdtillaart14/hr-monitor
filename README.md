@@ -10,7 +10,7 @@ Web Bluetooth-app (één HTML-bestand) die rechtstreeks verbindt met een BLE-app
 - Export naar CSV (`;`-gescheiden) en JSON
 
 ## Gebruik
-Web Bluetooth werkt alleen in Chrome of Edge, via https of `http://localhost` (niet via `file://`).
+Web Bluetooth werkt in Chrome of Edge (Windows, macOS, Android), via https of `http://localhost` (niet via `file://`). Op iPhone/iPad werkt geen enkele browser; gebruik daar de app **Bluefy – Web BLE Browser** (App Store).
 
 - **Online:** via GitHub Pages (Settings → Pages → branch `main`).
 - **Lokaal:** start `start-server.bat` (vereist Python) en open `http://localhost:8000/index.html`.

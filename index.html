@@ -76,7 +76,7 @@ const short=u=>{const m=u.match(/^0000([0-9a-f]{4})-0000-1000-8000-00805f9b34fb$
 const nameOf=u=>{const s=short(u);return NAMES[s]||NAMES[u.slice(0,8)]||''};
 const st=(t,c='')=>{$('st').textContent=t;$('st').className=c};
 
-if(!navigator.bluetooth){$('warn').style.display='block';$('warn').textContent='Web Bluetooth niet beschikbaar. Gebruik Chrome of Edge op Windows/Android/macOS, via https:// of http://localhost (niet file://). Firefox/Safari ondersteunen het niet.';$('bScan').disabled=true}
+if(!navigator.bluetooth){$('warn').style.display='block';$('warn').textContent='Web Bluetooth niet beschikbaar. iPhone/iPad: open deze pagina in de gratis app Bluefy (App Store), want Safari en Chrome op iOS ondersteunen het niet. Pc/Android: gebruik Chrome of Edge via https:// of http://localhost (niet file://).';$('bScan').disabled=true}
 
 function bytes(dv){return new Uint8Array(dv.buffer,dv.byteOffset,dv.byteLength)}
 function hex(b){return [...b].map(x=>x.toString(16).padStart(2,'0')).join(' ')}
