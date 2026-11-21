@@ -117,6 +117,16 @@ final class BLEManager: NSObject, ObservableObject {
         return nil
     }
 
+    /// Stuurt een Whoop-commando naar FD4B0002 (met CRC's). Alleen voor veilige, lezende commando's.
+    func sendWhoop(cmd: UInt8, body: [UInt8]) -> String? {
+        guard let p = peripheral, let ch = charRefs.first(where: { $0.key.hasPrefix("FD4B0001") && $0.key.hasSuffix("FD4B0002-CCE1-4033-93CE-002D5875F58A") })?.value
+        else { return "Whoop-service niet gevonden. Verbind eerst." }
+        let f = whoop.frame(cmd: cmd, body: body)
+        p.writeValue(f, for: ch, type: .withResponse)
+        raw.log(service: ch.service?.uuid.uuidString ?? "", char: ch.uuid.uuidString, kind: "WRITE", data: f)
+        return nil
+    }
+
     func read(_ id: String) { if let ch = charRefs[id] { peripheral?.readValue(for: ch) } }
 
     func disconnect() {

@@ -23,6 +23,30 @@ final class WhoopParser: ObservableObject {
     @Published private(set) var lastRecord: Record?
     @Published private(set) var records = 0
     @Published private(set) var lastLiveTime: Date?
+    @Published private(set) var lastResponse: String?
+    private var seq: UInt8 = 0
+
+    /// Bouwt een commandoframe (type 0x23) met geldige CRC16-header en CRC32-trailer.
+    /// Gecontroleerd tegen het bekende hello-frame AA 01 08 00 00 01 E6 71 23 01 91 01 36 3E 5C 8D.
+    func frame(cmd: UInt8, body: [UInt8]) -> Data {
+        seq &+= 1
+        var payload: [UInt8] = [0x23, seq, cmd] + body
+        while payload.count % 4 != 0 { payload.append(0) }
+        let len = payload.count + 4
+        var f: [UInt8] = [0xAA, 0x01, UInt8(len & 0xFF), UInt8(len >> 8), 0x00, 0x01]
+        let c16 = Self.crc16Modbus(f[0..<6])
+        f += [UInt8(c16 & 0xFF), UInt8(c16 >> 8)]
+        f += payload
+        let c32 = Self.crc32(payload)
+        f += [UInt8(c32 & 0xFF), UInt8((c32 >> 8) & 0xFF), UInt8((c32 >> 16) & 0xFF), UInt8(c32 >> 24)]
+        return Data(f)
+    }
+
+    static func crc32(_ b: [UInt8]) -> UInt32 {
+        var c: UInt32 = 0xFFFFFFFF
+        for x in b { c ^= UInt32(x); for _ in 0..<8 { c = (c & 1) != 0 ? (c >> 1) ^ 0xEDB88320 : c >> 1 } }
+        return ~c
+    }
 
     private var seen = Set<UInt32>()
     private var file: FileHandle?
@@ -61,6 +85,9 @@ final class WhoopParser: ObservableObject {
         case 0x31 where b.count >= 15:
             let t = u32(b, 11)
             lastLiveTime = Date(timeIntervalSince1970: TimeInterval(t))
+        case 0x24 where b.count >= 13:
+            let res = ["mislukt", "ok", "bezig", "niet ondersteund"]
+            lastResponse = "cmd \(b[10]) → " + (Int(b[12]) < res.count ? res[Int(b[12])] : "code \(b[12])")
         default:
             break
         }

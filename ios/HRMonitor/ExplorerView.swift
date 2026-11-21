@@ -43,6 +43,10 @@ struct ExplorerView: View {
                 ForEach(whoop.typeCounts.keys.sorted(), id: \.self) { k in
                     LabeledContent(String(format: "Type 0x%02X", k), value: "\(whoop.typeCounts[k] ?? 0)")
                 }
+                if let r = whoop.lastResponse { LabeledContent("Laatste antwoord", value: r) }
+                Button("Stuur hello (veilig, alleen info)") { error = ble.sendWhoop(cmd: 0x91, body: [0x01]) }
+                Button("Realtime-hartslag aan (cmd 3)") { error = ble.sendWhoop(cmd: 3, body: [0x01]) }
+                Button("Historie opvragen (cmd 22)") { error = ble.sendWhoop(cmd: 22, body: [0x00]) }
             } header: { Text("Whoop-decoder") } footer: {
                 Text("Historische records worden opgeslagen in whoop_historie_<datum>.csv (zie Opnames). Decodering van HR en huidtemperatuur is nog voorlopig.")
             }
