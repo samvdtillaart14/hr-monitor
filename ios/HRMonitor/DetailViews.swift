@@ -394,7 +394,7 @@ struct SleepDetailView: View {
                     GeometryReader { g in ZStack(alignment: .leading) { Capsule().fill(Theme.line); Capsule().fill(c).frame(width: max(6, g.size.width * Double(m) / Double(tot))) } }.frame(height: 10)
                 }
             }
-            Text("Eigen maat: hartslag boven je rust-HR van die nacht (8 bpm = 1 punt).").font(.caption).foregroundStyle(Theme.muted)
+            Text("Slaapstress uit de scores-module: hartslag en HRV per minuut t.o.v. je eigen basislijn.").font(.caption).foregroundStyle(Theme.muted)
         }
     }
 
@@ -501,7 +501,7 @@ struct StrainDetailView: View {
                           color: { _ in Theme.zones[4].color }, label: { DV.hm($0) })
                 TrendCard(title: "Energie (geschat, kcal)", points: model.days.map { ($0.date, $0.kcal) },
                           color: { _ in Theme.zones[3].color }, label: { "\(Int($0))" })
-                Text("Belasting en zones: scores-module (HR-reserve, gekalibreerd). Energie: formule van Keytel op hartslag met een standaardprofiel (75 kg, 30 jaar); een schatting.")
+                Text("Belasting en zones: scores-module (HR-reserve, gekalibreerd). Energie: Mifflin (rust) plus Keytel (hartslag) met je leeftijd en geslacht uit het profiel en standaard 75 kg / 180 cm; een schatting.")
                     .font(.caption).foregroundStyle(Theme.muted)
             }
         }

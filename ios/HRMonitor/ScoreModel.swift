@@ -17,9 +17,7 @@ struct Night: Identifiable {
     var onset: Date { Date(timeIntervalSince1970: r.onset) }
     var wake: Date { Date(timeIntervalSince1970: r.wake) }
     var restorativeMin: Int { r.deepMin + r.remMin }
-    var highStressPct: Double {
-        let t = stressMin.reduce(0, +); return t > 0 ? 100 * Double(stressMin[2]) / Double(t) : 0
-    }
+    var highStressPct: Double { r.highStressPct.isFinite ? r.highStressPct : 0 }
     func stageTime(_ k: Int) -> Date { Date(timeIntervalSince1970: r.onset + Double(k) * 60) }
 }
 
@@ -61,8 +59,12 @@ final class ScoreModel: ObservableObject {
             let day = store.samples(day: d).map(Self.convert)
             input.append((d, night, day))
         }
+        var cal = Calibration.standard
+        let birth = UserDefaults.standard.double(forKey: "profile.birth")
+        if birth > 0 { cal.profile.age = (Date().timeIntervalSince1970 - birth) / 31_557_600 }
+        if UserDefaults.standard.object(forKey: "profile.male") != nil { cal.profile.male = UserDefaults.standard.bool(forKey: "profile.male") }
         Task {
-            let (n, dl) = await Task.detached(priority: .utility) { Self.compute(input) }.value
+            let (n, dl) = await Task.detached(priority: .utility) { Self.compute(input, cal) }.value
             self.nights = n; self.days = dl; self.busy = false
         }
     }
@@ -73,21 +75,7 @@ final class ScoreModel: ObservableObject {
 
     nonisolated static func fin(_ v: Double) -> Double? { v.isFinite ? v : nil }
 
-    /// Energie (kcal) uit hartslag; formule van Keytel e.a. (2005), standaardprofiel man 75 kg, 30 jaar.
-    /// In rust: ~1,2 kcal/min (ruststofwisseling). Een schatting, geen meting.
-    nonisolated static func kcal(_ samples: [Sample]) -> Double {
-        var k = 0.0
-        for i in samples.indices where samples[i].hr > 0 {
-            let dt = i + 1 < samples.count ? min(5, samples[i + 1].t - samples[i].t) : 1
-            let hr = samples[i].hr
-            let active = (-55.0969 + 0.6309 * hr + 0.1988 * 75 + 0.2017 * 30) / 4.184
-            k += max(1.2, hr > 90 ? active : 1.2) * dt / 60
-        }
-        return k
-    }
-
-    nonisolated static func compute(_ input: [(Date, [Sample], [Sample])]) -> ([Night], [DayLoad]) {
-        let c = Calibration.standard
+    nonisolated static func compute(_ input: [(Date, [Sample], [Sample])], _ c: Calibration) -> ([Night], [DayLoad]) {
         var nights: [Night] = [], days: [DayLoad] = [], history: [NightMetrics] = []
         var prevStrain = 0.0
         let tz = Double(TimeZone.current.secondsFromGMT()) / 60
@@ -95,20 +83,19 @@ final class ScoreModel: ObservableObject {
             // Belasting van deze kalenderdag
             let st = WhoopScores.strain(dayS, c)
             var dl = DayLoad(date: date, strain: st.strain, zoneMin: st.zoneMin)
-            dl.kcal = kcal(dayS)
+            dl.kcal = WhoopScores.calories(dayS, c)
             defer { days.append(dl); prevStrain = st.strain }
 
-            guard nightS.count > 1800, let r = WhoopScores.analyzeNight(nightS, c) else { continue }
+            let base = WhoopScores.baseline(from: history, c)
+            guard nightS.count > 1800, let r = WhoopScores.analyzeNight(nightS, c, baseline: base) else { continue }
             var n = Night(date: date, r: r)
-            // Slaapbehoefte: basis + belasting van gisteren + tekort van de vorige nacht
+            // Slaapbehoefte: gezond minimum + belasting van gisteren + slaaptekort (scores-module)
             if let p = nights.last, date.timeIntervalSince(p.date) < 2 * 86400 {
-                n.debtMin = max(0, p.needMin - Double(p.r.asleepMin))
+                n.debtMin = WhoopScores.sleepDebt(prevDebtMin: p.debtMin, prevNeedMin: p.needMin, prevAsleepMin: Double(p.r.asleepMin), c)
             }
             let naps = Double(r.naps.reduce(0) { $0 + $1.minutes })
-            n.needBase = c.sleep.needBaseMin
-            n.needStrain = c.sleep.needPerStrainMin * max(0, prevStrain - c.sleep.strainRef)
-            n.needDebt = c.sleep.needPerDebtMin * n.debtMin
-            n.needMin = WhoopScores.sleepNeedMin(debtMin: n.debtMin, prevDayStrain: prevStrain, napMin: naps, c)
+            let parts = WhoopScores.sleepNeedParts(debtMin: n.debtMin, prevDayStrain: prevStrain, napMin: naps, c)
+            n.needBase = parts.healthy; n.needStrain = parts.strain; n.needDebt = parts.debt; n.needMin = parts.total
             n.sufficiency = WhoopScores.sleepSufficiency(asleepMin: Double(r.asleepMin), needMin: n.needMin)
             n.efficiency = r.efficiency
             let windows = nights.map { (onset: $0.r.onset, wake: $0.r.wake) } + [(onset: r.onset, wake: r.wake)]
@@ -123,17 +110,14 @@ final class ScoreModel: ObservableObject {
                 let k = Int(s.t / 60); perMin[k, default: (0, 0)].0 += s.hr; perMin[k, default: (0, 0)].1 += 1
             }
             n.hr = perMin.keys.sorted().map { k in (Date(timeIntervalSince1970: Double(k * 60)), perMin[k]!.0 / Double(perMin[k]!.1)) }
-            // Stress: HR boven de rust-HR van de nacht; 8 bpm erboven = 1 punt.
-            let rhr = fin(r.rhr) ?? (n.hr.map(\.1).min() ?? 55)
-            var b5: [Int: (Double, Int)] = [:]
-            for (t, h) in n.hr {
-                let k = Int(t.timeIntervalSince1970 / 300)
-                b5[k, default: (0, 0)].0 += max(0, min(3, (h - rhr) / 8)); b5[k, default: (0, 0)].1 += 1
+            // Slaapstress uit de scores-module: per minuut in bed, hier per 5 min gemiddeld voor de grafiek.
+            var k = 0
+            while k < r.stress.count {
+                let chunk = r.stress[k..<min(r.stress.count, k + 5)].filter { $0.isFinite }
+                if !chunk.isEmpty { n.stress.append((Date(timeIntervalSince1970: r.onset + Double(k) * 60), chunk.reduce(0, +) / Double(chunk.count))) }
+                k += 5
             }
-            n.stress = b5.keys.sorted().map { k in (Date(timeIntervalSince1970: Double(k * 300)), b5[k]!.0 / Double(b5[k]!.1)) }
-            for (t, v) in n.stress where t.timeIntervalSince1970 >= r.onset && t.timeIntervalSince1970 < r.wake {
-                n.stressMin[v >= 2 ? 2 : v >= 1 ? 1 : 0] += 5
-            }
+            n.stressMin = [r.stressMin.low, r.stressMin.medium, r.stressMin.high]
 
             n.metrics = NightMetrics(hrv: fin(r.hrv), rhr: fin(r.rhr), resp: fin(r.resp), sleepPerf: n.performance,
                                      skinTemp: fin(r.skinTemp), sufficiency: n.sufficiency, efficiency: r.efficiency,
