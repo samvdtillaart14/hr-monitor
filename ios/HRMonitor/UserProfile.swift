@@ -1,11 +1,12 @@
 import Foundation
 import WhoopScores
 
-/// Profielwaarden die je zelf invult (Profiel-scherm op het tabblad Gezondheid).
+/// Profielwaarden: max-HR vul je zelf in (Profiel-scherm op het tabblad Gezondheid), rust-HR wordt berekend.
 /// Alle berekeningen (zones, belasting, slaap, herstel, calorieën) lezen ze hier uit.
 enum UserProfile {
     static let maxHrKey = "profile.maxHr"
-    static let restHrKey = "profile.restHr"
+    /// Rust-HR berekend uit je nachten (mediaan), bijgewerkt door ScoreModel.
+    static let restHrAutoKey = "profile.restHrAuto"
 
     private static var d: UserDefaults { .standard }
 
@@ -26,10 +27,21 @@ enum UserProfile {
         return v > 0 ? v : estimatedMaxHr
     }
 
-    /// Ingevulde rust-HR (bpm), of de standaard.
-    static var restHr: Double {
-        let v = d.double(forKey: restHrKey)
-        return v > 0 ? v : Calibration.standard.profile.restingHr
+    /// Berekende rust-HR (bpm), of nil zolang er nog geen nacht is gemeten.
+    static var measuredRestHr: Double? {
+        let v = d.double(forKey: restHrAutoKey)
+        return v > 0 ? v : nil
+    }
+
+    /// Berekende rust-HR, of de standaard zolang er nog geen nacht is gemeten.
+    static var restHr: Double { measuredRestHr ?? Calibration.standard.profile.restingHr }
+
+    /// Rust-HR uit de nachten: mediaan van de rust-HR per nacht (laagste stabiele hartslag tijdens diepe slaap).
+    static func updateRestHr(from nights: [Double]) {
+        let v = nights.filter { $0.isFinite && $0 >= 30 && $0 <= 110 }.sorted()
+        guard !v.isEmpty else { return }
+        let m = v.count % 2 == 1 ? v[v.count / 2] : (v[v.count / 2 - 1] + v[v.count / 2]) / 2
+        d.set(m.rounded(), forKey: restHrAutoKey)
     }
 
     /// Kalibratie voor de scores-module met jouw profiel erin.

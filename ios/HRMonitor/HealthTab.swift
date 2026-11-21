@@ -340,9 +340,8 @@ struct ProfileSheet: View {
     @State private var strengthText = ""
     @State private var stepsText = ""
     @AppStorage(UserProfile.maxHrKey) private var maxHr: Double = 0
-    @AppStorage(UserProfile.restHrKey) private var restHr: Double = 0
+    @AppStorage(UserProfile.restHrAutoKey) private var restHrAuto: Double = 0
     @State private var maxHrText = ""
-    @State private var restHrText = ""
     /// Schatting voor de max-HR met de geboortedatum die nu in het formulier staat.
     private var estimate: Int { Int((208 - 0.7 * Date().timeIntervalSince(date) / 31_557_600).rounded()) }
     var body: some View {
@@ -356,11 +355,10 @@ struct ProfileSheet: View {
                     LabeledContent("Max-hartslag") {
                         TextField("\(estimate) (schatting)", text: $maxHrText).keyboardType(.numberPad).multilineTextAlignment(.trailing)
                     }
-                    LabeledContent("Rust-hartslag") {
-                        TextField("\(Int(Calibration.standard.profile.restingHr)) (standaard)", text: $restHrText).keyboardType(.numberPad).multilineTextAlignment(.trailing)
-                    }
+                    LabeledContent("Rust-hartslag (berekend)",
+                                   value: restHrAuto > 0 ? "\(Int(restHrAuto)) bpm" : "nog geen nacht · \(Int(Calibration.standard.profile.restingHr))")
                 } header: { Text("Hartslag") } footer: {
-                    Text("Bepaalt je hartslagzones, belasting en calorieën. Vul je hoogste gemeten hartslag in (bv. uit een maximale inspanningstest of de Whoop-app). Leeg = schatting 208 − 0,7 × leeftijd.")
+                    Text("Bepaalt je hartslagzones, belasting en calorieën. De rust-hartslag rekent de app zelf uit: de mediaan van je rust-HR over de gemeten nachten (laagste stabiele hartslag in diepe slaap). Vul je max-hartslag in: je hoogste gemeten hartslag in (bv. uit een maximale inspanningstest of de Whoop-app). Leeg = schatting 208 − 0,7 × leeftijd.")
                 }
                 Section {
                     TextField("Krachttraining, minuten per week", text: $strengthText).keyboardType(.numberPad)
@@ -374,7 +372,6 @@ struct ProfileSheet: View {
                     strength = Double(strengthText) ?? -1
                     steps = Double(stepsText) ?? -1
                     maxHr = Double(maxHrText).flatMap { (100...240).contains($0) ? $0 : nil } ?? 0
-                    restHr = Double(restHrText).flatMap { (30...110).contains($0) ? $0 : nil } ?? 0
                     dismiss()
                 }
             }
@@ -383,7 +380,6 @@ struct ProfileSheet: View {
                 if strength >= 0 { strengthText = String(Int(strength)) }
                 if steps >= 0 { stepsText = String(Int(steps)) }
                 if maxHr > 0 { maxHrText = String(Int(maxHr)) }
-                if restHr > 0 { restHrText = String(Int(restHr)) }
             }
         }
     }

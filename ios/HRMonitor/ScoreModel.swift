@@ -63,6 +63,7 @@ final class ScoreModel: ObservableObject {
         Task {
             let (n, dl) = await Task.detached(priority: .utility) { Self.compute(input, fixedCal) }.value
             self.nights = n; self.days = dl; self.busy = false
+            UserProfile.updateRestHr(from: n.compactMap { $0.metrics.rhr })
         }
     }
 
