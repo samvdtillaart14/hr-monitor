@@ -44,6 +44,7 @@ final class Recorder: ObservableObject {
     static var folder: URL { FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0] }
 
     private static let activeKey = "recorder.activeFile"
+    private static let rowsKey = "recorder.rows"
 
     /// Hervat een lopende opname als iOS de app op de achtergrond heeft afgesloten en opnieuw gestart.
     init() {
@@ -51,6 +52,7 @@ final class Recorder: ObservableObject {
             let url = Self.folder.appendingPathComponent(name)
             if FileManager.default.fileExists(atPath: url.path), let h = FileHandle.appending(to: url) {
                 handle = h; currentURL = url; isRecording = true
+                rows = UserDefaults.standard.integer(forKey: Self.rowsKey)
             } else {
                 UserDefaults.standard.removeObject(forKey: Self.activeKey)
             }
@@ -72,6 +74,7 @@ final class Recorder: ObservableObject {
         rows = 0
         isRecording = true
         UserDefaults.standard.set(url.lastPathComponent, forKey: Self.activeKey)
+        UserDefaults.standard.set(0, forKey: Self.rowsKey)
         refresh()
     }
 
@@ -94,6 +97,7 @@ final class Recorder: ObservableObject {
             return
         }
         rows += 1
+        if rows % 60 == 0 { UserDefaults.standard.set(rows, forKey: Self.rowsKey) }
     }
 
     func delete(_ url: URL) {
