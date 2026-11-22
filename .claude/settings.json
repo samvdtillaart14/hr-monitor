@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./testdata/**)",
+      "Read(./scores/test/fixtures/**)",
+      "Read(./vendor/**)"
+    ]
+  }
+}
