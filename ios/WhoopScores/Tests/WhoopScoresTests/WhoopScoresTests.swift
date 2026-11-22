@@ -193,4 +193,16 @@ final class HistoryTests: XCTestCase {
         let nap = try XCTUnwrap(WhoopScores.mainSleep(eps, periods: [120..<430, 780..<840], .standard, tzOffsetMin: 60))
         XCTAssertEqual(nap.main, 120..<430); XCTAssertEqual(nap.naps, [780..<840])
     }
+
+    func testDozingAfter8WithHigherHrOrPhoneIsNotNight() throws {
+        // 01:00–08:10 slaap (HR 55), 08:35–09:50 doezelen met HR 62: hoort niet bij de nacht.
+        let eps = (0..<1440).map { i in Epoch(t: 1795305600 + Double(i) * 60, hr: i >= 455 ? 62 : 55, hrSd: 1, move: 0, skinTemp: .nan, n: 60) }
+        let r = try XCTUnwrap(WhoopScores.mainSleep(eps, periods: [120..<430, 455..<570], .standard, tzOffsetMin: 60))
+        XCTAssertEqual(r.main, 120..<430)
+        // Zelfde HR, maar telefoon aan in de tussentijd: ook geen nacht meer.
+        let flat = (0..<1440).map { Epoch(t: 1795305600 + Double($0) * 60, hr: 55, hrSd: 1, move: 0, skinTemp: .nan, n: 60) }
+        let phone = [(flat[440].t)..<(flat[445].t)]
+        let p = try XCTUnwrap(WhoopScores.mainSleep(flat, periods: [120..<430, 455..<570], .standard, tzOffsetMin: 60, awake: phone))
+        XCTAssertEqual(p.main, 120..<430)
+    }
 }

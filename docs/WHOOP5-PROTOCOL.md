@@ -24,7 +24,7 @@ Band: WG50_r45, firmware 50.43.2.0, iOS 27 (21-11-2026). Bron voor de basis: ope
 - **0x03 realtime HR (body `01`):** resultaat ok. Daarna stuurt de band elke seconde een type-0x28-pakket.
 - **0x16 (22) historie opvragen (body `00`):** resultaat ok, body `0b`.
 - **0x17 (23) bevestiging historie:** dit verstuurt de Whoop-app. **Zelf niet versturen**, het wist mogelijk data op de band.
-- **0x42 (66) wekker zetten (experimenteel, onbevestigd op 5.0):** body `01` + u32LE Unix-tijd + 4× `00`. Bekend van de Whoop 4.0 (openbaar reverse-engineeringwerk, bv. bWanShiTong/reverse-engineering-whoop-post: `42 01 d0 36 65 66 …` = 07:00). Eén wekker tegelijk; uitlezen of wissen is niet bekend. De commandonummers 0x03/0x16/0x17 komen overeen tussen 4.0 en 5.0, daarom is 0x42 een redelijke kandidaat. HR Monitor stuurt dit alleen met de schakelaar "Wekker ook op de band" en toont het resultaat (1 = ok, 3 = niet ondersteund). **Nog te bevestigen op de eigen band.**
+- **Wekker 0x42–0x45 (66–69):** SET / GET / RUN (nu trillen) / DISABLE; GET, RUN en DISABLE met body `01` (nummers uit noop). SET met `01` + u32LE tijd + nullen werd door de 5.0 **geweigerd** (resultaat 0). HR Monitor probeert nu 4 vormen (zie `SleepPlanner.BandAlarm.setBody`) en onthoudt welke werkt; het GET-antwoord en de ruwe bytes zijn met ontwikkelaarsopties zichtbaar in de slaapplanner. **Juiste vorm nog te bevestigen.**
 - **0x22, 0x75, 0x76, 0x78, 0x8D:** worden door de Whoop-app gebruikt. 0x76 en 0x78 leveren feature-flags (tekst).
 
 ## Datapakketten

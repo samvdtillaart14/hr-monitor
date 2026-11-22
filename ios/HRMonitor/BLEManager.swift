@@ -110,8 +110,8 @@ final class BLEManager: NSObject, ObservableObject {
     private var syncStarted = Date.distantPast
     private var sync = HistorySync()
     var selfSync: Bool { UserDefaults.standard.bool(forKey: Self.selfSyncKey) }
-    /// Antwoord van de band op het wekkercommando (resultaatcode: 1 ok, 3 niet ondersteund).
-    var onAlarmResult: ((UInt8) -> Void)?
+    /// Antwoord van de band op een wekkercommando: cmd, resultaat (1 ok, 0 geweigerd, 3 onbekend), body.
+    var onAlarmResponse: ((UInt8, UInt8, [UInt8]) -> Void)?
     /// Whoop-service gevonden na (her)verbinden: moment om bv. de wekker opnieuw naar de band te sturen.
     var onWhoopReady: (() -> Void)?
 
@@ -125,6 +125,9 @@ final class BLEManager: NSObject, ObservableObject {
         whoop.onHistoryEnd = { [weak self] trim in self?.ackBurst(trim) }
         whoop.onHistoryComplete = { [weak self] in self?.syncDone() }
         whoop.onResponse = { [weak self] cmd, res in self?.handleResponse(cmd: cmd, result: res) }
+        whoop.onResponseBody = { [weak self] cmd, res, body in
+            if SleepPlanner.BandAlarm.isAlarmCommand(cmd), res != 2 { self?.onAlarmResponse?(cmd, res, body) }
+        }
         central = CBCentralManager(delegate: self, queue: .main,
                                    options: [CBCentralManagerOptionRestoreIdentifierKey: Self.restoreID,
                                              CBCentralManagerOptionShowPowerAlertKey: true])
@@ -385,14 +388,13 @@ extension BLEManager {
         }
     }
 
-    /// Zet de wekker op de band (experimenteel, zie SleepPlanner.bandAlarmCmd). nil = verstuurd.
-    func sendBandAlarm(at date: Date) -> String? {
-        let t = UInt32(max(0, min(Double(UInt32.max), date.timeIntervalSince1970)))
-        return sendFrame(cmd: SleepPlanner.bandAlarmCmd, body: SleepPlanner.bandAlarmBody(unix: t))
+    /// Stuurt een wekkercommando (SleepPlanner.BandAlarm) naar de band. nil = verstuurd.
+    func sendBandAlarm(_ cmd: UInt8, body: [UInt8]) -> String? {
+        sendFrame(cmd: cmd, body: body)
     }
 
     fileprivate func handleResponse(cmd: UInt8, result: UInt8) {
-        if cmd == SleepPlanner.bandAlarmCmd, result != 2 { onAlarmResult?(result); return }
+        if SleepPlanner.BandAlarm.isAlarmCommand(cmd) { return }   // afgehandeld via onAlarmResponse
         guard selfSync, sync.response(cmd: cmd, result: result) == .rejected else { return }
         // Ack geweigerd: andere opbouw proberen bij de volgende burst en de historie opnieuw opvragen.
         let v = UserDefaults.standard.integer(forKey: Self.ackVariantKey)

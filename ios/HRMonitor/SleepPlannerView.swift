@@ -73,6 +73,7 @@ struct SleepPlannerView: View {
     @EnvironmentObject var alarm: SleepAlarm
     @EnvironmentObject var scores: ScoreModel
     @EnvironmentObject var ble: BLEManager
+    @AppStorage(SettingsView.devKey) private var devMode = false
 
     var body: some View {
         let p = alarm.plan()
@@ -212,7 +213,6 @@ struct SleepPlannerView: View {
                 .font(.footnote)
             }
             if alarm.schedule.enabled {
-                if let s = alarm.phoneStatus { Label(s, systemImage: "iphone").font(.footnote).foregroundStyle(Theme.muted) }
                 if let s = alarm.progress { Label(s, systemImage: "waveform.path.ecg").font(.footnote).foregroundStyle(Theme.accent) }
             }
             NavigationLink { AlarmScheduleView() } label: {
@@ -225,21 +225,17 @@ struct SleepPlannerView: View {
                 }
             }
             .buttonStyle(.plain).padding(.top, 4)
-            if !SleepAlarm.hasSystemAlarm {
-                Text("Deze iPhone kan geen echte wekker vanuit een app zetten (pas vanaf iOS 26). Je krijgt een melding met geluid; die klinkt niet in stille modus of met een focus aan.")
-                    .font(.caption).foregroundStyle(Theme.zones[3].color)
-            }
             if next.rule.mode != .exact {
-                Text("Slim wekken werkt alleen als de app 's nachts met de band verbonden blijft. Valt de verbinding weg, dan gaat de wekker op de ingestelde tijd.")
+                Text("Slim wekken werkt alleen als de app 's nachts met de band verbonden blijft. Anders trilt de band op de ingestelde tijd.")
                     .font(.caption).foregroundStyle(Theme.muted)
             }
         }
     }
 
     private var bandCard: some View {
-        Card(title: "Band laten trillen · experimenteel", index: 4) {
-            Toggle(isOn: $alarm.bandHaptics) { Label("Wekker ook op de band", systemImage: "applewatch.radiowaves.left.and.right") }
-                .tint(Theme.accent)
+        Card(title: "Band", index: 4) {
+            Text("De wekker trilt op je band; de iPhone doet niets. Zet je in de Whoop-app ook een wekker, dan kan die deze overschrijven.")
+                .font(.caption).foregroundStyle(Theme.muted)
             Button {
                 alarm.testBand()
             } label: {
@@ -249,8 +245,7 @@ struct SleepPlannerView: View {
             .buttonStyle(.bordered).tint(Theme.accent)
             .disabled(ble.state != .connected)
             if let s = alarm.bandStatus { Text(s).font(.footnote).foregroundStyle(Theme.accent) }
-            Text("Het wekkercommando komt van de Whoop 4.0 en is op jouw band nog niet bevestigd. De band antwoordt met ‘ok’ of ‘niet ondersteund’; dat zie je hierboven. Een commando om de bandwekker te wissen is niet bekend: uitzetten zet hem een jaar vooruit. Zet je in de Whoop-app ook een wekker, dan kan die deze overschrijven. De iPhone-wekker blijft altijd aan als vangnet.")
-                .font(.caption).foregroundStyle(Theme.muted)
+            if devMode, let r = alarm.bandRaw { Text(r).font(.caption2.monospaced()).foregroundStyle(Theme.muted) }
         }
     }
 }

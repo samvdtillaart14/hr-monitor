@@ -160,20 +160,44 @@ public enum SleepPlanner {
         }
     }
 
-    // MARK: Wekker op de band (experimenteel)
+    // MARK: Wekker op de band
 
-    /// Commando "wekker zetten". Op de Whoop 4.0 is dit 0x42 (66) met `01` + u32 Unix-tijd (LE) + nullen
-    /// (openbaar reverse-engineeringwerk). Op de 5.0/MG is dat nog niet geverifieerd: de band antwoordt met
-    /// resultaat 1 (ok) of 3 (niet ondersteund), zo is het te controleren.
-    public static let bandAlarmCmd: UInt8 = 0x42
+    /// Wekkercommando's van de band (nummers uit openbaar werk aan het Whoop-protocol, o.a. noop).
+    /// De Whoop 5.0 weigerde `01` + tijd + 4 nullen; de app probeert daarom meerdere vormen voor SET
+    /// en onthoudt welke de band accepteert. GET leest de ingestelde wekker terug (ter controle en om de
+    /// juiste vorm te leren), RUN laat de band direct trillen, DISABLE zet de wekker uit.
+    public enum BandAlarm {
+        public static let set: UInt8 = 66, get: UInt8 = 67, run: UInt8 = 68, disable: UInt8 = 69
+        public static func isAlarmCommand(_ c: UInt8) -> Bool { (66...69).contains(c) }
+        /// Body voor GET, RUN en DISABLE.
+        public static let simpleBody: [UInt8] = [0x01]
+        public static let variantCount = 4
 
-    public static func bandAlarmBody(unix: UInt32) -> [UInt8] {
-        [0x01, UInt8(unix & 0xFF), UInt8((unix >> 8) & 0xFF), UInt8((unix >> 16) & 0xFF), UInt8(unix >> 24), 0, 0, 0, 0]
-    }
+        static func le32(_ v: UInt32) -> [UInt8] { [UInt8(v & 0xFF), UInt8((v >> 8) & 0xFF), UInt8((v >> 16) & 0xFF), UInt8(v >> 24)] }
 
-    /// Een commando om de bandwekker te wissen kennen we niet. Uitzetten = de wekker ver in de toekomst zetten.
-    public static func bandAlarmParkedTime(now: Date) -> UInt32 {
-        UInt32(now.addingTimeInterval(365 * 86400).timeIntervalSince1970)
+        /// Vormen van SET, in de volgorde waarin ze geprobeerd worden.
+        /// 0: `01` + u32 Unix-tijd + `00 00` (7 bytes, noop "Rev1")
+        /// 1: u32 Unix-tijd + 4 nullen (zonder vormbyte)
+        /// 2: `01` + u32 Unix-tijd + u32 tijdzone-offset in s (lokale tijd)
+        /// 3: `02` + u32 Unix-tijd + `00 00`
+        public static func setBody(unix: UInt32, variant: Int, tzOffsetSec: Int = 0) -> [UInt8] {
+            switch variant {
+            case 1: return le32(unix) + [0, 0, 0, 0]
+            case 2: return [0x01] + le32(unix) + le32(UInt32(bitPattern: Int32(tzOffsetSec)))
+            case 3: return [0x02] + le32(unix) + [0, 0]
+            default: return [0x01] + le32(unix) + [0, 0]
+            }
+        }
+
+        /// Unix-tijd uit een GET-antwoord: eerste plausibele u32 (2020–2100) in de body.
+        public static func parseGet(_ body: [UInt8]) -> UInt32? {
+            guard body.count >= 4 else { return nil }
+            for i in 0...(body.count - 4) {
+                let v = UInt32(body[i]) | UInt32(body[i + 1]) << 8 | UInt32(body[i + 2]) << 16 | UInt32(body[i + 3]) << 24
+                if v > 1_577_836_800 && v < 4_102_444_800 { return v }
+            }
+            return nil
+        }
     }
 
     /// "8:05" (uren:minuten).

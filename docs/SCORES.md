@@ -71,4 +71,5 @@ Stappen worden nog niet berekend: daarvoor is de IMU-data nodig.
 - **Bedtijd** = wektijd − (doel × behoefte / efficiëntie + inslaaptijd), afgerond op 5 min. Doelen: 100 / 85 / 70 %. Efficiëntie = gemiddelde van de laatste 7 nachten (anders 90 %), inslaaptijd 15 min.
 - **Ritme** = mediaan van inslapen en opstaan over de laatste 14 nachten (vanaf 3 nachten), anders de ingestelde tijden (standaard 23:30–07:30).
 - **Wekkermodi:** vaste tijd; slaapdoel (eerder zodra de geslapen tijd het doel haalt); groen herstel (eerder zodra de geschatte herstelscore ≥ 67 %). Slimme modi gaan hooguit 90 min eerder af en rekenen elke 5 min op de binnenkomende hartslag; de ingestelde tijd is altijd de laatste tijd.
-- **Wekken:** iPhone via AlarmKit (iOS 26+, klinkt ook in stille modus) of anders meldingen; band (experimenteel) via cmd 0x42, zie WHOOP5-PROTOCOL.md.
+- **Wekken:** alleen op de band. Vaste tijd via cmd 66 (de band trilt zelf); slimme modi via cmd 68 (nu trillen), met cmd 66 op de laatste tijd als vangnet. Zie WHOOP5-PROTOCOL.md.
+- **Slaapeinde:** een uitslaapblok na 08:00 hoort alleen bij de nacht als de HR daarin hooguit `extendMaxHrRise` (4) bpm boven die van de hoofdslaap ligt en de telefoon in de tussentijd niet aan was.

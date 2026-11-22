@@ -1,25 +1,21 @@
 import Foundation
 import SwiftUI
-import UserNotifications
 import WhoopScores
-#if canImport(AlarmKit)
-import AlarmKit
-#endif
 
-/// Slaapplanner en wekker. Rekent de planning voor vannacht uit (SleepPlanner in de scores-module),
-/// zet de wekker op de iPhone en, als je dat aanzet, ook op de band.
+/// Slaapplanner en wekker. Rekent de planning voor vannacht uit (SleepPlanner in de scores-module)
+/// en zet de wekker op de band; er is geen wekker op de iPhone.
 ///
-/// Hoe de wekker afgaat:
-/// - iPhone: met AlarmKit (iOS 26+) een echte wekker die ook in stille modus klinkt; anders een melding met geluid.
-/// - Band (experimenteel): cmd 0x42, bekend van de Whoop 4.0. De band zelf trilt dan op de ingestelde tijd,
-///   ook als de app slaapt. Of de 5.0 dit commando kent, laat het antwoord van de band zien.
-/// - Slimme modi (slaapdoel, groen herstel): de app rekent in het laatste anderhalf uur elke 5 minuten
-///   op de binnenkomende hartslag en laat de wekker eerder afgaan zodra het doel is gehaald.
+/// - Vaste tijd: de band krijgt de wektijd (cmd 66) en trilt zelf, ook als de app slaapt.
+/// - Slimme modi (slaapdoel, groen herstel): de band krijgt de laatste tijd als vangnet; in het laatste
+///   anderhalf uur rekent de app elke 5 minuten op de binnenkomende hartslag en laat de band direct trillen
+///   (cmd 68) zodra het doel is gehaald.
+/// - De vorm van cmd 66 op de Whoop 5.0 is niet zeker: de app probeert de vormen uit SleepPlanner.BandAlarm
+///   op volgorde en onthoudt welke de band accepteert. Na elke ok leest hij de wekker terug (cmd 67).
 @MainActor
 final class SleepAlarm: ObservableObject {
-    private static let scheduleKey = "alarm.schedule", goalKey = "alarm.goal", bandKey = "alarm.band",
+    private static let scheduleKey = "alarm.schedule", goalKey = "alarm.goal",
                        armedKey = "alarm.armed", usualBedKey = "alarm.usualBed", usualWakeKey = "alarm.usualWake",
-                       workStartKey = "alarm.workStart", bandSetKey = "alarm.bandSet"
+                       workStartKey = "alarm.workStart", variantKey = "alarm.bandVariant", bandSetKey = "alarm.bandSet"
 
     struct Armed: Codable, Equatable {
         var wake: Date
@@ -30,7 +26,6 @@ final class SleepAlarm: ObservableObject {
 
     @Published var schedule: AlarmSchedule { didSet { saveSchedule(); rearm() } }
     @Published var goal: SleepGoal { didSet { d.set(goal.rawValue, forKey: Self.goalKey); rearm() } }
-    @Published var bandHaptics: Bool { didSet { d.set(bandHaptics, forKey: Self.bandKey); bandChanged() } }
     /// Gebruikelijke bedtijd en opstaantijd (minuten na middernacht) zolang er te weinig nachten zijn.
     @Published var usualBed: Int { didSet { d.set(usualBed, forKey: Self.usualBedKey) } }
     @Published var usualWake: Int { didSet { d.set(usualWake, forKey: Self.usualWakeKey) } }
@@ -38,8 +33,9 @@ final class SleepAlarm: ObservableObject {
     @Published var workStart: Int { didSet { d.set(workStart, forKey: Self.workStartKey) } }
 
     @Published private(set) var armed: Armed?
-    @Published private(set) var phoneStatus: String?
     @Published private(set) var bandStatus: String?
+    /// Laatste antwoord van de band in bytes, voor het ontcijferen (alleen zichtbaar met ontwikkelaarsopties).
+    @Published private(set) var bandRaw: String?
     /// Tussenstand tijdens het slimme venster, bv. "Geslapen 6:40 van 7:10".
     @Published private(set) var progress: String?
 
@@ -47,6 +43,8 @@ final class SleepAlarm: ObservableObject {
     private let ble: BLEManager, store: DayStore, scores: ScoreModel
     private var lastCheck = Date.distantPast
     private var estimating = false
+    /// Tijd die als laatste met SET naar de band ging (en de vorm), wacht op antwoord.
+    private var pendingSet: (time: Date, variant: Int)?
     private var bandSentFor: Date?
 
     init(ble: BLEManager, store: DayStore, scores: ScoreModel) {
@@ -55,7 +53,6 @@ final class SleepAlarm: ObservableObject {
         s.dropExpiredOverride(now: Date())
         schedule = s
         goal = d.string(forKey: Self.goalKey).flatMap(SleepGoal.init(rawValue:)) ?? .perform
-        bandHaptics = d.bool(forKey: Self.bandKey)
         usualBed = d.object(forKey: Self.usualBedKey) as? Int ?? 23 * 60 + 30
         usualWake = d.object(forKey: Self.usualWakeKey) as? Int ?? 7 * 60 + 30
         workStart = d.object(forKey: Self.workStartKey) as? Int ?? 9 * 60
@@ -116,16 +113,18 @@ final class SleepAlarm: ObservableObject {
         let a = Armed(wake: next.date, mode: next.rule.mode, goalSleepMin: p.goalSleepMin)
         if a == armed { return }
         armed = a; saveArmed(); progress = nil
-        Task { await schedulePhone(at: a.wake, smart: false) }
-        sendBandIfWanted()
+        sendBandIfNeeded()
     }
 
     private func disarm() {
-        guard armed != nil || phoneStatus != nil else { return }
+        guard armed != nil else { return }
         armed = nil; saveArmed(); progress = nil
-        cancelPhone()
-        phoneStatus = nil
-        parkBand()
+        if d.bool(forKey: Self.bandSetKey), ble.state == .connected,
+           ble.sendBandAlarm(SleepPlanner.BandAlarm.disable, body: SleepPlanner.BandAlarm.simpleBody) == nil {
+            bandSentFor = nil
+            d.set(false, forKey: Self.bandSetKey)
+            bandStatus = "Wekker op de band uitgezet."
+        }
     }
 
     /// Aanroepen bij elke live hartslag (ook op de achtergrond). Goedkoop buiten het slimme venster.
@@ -178,114 +177,84 @@ final class SleepAlarm: ObservableObject {
         return (Double(r.asleepMin), rec)
     }
 
-    /// Wekker nu laten afgaan (slim doel gehaald).
+    /// Slim doel gehaald: de band nu laten trillen.
     private func fire() {
         guard var a = armed else { return }
         a.fired = true; armed = a; saveArmed()
-        let at = Date().addingTimeInterval(3)
-        if bandHaptics, ble.state == .connected, ble.sendBandAlarm(at: at) == nil {
-            bandSentFor = at
-            d.set(true, forKey: Self.bandSetKey)
-            bandStatus = "Slim wekken: band gevraagd te trillen om \(Self.clock(at, seconds: true))"
+        if ble.state == .connected, ble.sendBandAlarm(SleepPlanner.BandAlarm.run, body: SleepPlanner.BandAlarm.simpleBody) == nil {
+            bandStatus = "Doel gehaald: band gevraagd nu te trillen (\(Self.clock(Date(), seconds: true)))."
+        } else {
+            bandStatus = "Doel gehaald, maar de band is niet verbonden; de wekker gaat op de ingestelde tijd."
         }
-        Task { await schedulePhone(at: at, smart: true) }
     }
 
-    // MARK: iPhone
+    // MARK: band
 
-    private static let noteIDs = (0..<3).map { "alarm.wake.\($0)" }
+    private var variant: Int { d.integer(forKey: Self.variantKey) }
 
-    private func schedulePhone(at date: Date, smart: Bool) async {
-        #if canImport(AlarmKit)
-        if #available(iOS 26.0, *) {
-            if await PhoneAlarm.schedule(at: date) {
-                UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: Self.noteIDs)
-                phoneStatus = smart ? "iPhone-wekker gaat nu af (doel gehaald)" : "iPhone-wekker staat op \(Self.clock(date))"
-                return
-            }
-        }
-        #endif
-        await notify(at: date, smart: smart)
+    private func sendSet(_ time: Date, variant v: Int) -> String? {
+        let t = UInt32(max(0, min(Double(UInt32.max), time.timeIntervalSince1970)))
+        let e = ble.sendBandAlarm(SleepPlanner.BandAlarm.set,
+                                  body: SleepPlanner.BandAlarm.setBody(unix: t, variant: v, tzOffsetSec: TimeZone.current.secondsFromGMT(for: time)))
+        if e == nil { pendingSet = (time, v) }
+        return e
     }
 
-    /// Zonder AlarmKit: drie meldingen met geluid, 2 minuten na elkaar. Een melding klinkt niet in stille modus
-    /// en niet met een focus aan; daarom staat dat erbij.
-    private func notify(at date: Date, smart: Bool) async {
-        let center = UNUserNotificationCenter.current()
-        let ok = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
-        center.removePendingNotificationRequests(withIdentifiers: Self.noteIDs)
-        guard ok else { phoneStatus = "Geen toestemming voor meldingen: zet ze aan in iOS-instellingen."; return }
-        for (i, id) in Self.noteIDs.enumerated() {
-            let c = UNMutableNotificationContent()
-            c.title = smart ? "Goedemorgen, doel gehaald" : "Tijd om op te staan"
-            c.body = "Je wekker van \(Self.clock(armed?.wake ?? date))."
-            c.sound = .default
-            c.interruptionLevel = .timeSensitive
-            let t = max(1, date.timeIntervalSinceNow + Double(i) * 120)
-            try? await center.add(UNNotificationRequest(identifier: id, content: c,
-                                                        trigger: UNTimeIntervalNotificationTrigger(timeInterval: t, repeats: false)))
-        }
-        phoneStatus = "Melding om \(Self.clock(date)) (geen echte wekker: klinkt niet in stille modus)"
-    }
-
-    private func cancelPhone() {
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: Self.noteIDs)
-        #if canImport(AlarmKit)
-        if #available(iOS 26.0, *) { PhoneAlarm.cancel() }
-        #endif
-    }
-
-    /// true als de iPhone een echte wekker (AlarmKit) kan zetten.
-    static var hasSystemAlarm: Bool {
-        #if canImport(AlarmKit)
-        if #available(iOS 26.0, *) { return true }
-        #endif
-        return false
-    }
-
-    // MARK: band (experimenteel)
-
-    private func sendBandIfWanted() {
-        guard bandHaptics, let a = armed, bandSentFor != a.wake else { return }
-        guard ble.state == .connected else { bandStatus = "Band niet verbonden; wordt verstuurd zodra hij verbindt."; return }
-        if let e = ble.sendBandAlarm(at: a.wake) { bandStatus = e; return }
+    private func sendBandIfNeeded() {
+        guard let a = armed, bandSentFor != a.wake else { return }
+        guard ble.state == .connected else { bandStatus = "Band niet verbonden; de wekker wordt verstuurd zodra hij verbindt."; return }
+        if let e = sendSet(a.wake, variant: variant) { bandStatus = e; return }
         bandSentFor = a.wake
-        d.set(true, forKey: Self.bandSetKey)
         bandStatus = "Wekker \(Self.clock(a.wake)) naar de band gestuurd, wacht op antwoord…"
     }
 
     /// Na (her)verbinden opnieuw versturen: de band kan een herstart of een Whoop-sync gehad hebben.
     func bandResend() {
         bandSentFor = nil
-        if bandHaptics, armed != nil { sendBandIfWanted() }
+        if armed != nil { sendBandIfNeeded() }
     }
 
-    func bandResult(_ code: UInt8) {
-        switch code {
-        case 1: bandStatus = "Band bevestigde het commando" + (bandSentFor.map { " (\(Self.clock($0, seconds: true)))" } ?? "") + "."
-        case 3: bandStatus = "Band kent dit wekkercommando niet (niet ondersteund). De iPhone-wekker blijft werken."
-        default: bandStatus = "Band weigerde het wekkercommando (code \(code))."
+    func bandResponse(cmd: UInt8, result: UInt8, body: [UInt8]) {
+        bandRaw = "cmd \(cmd) → \(result) · " + body.prefix(16).map { String(format: "%02x", $0) }.joined(separator: " ")
+        switch cmd {
+        case SleepPlanner.BandAlarm.set:
+            guard let p = pendingSet else { return }
+            if result == 1 {
+                pendingSet = nil
+                d.set(p.variant, forKey: Self.variantKey)
+                d.set(true, forKey: Self.bandSetKey)
+                bandStatus = "Band accepteerde de wekker (\(Self.clock(p.time, seconds: true))), vorm \(p.variant)."
+                _ = ble.sendBandAlarm(SleepPlanner.BandAlarm.get, body: SleepPlanner.BandAlarm.simpleBody)
+            } else if p.variant + 1 < SleepPlanner.BandAlarm.variantCount {
+                // Geweigerd of onbekend: volgende vorm proberen.
+                _ = sendSet(p.time, variant: p.variant + 1)
+                bandStatus = "Vorm \(p.variant) geweigerd, vorm \(p.variant + 1) wordt geprobeerd…"
+            } else {
+                pendingSet = nil
+                d.set(0, forKey: Self.variantKey)
+                bandStatus = "De band weigerde alle bekende vormen van het wekkercommando. Deel de bandgegevens, dan zoek ik de juiste vorm."
+                _ = ble.sendBandAlarm(SleepPlanner.BandAlarm.get, body: SleepPlanner.BandAlarm.simpleBody)
+            }
+        case SleepPlanner.BandAlarm.get:
+            if let t = SleepPlanner.BandAlarm.parseGet(body) {
+                let date = Date(timeIntervalSince1970: Double(t))
+                bandStatus = (bandStatus.map { $0 + " " } ?? "") + "Band meldt wekker: \(date.formatted(date: .abbreviated, time: .standard))."
+            }
+        case SleepPlanner.BandAlarm.run:
+            if result != 1 { bandStatus = "Band weigerde direct trillen (code \(result)); de wekker gaat op de ingestelde tijd." }
+        default:
+            break
         }
     }
 
-    private func bandChanged() {
-        if bandHaptics { bandSentFor = nil; sendBandIfWanted() } else { parkBand(); bandStatus = nil }
-    }
-
-    /// Een wis-commando kennen we niet: zet de bandwekker een jaar vooruit.
-    private func parkBand() {
-        guard d.bool(forKey: Self.bandSetKey), ble.state == .connected else { return }
-        let t = Date(timeIntervalSince1970: Double(SleepPlanner.bandAlarmParkedTime(now: Date())))
-        if ble.sendBandAlarm(at: t) == nil { bandSentFor = nil; d.set(false, forKey: Self.bandSetKey) }
-    }
-
-    /// Test: laat de band over 30 seconden trillen.
+    /// Test: laat de band over 30 seconden trillen (probeert zo nodig alle vormen).
     func testBand() {
         let at = Date().addingTimeInterval(30)
-        if let e = ble.sendBandAlarm(at: at) { bandStatus = e; return }
-        bandSentFor = at
-        d.set(true, forKey: Self.bandSetKey)
-        bandStatus = "Test verstuurd: de band zou om \(Self.clock(at, seconds: true)) moeten trillen."
+        if let e = sendSet(at, variant: variant) { bandStatus = e; return }
+        bandSentFor = nil
+        // Daarna de echte wekker terugzetten (de band onthoudt maar één wekker).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 45) { [weak self] in self?.bandResend() }
+        bandStatus = "Test verstuurd (vorm \(variant)): de band zou om \(Self.clock(at, seconds: true)) moeten trillen."
     }
 
     // MARK: opslag en opmaak
@@ -333,45 +302,3 @@ extension SleepGoal {
         switch self { case .full: return "Volledig"; case .perform: return "Presteren"; case .minimum: return "Minimaal" }
     }
 }
-
-#if canImport(AlarmKit)
-/// Echte wekker via AlarmKit (iOS 26+): klinkt ook in stille modus en met een focus aan.
-@available(iOS 26.0, *)
-enum PhoneAlarm {
-    struct Meta: AlarmMetadata {}
-    private static let idKey = "alarm.kitID"
-
-    static func authorized() async -> Bool {
-        let m = AlarmManager.shared
-        switch m.authorizationState {
-        case .authorized: return true
-        case .denied: return false
-        default: return ((try? await m.requestAuthorization()) ?? .denied) == .authorized
-        }
-    }
-
-    static func cancel() {
-        if let s = UserDefaults.standard.string(forKey: idKey), let id = UUID(uuidString: s) {
-            try? AlarmManager.shared.cancel(id: id)
-        }
-        UserDefaults.standard.removeObject(forKey: idKey)
-    }
-
-    @MainActor
-    static func schedule(at date: Date) async -> Bool {
-        guard await authorized() else { return false }
-        cancel()
-        let stop = AlarmButton(text: "Stop", textColor: .white, systemImageName: "stop.circle")
-        let alert = AlarmPresentation.Alert(title: "Tijd om op te staan", stopButton: stop)
-        let attrs = AlarmAttributes<Meta>(presentation: AlarmPresentation(alert: alert), metadata: Meta(), tintColor: Theme.accent)
-        let id = UUID()
-        do {
-            _ = try await AlarmManager.shared.schedule(id: id, configuration: .alarm(schedule: .fixed(date), attributes: attrs))
-            UserDefaults.standard.set(id.uuidString, forKey: idKey)
-            return true
-        } catch {
-            return false
-        }
-    }
-}
-#endif

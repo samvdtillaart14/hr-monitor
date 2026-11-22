@@ -204,8 +204,10 @@ public enum WhoopScores {
 
     /// Hoofdslaap: het langste blok; ligt dat in de nacht, dan horen alle nachtblokken binnen
     /// nightMergeGapMin erbij (de tussentijd telt als wakker). De rest zijn dutjes.
+    /// - awake: periodes met telefoonscherm aan; een uitslaapblok na zo'n onderbreking hoort niet bij de nacht.
     public static func mainSleep(_ eps: [Epoch], periods: [Range<Int>], _ cal: Calibration = .standard,
-                                 tzOffsetMin: Double = Double(TimeZone.current.secondsFromGMT()) / 60) -> (main: Range<Int>, naps: [Range<Int>])? {
+                                 tzOffsetMin: Double = Double(TimeZone.current.secondsFromGMT()) / 60,
+                                 awake: [Range<Double>] = []) -> (main: Range<Int>, naps: [Range<Int>])? {
         let c = cal.sleep
         guard var longest = periods.first else { return nil }
         for p in periods where p.count > longest.count { longest = p }
@@ -217,6 +219,17 @@ public enum WhoopScores {
             for i in stride(from: p.lowerBound, to: p.upperBound, by: 5) where inNight(eps[i].t) { return true }
             return inNight(eps[p.upperBound - 1].t)
         }
+        // Uitslaapblok buiten het nachtvenster telt alleen mee als het echt rustig is: HR niet duidelijk hoger
+        // dan in de hoofdslaap (doezelen/wakker liggen heeft een hogere HR) en geen telefoon in de tussentijd.
+        func meanHr(_ p: Range<Int>) -> Double { M.mean(eps[p].map(\.hr).filter { $0.isFinite && $0 > 0 }) }
+        let baseHr = meanHr(longest)
+        func quietExtension(_ p: Range<Int>, gapFrom a: Int, to b: Int) -> Bool {
+            let h = meanHr(p)
+            if h.isFinite && baseHr.isFinite && h > baseHr + c.extendMaxHrRise { return false }
+            guard !awake.isEmpty, a < b else { return true }
+            let t0 = eps[a].t, t1 = eps[min(b, eps.count - 1)].t
+            return !awake.contains { $0.lowerBound < t1 && $0.upperBound > t0 }
+        }
         var main = longest
         var parts = [longest]
         if night(longest) {
@@ -224,10 +237,13 @@ public enum WhoopScores {
             while grew {
                 grew = false
                 for p in periods where !parts.contains(p) {
-                    let g = night(p) ? c.nightMergeGapMin : c.nightExtendGapMin   // aansluitend blok buiten de nacht: alleen bij korte onderbreking
-                    if p.upperBound <= main.lowerBound && main.lowerBound - p.upperBound <= g {
+                    let inside = night(p)
+                    let g = inside ? c.nightMergeGapMin : c.nightExtendGapMin   // aansluitend blok buiten de nacht: alleen bij korte onderbreking
+                    if p.upperBound <= main.lowerBound && main.lowerBound - p.upperBound <= g
+                        && (inside || quietExtension(p, gapFrom: p.upperBound, to: main.lowerBound)) {
                         main = p.lowerBound..<main.upperBound; parts.append(p); grew = true
-                    } else if p.lowerBound >= main.upperBound && p.lowerBound - main.upperBound <= g {
+                    } else if p.lowerBound >= main.upperBound && p.lowerBound - main.upperBound <= g
+                                && (inside || quietExtension(p, gapFrom: main.upperBound, to: p.lowerBound)) {
                         main = main.lowerBound..<p.upperBound; parts.append(p); grew = true
                     }
                 }
@@ -269,7 +285,7 @@ public enum WhoopScores {
         let eps = epochs(samples)
         guard !eps.isEmpty else { return nil }
         let det = detectSleep(eps, cal, awake: awake)
-        guard let ms = mainSleep(eps, periods: det.periods, cal, tzOffsetMin: tzOffsetMin) else { return nil }
+        guard let ms = mainSleep(eps, periods: det.periods, cal, tzOffsetMin: tzOffsetMin, awake: awake) else { return nil }
         let main = ms.main
         let bs = beats(samples)
         let t0 = eps[0].t
