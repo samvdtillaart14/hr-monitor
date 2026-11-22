@@ -38,7 +38,9 @@ final class SleepAlarm: ObservableObject {
     @Published private(set) var bandRaw: String?
     /// Logboek van verstuurde commando's en antwoorden (nieuwste boven), en tellers.
     @Published private(set) var bandLog: [String] = []
-    @Published private(set) var bandSent = 0, bandAnswered = 0, bandOk = 0
+    @Published private(set) var bandSent = 0
+    @Published private(set) var bandAnswered = 0
+    @Published private(set) var bandOk = 0
     @Published private(set) var probing = false
     /// Tussenstand tijdens het slimme venster, bv. "Geslapen 6:40 van 7:10".
     @Published private(set) var progress: String?
