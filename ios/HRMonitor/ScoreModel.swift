@@ -65,7 +65,7 @@ final class ScoreModel: ObservableObject {
         // Eerdere nachten (buiten dit venster) als basislijn voor herstel, zoals "laatste 30 dagen".
         let firstKey = DayStore.dayFmt.string(from: dates[0])
         let prior = NightArchive.shared.metrics(before: firstKey, limit: fixedCal.recovery.windowDays)
-        let personal = UserProfile.importedCalibration != nil
+        let personal = UserProfile.hasPersonalBaseline
         Task {
             let (n, dl) = await Task.detached(priority: .utility) { () -> ([Night], [DayLoad]) in
                 let conv = input.map { ($0.0, $0.1.map(Self.convert), $0.2.map(Self.convert)) }
