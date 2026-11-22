@@ -104,11 +104,20 @@ enum AgeHistory {
 struct HealthTab: View {
     @EnvironmentObject var store: DayStore
     @EnvironmentObject var model: ScoreModel
+    @EnvironmentObject var acts: ActivityStore
     @AppStorage("profile.birth") private var birth: Double = 0
     @AppStorage("profile.male") private var male = true
     @AppStorage("profile.strength") private var strength: Double = -1
     @AppStorage("profile.steps") private var steps: Double = -1
     @State private var showProfile = false
+    @State private var phoneSteps: Double?
+    @State private var stepsLoaded = false
+
+    private var tips: [Improvement] {
+        Improvements.build(ImprovementData.input(model: model, acts: acts, age: age, male: male,
+                                                 profileStrength: strength >= 0 ? strength : nil,
+                                                 profileSteps: steps >= 0 ? steps : nil, phoneSteps: phoneSteps))
+    }
 
     private var age: Double? { birth > 0 ? (Date().timeIntervalSince1970 - birth) / 31_557_600 : nil }
     private var factors: [AgeFactor] {
@@ -132,6 +141,9 @@ struct HealthTab: View {
                     }
                     AgeOrb(bio: hasData ? age.map { $0 + offset } : nil, offset: offset, size: 250)
                     paceCard
+                    let t = tips
+                    NavigationLink { ImprovementsView(tips: t) } label: { ImprovementsCard(tips: t, loading: !stepsLoaded) }
+                        .buttonStyle(.plain)
                     NavigationLink { HealthspanView(model: model, factors: factors, age: age ?? 0, offset: offset, hasData: hasData) } label: {
                         Text("NAAR LEVENSDUUR-DETAILS").font(Theme.label).tracking(2).frame(maxWidth: .infinity).padding()
                             .background(Theme.cardHi, in: RoundedRectangle(cornerRadius: 14))
@@ -146,6 +158,7 @@ struct HealthTab: View {
             .sheet(isPresented: $showProfile) { ProfileSheet(birth: $birth, male: $male, strength: $strength, steps: $steps) }
         }
         .onAppear { model.refresh(store: store) }
+        .task { phoneSteps = await ImprovementData.phoneSteps(); stepsLoaded = true }
         .onChange(of: model.nights.count) { _, _ in snapshot() }
     }
 
