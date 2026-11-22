@@ -190,7 +190,7 @@ struct SleepDetailView: View {
                 Text("Eigen berekeningen (scores-module), geen officiële Whoop-scores. Slaapfases worden geschat uit hartslag, HRV en beweging; vergelijkingen gebruiken de nachten die deze app heeft opgeslagen (max. 7).")
                     .font(.caption).foregroundStyle(Theme.muted)
             } else {
-                Text("Nog geen nacht gemeten. Laat de app 's nachts verbonden met de band (of laat de Whoop-app synchroniseren terwijl HR Monitor meeluistert).")
+                Text("Nog geen nacht gemeten. Laat de app 's nachts verbonden met de band (of laat de Whoop-app synchroniseren terwijl Pulse meeluistert).")
                     .foregroundStyle(Theme.muted).padding(.top, 40)
             }
         }

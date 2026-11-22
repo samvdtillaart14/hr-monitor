@@ -1,9 +1,9 @@
 {
-  "name": "HR Monitor",
+  "name": "Pulse",
   "identifier": "nl.samvdtillaart.hrmonitor.source",
   "sourceURL": "https://raw.githubusercontent.com/samvdtillaart14/hr-monitor/main/apps.json",
   "apps": [{
-    "name": "HR Monitor",
+    "name": "Pulse",
     "bundleIdentifier": "nl.samvdtillaart.hrmonitor",
     "developerName": "Sam",
     "subtitle": "Whoop-hartslag en -data via Bluetooth",

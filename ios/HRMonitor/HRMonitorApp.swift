@@ -99,7 +99,7 @@ struct ContentView: View {
             }
             .background(Theme.bg.ignoresSafeArea())
             .scrollContentBackground(.hidden)
-            .navigationTitle("HR Monitor")
+            .navigationTitle("Pulse")
             .toolbar {
                 if devMode {
                     ToolbarItem(placement: .topBarLeading) {

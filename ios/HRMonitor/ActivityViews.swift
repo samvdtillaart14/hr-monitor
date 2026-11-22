@@ -398,7 +398,7 @@ struct RouteCard: View {
         let p = pts
         VStack(alignment: .leading, spacing: Theme.gap) {
             if recorder.denied && live {
-                Text("Geen toegang tot je locatie. Zet die aan in Instellingen › HR Monitor › Locatie. Hartslag en statistieken lopen gewoon door.")
+                Text("Geen toegang tot je locatie. Zet die aan in Instellingen › Pulse › Locatie. Hartslag en statistieken lopen gewoon door.")
                     .font(.subheadline).foregroundStyle(Theme.hr)
             } else if live, let f = recorder.lastFix {
                 TimelineView(.periodic(from: .now, by: 10)) { ctx in

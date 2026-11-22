@@ -64,11 +64,11 @@ jobs:
           DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           cat > apps.json <<JSON
           {
-            "name": "HR Monitor",
+            "name": "Pulse",
             "identifier": "nl.samvdtillaart.hrmonitor.source",
             "sourceURL": "https://raw.githubusercontent.com/${{ github.repository }}/main/apps.json",
             "apps": [{
-              "name": "HR Monitor",
+              "name": "Pulse",
               "bundleIdentifier": "nl.samvdtillaart.hrmonitor",
               "developerName": "Sam",
               "subtitle": "Whoop-hartslag en -data via Bluetooth",
