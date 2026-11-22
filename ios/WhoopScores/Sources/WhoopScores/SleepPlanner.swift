@@ -171,21 +171,27 @@ public enum SleepPlanner {
         public static func isAlarmCommand(_ c: UInt8) -> Bool { (66...69).contains(c) }
         /// Body voor GET, RUN en DISABLE.
         public static let simpleBody: [UInt8] = [0x01]
-        public static let variantCount = 4
+        public static let variantCount = 5
+        /// Vaste staart van SET op de Whoop 5.0 (uit een Bluetooth-log van de Whoop-app, 22-11-2026):
+        /// `00 00` na de tijd, dan `2F 98` + 8 nullen, `07`, `1E 00`. Betekenis niet zeker (vermoedelijk
+        /// trilpatroon, herhalingen en duur 30 s); de band accepteerde dit 5 van de 5 keer.
+        static let whoop5Tail: [UInt8] = [0, 0, 0x2F, 0x98, 0, 0, 0, 0, 0, 0, 0, 0, 0x07, 0x1E, 0x00]
 
         static func le32(_ v: UInt32) -> [UInt8] { [UInt8(v & 0xFF), UInt8((v >> 8) & 0xFF), UInt8((v >> 16) & 0xFF), UInt8(v >> 24)] }
 
         /// Vormen van SET, in de volgorde waarin ze geprobeerd worden.
-        /// 0: `01` + u32 Unix-tijd + `00 00` (7 bytes, noop "Rev1")
-        /// 1: u32 Unix-tijd + 4 nullen (zonder vormbyte)
-        /// 2: `01` + u32 Unix-tijd + u32 tijdzone-offset in s (lokale tijd)
-        /// 3: `02` + u32 Unix-tijd + `00 00`
+        /// 0: Whoop 5.0: `04 01` + u32 Unix-tijd (UTC) + vaste staart (21 bytes), zoals de Whoop-app hem stuurt
+        /// 1: `01` + u32 Unix-tijd + `00 00` (7 bytes, noop "Rev1", Whoop 4.0)
+        /// 2: u32 Unix-tijd + 4 nullen (zonder vormbyte)
+        /// 3: `01` + u32 Unix-tijd + u32 tijdzone-offset in s (lokale tijd)
+        /// 4: `02` + u32 Unix-tijd + `00 00`
         public static func setBody(unix: UInt32, variant: Int, tzOffsetSec: Int = 0) -> [UInt8] {
             switch variant {
-            case 1: return le32(unix) + [0, 0, 0, 0]
-            case 2: return [0x01] + le32(unix) + le32(UInt32(bitPattern: Int32(tzOffsetSec)))
-            case 3: return [0x02] + le32(unix) + [0, 0]
-            default: return [0x01] + le32(unix) + [0, 0]
+            case 1: return [0x01] + le32(unix) + [0, 0]
+            case 2: return le32(unix) + [0, 0, 0, 0]
+            case 3: return [0x01] + le32(unix) + le32(UInt32(bitPattern: Int32(tzOffsetSec)))
+            case 4: return [0x02] + le32(unix) + [0, 0]
+            default: return [0x04, 0x01] + le32(unix) + whoop5Tail
             }
         }
 

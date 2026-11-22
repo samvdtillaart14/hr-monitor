@@ -243,14 +243,6 @@ struct SleepPlannerView: View {
             }
             .buttonStyle(.bordered).tint(Theme.accent)
             .disabled(ble.state != .connected)
-            Button {
-                alarm.probe()
-            } label: {
-                Label(alarm.probing ? "Bezig… let op of de band trilt" : "Zoek het juiste commando (±50 s)", systemImage: "magnifyingglass")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered).tint(Theme.muted)
-            .disabled(ble.state != .connected || alarm.probing)
             if let s = alarm.bandStatus { Text(s).font(.footnote).foregroundStyle(Theme.accent) }
             Text("Verstuurd: \(alarm.bandSent) · antwoorden: \(alarm.bandAnswered) · ok: \(alarm.bandOk)")
                 .font(.caption.monospacedDigit()).foregroundStyle(Theme.muted)
@@ -262,7 +254,7 @@ struct SleepPlannerView: View {
                 }
                 .textSelection(.enabled)
             }
-            Text("Tip: zet met deze app open een wekker in de Whoop-app. Het antwoord van de band verschijnt dan hier in het logboek.")
+            Text("Uitzetten via deze app werkt nog niet op de Whoop 5.0: wil je een gezette wekker annuleren, zet dan in de Whoop-app een andere tijd.")
                 .font(.caption2).foregroundStyle(Theme.muted)
         }
     }
