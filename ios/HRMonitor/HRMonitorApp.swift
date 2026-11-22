@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import UserNotifications
 
 /// Bluetooth, dagopslag, scores en activiteiten bestaan vanaf de start van de app, ook als iOS de app
 /// op de achtergrond opnieuw start voor de band (dan verschijnt er geen scherm en loopt onAppear niet).
@@ -10,9 +11,13 @@ final class AppServices {
     let ble = BLEManager()
     let acts = ActivityStore()
     let scores = ScoreModel()
+    let screen = ScreenMonitor()
     private init() {
         ble.store = store
-        store.onLive = { [weak acts] in acts?.live(hr: $0) }
+        // Bij elke hartslag ook de schermstatus lezen: de app is dan toch wakker (goedkoop, hooguit 1× per 2 s).
+        store.onLive = { [weak acts, weak screen] in acts?.live(hr: $0); screen?.poll() }
+        scores.awakeIntervals = { [weak screen] in screen?.wakeIntervals() ?? [] }
+        screen.onMorning = { MorningBrief.send(services: AppServices.shared) }
     }
 }
 
@@ -21,6 +26,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         // Direct aanmaken: CoreBluetooth moet de centrale met het herstel-ID bij het opstarten terugzien.
         _ = AppServices.shared
+        UNUserNotificationCenter.current().delegate = NotificationDelegate.shared
+        if ScreenMonitor.morningOn { MorningBrief.requestPermission() }
         return true
     }
 }
@@ -44,6 +51,7 @@ struct HRMonitorApp: App {
                 .environmentObject(services.ble.recorder)
                 .environmentObject(services.ble.raw)
                 .environmentObject(services.ble.whoop)
+                .environmentObject(services.screen)
                 .preferredColorScheme(.dark)
                 .tint(Theme.accent)
         }

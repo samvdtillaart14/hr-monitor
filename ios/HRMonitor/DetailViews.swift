@@ -358,6 +358,9 @@ struct SleepDetailView: View {
             HStack { Text("WAKKER").font(Theme.label).tracking(1.5).foregroundStyle(Theme.muted); Spacer(); Text(DV.hm(Double(n.r.awakeMin))).font(.headline) }
             Divider().overlay(Theme.line)
             HStack { Text("Keren wakker").font(.subheadline); Spacer(); Text("\(n.r.disturbances)").font(Theme.number(22)) }
+            if n.phoneMin > 0 {
+                HStack { Text("Telefoon gebruikt (telt als wakker)").font(.subheadline); Spacer(); Text(DV.hm(Double(n.phoneMin))).font(.headline) }
+            }
         }
     }
     private func timeline(_ n: Night, _ on: @escaping (Stage) -> Bool) -> some View {
