@@ -14,7 +14,9 @@ enum DV {
         guard min.isFinite else { return "--" }
         let m = Int(min.rounded()); return "\(m / 60):\(String(format: "%02d", abs(m % 60)))"
     }
-    static func clock(_ d: Date) -> String { d.formatted(date: .omitted, time: .shortened) }
+    /// Datums altijd in het Nederlands, ook als de iPhone op Engels staat.
+    static let nl = Locale(identifier: "nl_NL")
+    static func clock(_ d: Date) -> String { d.formatted(Date.FormatStyle(date: .omitted, time: .shortened, locale: nl)) }
     static func recoveryColor(_ r: Int?) -> Color {
         guard let r else { return Theme.muted }
         return r >= 67 ? Theme.accent : r >= 34 ? Theme.zones[3].color : Theme.hr
@@ -165,6 +167,8 @@ private func detailScroll<C: View>(_ title: String, @ViewBuilder _ c: () -> C) -
 struct SleepDetailView: View {
     @ObservedObject var model: ScoreModel
 
+    @AppStorage("ui.sleepDetails") private var showDetails = false
+    @AppStorage("ui.sleepTrends") private var showTrends = false
     private var n: Night? { model.lastNight ?? model.nights.last }
     private var prev: [Night] { Array(model.nights.dropLast()) }
 
@@ -176,15 +180,17 @@ struct SleepDetailView: View {
                 contributors(n)
                 lastNight(n)
                 stages(n)
-                needed(n)
-                consistency(n)
-                efficiency(n)
-                stress(n)
-                trends
+                Collapsible(title: "Details", open: $showDetails) {
+                    needed(n)
+                    consistency(n)
+                    efficiency(n)
+                    stress(n)
+                }
+                Collapsible(title: "Weektrends", open: $showTrends) { trends }
                 Text("Eigen berekeningen (scores-module), geen officiële Whoop-scores. Slaapfases worden geschat uit hartslag, HRV en beweging; vergelijkingen gebruiken de nachten die deze app heeft opgeslagen (max. 7).")
                     .font(.caption).foregroundStyle(Theme.muted)
             } else {
-                Text("Nog geen nacht gemeten. Laat de app 's nachts verbonden met de band (of laat de Whoop-app synchroniseren terwijl HR Monitor meeluistert).")
+                Text("Nog geen nacht gemeten. Laat de app 's nachts verbonden met de band (of laat de Whoop-app synchroniseren terwijl Pulse meeluistert).")
                     .foregroundStyle(Theme.muted).padding(.top, 40)
             }
         }
@@ -404,7 +410,6 @@ struct SleepDetailView: View {
     private var trends: some View {
         let ns = model.nights
         return Group {
-            Text("Weektrends").font(.title2.bold()).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
             TrendCard(title: "Slaapprestatie", points: ns.map { ($0.date, $0.performance) }, domain: 0...125, label: { "\(Int($0))%" })
             TrendCard(title: "Uren vs. nodig", points: ns.map { ($0.date, $0.sufficiency) }, domain: 0...125, label: { "\(Int($0))%" })
             TrendCard(title: "Herstellende slaap", points: ns.map { ($0.date, Double($0.restorativeMin)) }, color: { _ in DV.remC }, label: { DV.hm($0) })
@@ -493,11 +498,7 @@ struct StrainDetailView: View {
                     cmp("heart", "Hartslagzones 1–3", d.zones13, prev.map(\.zones13))
                     Divider().overlay(Theme.line)
                     cmp("bolt.heart", "Hartslagzones 4–5", d.zones45, prev.map(\.zones45))
-                    Divider().overlay(Theme.line)
-                    CompareRow(icon: "dumbbell", title: "Krachttraining", value: "–", baseline: "nog niet", higherIsBetter: nil)
-                    Divider().overlay(Theme.line)
-                    CompareRow(icon: "figure.walk", title: "Stappen", value: "–", baseline: "nog niet", higherIsBetter: nil)
-                    Text("Stappen en krachttraining komen uit de bewegingssensor (IMU). Die data stuurt de band pas als we hem decoderen; tot dan tonen we geen schatting.")
+                    Text("Nog niet gemeten: stappen en krachttraining (bewegingssensor nog niet ontcijferd).")
                         .font(.caption).foregroundStyle(Theme.muted)
                 }
                 Text("Weektrends").font(.title2.bold()).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
@@ -545,16 +546,15 @@ struct HealthMonitorView: View {
     private var prev: [Night] { Array(model.nights.dropLast()) }
 
     var body: some View {
-        detailScroll("Gezondheid") {
+        detailScroll("Vitale waarden") {
             hrCard
             LazyVGrid(columns: [GridItem(.flexible(), spacing: Theme.gap), GridItem(.flexible())], spacing: Theme.gap) {
                 tile("lungs", "Ademfrequentie", n?.metrics.resp, "/min", "%.1f", prev.compactMap(\.metrics.resp), higherIsBad: true)
-                spo2
                 tile("heart", "Rust-HR", n?.metrics.rhr, "bpm", "%.0f", prev.compactMap(\.metrics.rhr), higherIsBad: true)
                 tile("waveform.path.ecg", "HRV", n?.metrics.hrv, "ms", "%.0f", prev.compactMap(\.metrics.hrv), higherIsBad: false)
                 skinTile
             }
-            Text("Bereik = gemiddelde ± 1 standaardafwijking van je eerdere nachten (min. 2 nachten nodig).")
+            Text("Bereik = gemiddelde ± 1 standaardafwijking van je eerdere nachten (min. 2 nachten nodig). Huidtemp Δ = verschil met je gemiddelde. Nog niet gemeten: bloedzuurstof.")
                 .font(.caption).foregroundStyle(Theme.muted)
         }
     }
@@ -591,21 +591,11 @@ struct HealthMonitorView: View {
     @ViewBuilder private func pill(_ v: Double?, _ hist: [Double], _ f: String, _ higherIsBad: Bool) -> some View {
         if let v, let m = DV.mean(hist), let s = DV.sd(hist) {
             let lo = m - s, hi = m + s
-            if v > hi { StatusPill(text: "verhoogd > " + String(format: f, hi), ok: !higherIsBad) }
-            else if v < lo { StatusPill(text: "verlaagd < " + String(format: f, lo), ok: higherIsBad) }
+            if v > hi { StatusPill(text: "↑ > " + String(format: f, hi) + (higherIsBad ? " · let op" : " · gunstig"), ok: !higherIsBad) }
+            else if v < lo { StatusPill(text: "↓ < " + String(format: f, lo) + (higherIsBad ? " · gunstig" : " · let op"), ok: higherIsBad) }
             else { StatusPill(text: "binnen " + String(format: f, lo) + "–" + String(format: f, hi), ok: true) }
         } else {
             StatusPill(text: "basislijn volgt", ok: nil)
-        }
-    }
-
-    private var spo2: some View {
-        Card {
-            Label("BLOEDZUURSTOF", systemImage: "drop").font(Theme.label).tracking(1.2).foregroundStyle(Theme.muted)
-            Text("--").font(Theme.number(30))
-            StatusPill(text: "niet beschikbaar", ok: nil)
-            Text("Daarvoor is de ruwe rood/infrarood-lichtmeting nodig. Die hebben we nog niet uit de band gekregen, dus geen schatting.")
-                .font(.caption2).foregroundStyle(Theme.muted)
         }
     }
 
@@ -614,15 +604,36 @@ struct HealthMonitorView: View {
         let base = DV.mean(hist)
         let delta = n?.metrics.skinTemp.flatMap { v in base.map { v - $0 } }
         return Card {
-            Label("HUIDTEMP T.O.V. BASIS", systemImage: "thermometer.medium").font(Theme.label).tracking(1.2).foregroundStyle(Theme.muted)
+            Label("HUIDTEMP Δ", systemImage: "thermometer.medium").font(Theme.label).tracking(1.2).foregroundStyle(Theme.muted)
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(delta.map { String(format: "%+.1f", $0) } ?? "--").font(Theme.number(30)).monospacedDigit()
                 Text("°C").font(.footnote).foregroundStyle(Theme.muted)
             }
             if let delta, let s = DV.sd(hist) {
                 abs(delta) <= max(0.2, s) ? StatusPill(text: String(format: "binnen ±%.1f", max(0.2, s)), ok: true)
-                    : StatusPill(text: delta > 0 ? "verhoogd" : "verlaagd", ok: false)
+                    : StatusPill(text: delta > 0 ? "↑ hoger · let op" : "↓ lager · let op", ok: false)
             } else { StatusPill(text: "basislijn volgt", ok: nil) }
         }
+    }
+}
+
+
+/// Inklapbaar blok met een kop ("Details", "Weektrends"); de keuze blijft bewaard.
+struct Collapsible<Content: View>: View {
+    let title: String
+    @Binding var open: Bool
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        Button { withAnimation(.easeInOut(duration: 0.2)) { open.toggle() } } label: {
+            HStack {
+                Text(title).font(.title2.bold())
+                Spacer()
+                Image(systemName: "chevron.down").rotationEffect(.degrees(open ? 0 : -90)).foregroundStyle(Theme.muted)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).padding(.top, 8)
+        if open { content }
     }
 }

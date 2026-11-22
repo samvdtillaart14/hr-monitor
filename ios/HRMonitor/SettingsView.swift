@@ -31,7 +31,7 @@ struct SettingsView: View {
                         .disabled(ble.state != .connected || ble.syncing)
                     if let s = ble.syncStatus { Text(s).font(.footnote).foregroundStyle(Theme.muted) }
                     if let d = ble.lastSyncComplete {
-                        Text("Laatst klaar: \(d.formatted(date: .abbreviated, time: .shortened))").font(.footnote).foregroundStyle(Theme.muted)
+                        Text("Laatst klaar: \(d.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened, locale: DV.nl)))").font(.footnote).foregroundStyle(Theme.muted)
                     }
                 }
             } header: { Text("Synchronisatie") } footer: {

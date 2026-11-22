@@ -116,18 +116,42 @@ final class SleepAlarm: ObservableObject {
     /// Zet de wekker voor de eerstvolgende ochtend (na elke wijziging, bij openen en na het afgaan).
     func rearm() {
         let now = Date()
-        let next = schedule.nextWake(after: now)
-        guard schedule.enabled, next.rule.enabled else { disarm(); return }
+        // Eerstvolgende ochtend waarop de wekker aan staat (een uitgezette dag overslaan, niet alles uitzetten).
+        guard schedule.enabled, let next = nextEnabledWake(after: now) else { disarm(); return }
         let p = plan(now: now)
         let a = Armed(wake: next.date, mode: next.rule.mode, goalSleepMin: p.goalSleepMin)
-        if a == armed { return }
-        armed = a; saveArmed(); progress = nil
+        let wp = weekPlan(after: a.wake)
+        if a == armed && wp == sentPlan { return }
+        if a != armed { armed = a; saveArmed(); progress = nil }
+        bandSentFor = nil   // schema veranderd: hele week opnieuw naar de band
         sendBandIfNeeded()
+    }
+
+    /// Eerstvolgende wektijd met een aangezette regel (max. 8 dagen vooruit).
+    private func nextEnabledWake(after t0: Date) -> (date: Date, rule: AlarmRule)? {
+        var t = t0
+        for _ in 0..<8 {
+            let n = schedule.nextWake(after: t)
+            if n.rule.enabled { return n }
+            t = n.date.addingTimeInterval(60)
+        }
+        return nil
+    }
+
+    /// Weekplan na de eerstvolgende wekker (tijden en aan/uit), om wijzigingen op latere dagen te zien.
+    private var sentPlan: String?
+    private func weekPlan(after first: Date) -> String {
+        var t = first, out: [String] = []
+        for _ in 0..<Self.extraDays {
+            let n = schedule.nextWake(after: t.addingTimeInterval(60)); t = n.date
+            out.append("\(Int(t.timeIntervalSince1970)):\(n.rule.enabled ? 1 : 0)")
+        }
+        return out.joined(separator: ",")
     }
 
     private func disarm() {
         guard armed != nil else { return }
-        armed = nil; saveArmed(); progress = nil
+        armed = nil; saveArmed(); progress = nil; sentPlan = nil
         // DISABLE (69) werkt niet op de 5.0: alle wekkernummers 1–7 naar 2100 zetten, dan gaan ze niet af.
         if d.bool(forKey: Self.bandSetKey), ble.state == .connected {
             for id in 1...(Self.extraDays + 1) { parkBandAlarm(UInt8(id)) }
@@ -240,7 +264,8 @@ final class SleepAlarm: ObservableObject {
     }
 
     private func sendBandIfNeeded() {
-        guard let a = armed, bandSentFor != a.wake else { return }
+        // Na slim wekken (fired) niet de uiterste tijd opnieuw zetten: anders trilt de band twee keer.
+        guard let a = armed, !a.fired, bandSentFor != a.wake else { return }
         guard ble.state == .connected else { bandStatus = "Band niet verbonden; de wekker wordt verstuurd zodra hij verbindt."; return }
         if let e = sendSet(a.wake, variant: variant) { bandStatus = e; return }
         bandSentFor = a.wake
@@ -258,6 +283,7 @@ final class SleepAlarm: ObservableObject {
     /// Wekkers 2–7 voor de volgende ochtenden volgens het schema (alleen vorm 0, Whoop 5.0).
     private func sendExtras(after first: Date) {
         extrasSent = 0; extrasOk = 0; extrasAnswered = 0
+        sentPlan = weekPlan(after: first)
         var t = first
         for i in 0..<Self.extraDays {
             let n = schedule.nextWake(after: t.addingTimeInterval(60))
@@ -270,7 +296,8 @@ final class SleepAlarm: ObservableObject {
             }
         }
         // Als de band het nummer negeert en alleen de laatste wekker onthoudt: de eerstvolgende als laatste opnieuw.
-        if extrasSent > 0 {
+        // (Ook na alleen parkeren: anders is 2100 de laatste write.)
+        do {
             send(SleepPlanner.BandAlarm.set, SleepPlanner.BandAlarm.setBody(unix: UInt32(first.timeIntervalSince1970), variant: 0))
         }
     }
@@ -304,7 +331,7 @@ final class SleepAlarm: ObservableObject {
                 pendingSet = nil
                 d.set(p.variant, forKey: Self.variantKey)
                 d.set(true, forKey: Self.bandSetKey)
-                bandStatus = "Band accepteerde de wekker (\(Self.clock(p.time, seconds: true))), vorm \(p.variant)."
+                bandStatus = "✓ Wekker staat op de band: \(p.time.formatted(.dateTime.locale(DV.nl).weekday(.abbreviated).day().month(.abbreviated))) \(Self.clock(p.time))."
                 if p.variant == 0, let a = armed, a.wake == p.time { sendExtras(after: a.wake) }
             } else if p.variant + 1 < SleepPlanner.BandAlarm.variantCount {
                 // Geweigerd of onbekend: volgende vorm proberen.
@@ -319,7 +346,7 @@ final class SleepAlarm: ObservableObject {
         case SleepPlanner.BandAlarm.get:
             if let t = SleepPlanner.BandAlarm.parseGet(body) {
                 let date = Date(timeIntervalSince1970: Double(t))
-                bandStatus = (bandStatus.map { $0 + " " } ?? "") + "Band meldt wekker: \(date.formatted(date: .abbreviated, time: .standard))."
+                bandStatus = (bandStatus.map { $0 + " " } ?? "") + "Band meldt wekker: \(date.formatted(Date.FormatStyle(date: .abbreviated, time: .standard, locale: DV.nl)))."
             }
         case SleepPlanner.BandAlarm.run:
             if result != 1 { bandStatus = "Band weigerde direct trillen (code \(result)); de wekker gaat op de ingestelde tijd." }

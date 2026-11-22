@@ -70,6 +70,7 @@ struct TonightCard: View {
 // MARK: slaapplanner
 
 struct SleepPlannerView: View {
+    @AppStorage(SettingsView.devKey) private var devMode = false
     @EnvironmentObject var alarm: SleepAlarm
     @EnvironmentObject var scores: ScoreModel
     @EnvironmentObject var ble: BLEManager
@@ -190,7 +191,7 @@ struct SleepPlannerView: View {
             Divider().overlay(Theme.line)
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(next.date.formatted(.dateTime.weekday(.wide).day().month(.abbreviated))).font(.subheadline.weight(.semibold))
+                    Text(next.date.formatted(.dateTime.locale(DV.nl).weekday(.wide).day().month(.abbreviated))).font(.subheadline.weight(.semibold))
                     Text(override ? "Alleen deze ochtend" : "Volgens je schema").font(.caption).foregroundStyle(Theme.muted)
                 }
                 Spacer()
@@ -218,8 +219,11 @@ struct SleepPlannerView: View {
                 HStack {
                     Label("Wekkerschema", systemImage: "calendar")
                     Spacer()
-                    Text("ma–vr \(SleepAlarm.clock(minutes: alarm.schedule.weekday.minutes)) · za–zo \(SleepAlarm.clock(minutes: alarm.schedule.weekend.minutes))")
-                        .font(.footnote).foregroundStyle(Theme.muted)
+                    VStack(alignment: .trailing, spacing: 0) {
+                        Text("Werkdag \(SleepAlarm.clock(minutes: alarm.schedule.weekday.minutes))")
+                        Text("Weekend \(SleepAlarm.clock(minutes: alarm.schedule.weekend.minutes))")
+                    }
+                    .font(.footnote).foregroundStyle(Theme.muted).lineLimit(1)
                     Image(systemName: "chevron.right").font(.caption).foregroundStyle(Theme.muted)
                 }
             }
@@ -233,36 +237,38 @@ struct SleepPlannerView: View {
 
     private var bandCard: some View {
         Card(title: "Band", index: 4) {
-            Text("Er is geen iPhone-wekker: alles hierboven stuurt alleen de band aan. Zet je in de Whoop-app ook een wekker, dan kan die deze overschrijven.")
+            Text("De wekker trilt op je band (geen iPhone-wekker). Zet geen wekker in de Whoop-app, die overschrijft deze.")
                 .font(.caption).foregroundStyle(Theme.muted)
-            Button {
-                alarm.testBand()
-            } label: {
-                Label("Test: laat de band over 30 s trillen", systemImage: "waveform")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered).tint(Theme.accent)
-            .disabled(ble.state != .connected)
-            Button {
-                alarm.testPast()
-            } label: {
-                Label("Test: wekker uitzetten via tijd in het verleden (2,5 min)", systemImage: "clock.arrow.circlepath")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered).tint(Theme.muted)
-            .disabled(ble.state != .connected)
             if let s = alarm.bandStatus { Text(s).font(.footnote).foregroundStyle(Theme.accent) }
-            Text("Verstuurd: \(alarm.bandSent) · antwoorden: \(alarm.bandAnswered) · ok: \(alarm.bandOk)")
-                .font(.caption.monospacedDigit()).foregroundStyle(Theme.muted)
-            if !alarm.bandLog.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(Array(alarm.bandLog.enumerated()), id: \.offset) { _, l in
-                        Text(l).font(.caption2.monospaced()).foregroundStyle(Theme.muted)
-                    }
+            if devMode {
+                Button {
+                    alarm.testBand()
+                } label: {
+                    Label("Test: laat de band over 30 s trillen", systemImage: "waveform")
+                        .frame(maxWidth: .infinity)
                 }
-                .textSelection(.enabled)
+                .buttonStyle(.bordered).tint(Theme.accent)
+                .disabled(ble.state != .connected)
+                Button {
+                    alarm.testPast()
+                } label: {
+                    Label("Test: wekker uitzetten via tijd in het verleden (2,5 min)", systemImage: "clock.arrow.circlepath")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered).tint(Theme.muted)
+                .disabled(ble.state != .connected)
+                Text("Verstuurd: \(alarm.bandSent) · antwoorden: \(alarm.bandAnswered) · ok: \(alarm.bandOk)")
+                    .font(.caption.monospacedDigit()).foregroundStyle(Theme.muted)
+                if !alarm.bandLog.isEmpty {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(Array(alarm.bandLog.enumerated()), id: \.offset) { _, l in
+                            Text(l).font(.caption2.monospaced()).foregroundStyle(Theme.muted)
+                        }
+                    }
+                    .textSelection(.enabled)
+                }
             }
-            Text("Uitzetten via deze app werkt nog niet op de Whoop 5.0: wil je een gezette wekker annuleren, zet dan in de Whoop-app een andere tijd.")
+            Text("Uitzetten: tik twee keer op de band als hij trilt. Zet je de wekker hier uit, dan zet de app hem op de band buiten werking.")
                 .font(.caption2).foregroundStyle(Theme.muted)
         }
     }

@@ -1,9 +1,9 @@
 {
-  "name": "HR Monitor",
+  "name": "Pulse",
   "identifier": "nl.samvdtillaart.hrmonitor.source",
   "sourceURL": "https://raw.githubusercontent.com/samvdtillaart14/hr-monitor/main/apps.json",
   "apps": [{
-    "name": "HR Monitor",
+    "name": "Pulse",
     "bundleIdentifier": "nl.samvdtillaart.hrmonitor",
     "developerName": "Sam",
     "subtitle": "Whoop-hartslag en -data via Bluetooth",
@@ -20,7 +20,7 @@
     }],
     "appPermissions": {
       "entitlements": [],
-      "privacy": { "NSBluetoothAlwaysUsageDescription": "HR Monitor verbindt via Bluetooth met je hartslagband." }
+      "privacy": { "NSBluetoothAlwaysUsageDescription": "Pulse verbindt via Bluetooth met je hartslagband." }
     }
   }],
   "news": []

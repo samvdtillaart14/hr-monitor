@@ -47,7 +47,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: HR Monitor (laatste build)
+          name: Pulse (laatste build)
           prerelease: false
           make_latest: true
           files: ios/HRMonitor.ipa
@@ -64,11 +64,11 @@ jobs:
           DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           cat > apps.json <<JSON
           {
-            "name": "HR Monitor",
+            "name": "Pulse",
             "identifier": "nl.samvdtillaart.hrmonitor.source",
             "sourceURL": "https://raw.githubusercontent.com/${{ github.repository }}/main/apps.json",
             "apps": [{
-              "name": "HR Monitor",
+              "name": "Pulse",
               "bundleIdentifier": "nl.samvdtillaart.hrmonitor",
               "developerName": "Sam",
               "subtitle": "Whoop-hartslag en -data via Bluetooth",
@@ -85,7 +85,7 @@ jobs:
               }],
               "appPermissions": {
                 "entitlements": [],
-                "privacy": { "NSBluetoothAlwaysUsageDescription": "HR Monitor verbindt via Bluetooth met je hartslagband." }
+                "privacy": { "NSBluetoothAlwaysUsageDescription": "Pulse verbindt via Bluetooth met je hartslagband." }
               }
             }],
             "news": []

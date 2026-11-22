@@ -86,7 +86,7 @@ struct ActivityRowView: View {
     }
 
     private func timeLabel(_ d: Date) -> String {
-        Calendar.current.isDateInToday(d) ? DV.clock(d) : "[\(d.formatted(.dateTime.weekday(.abbreviated)))] \(DV.clock(d))"
+        Calendar.current.isDateInToday(d) ? DV.clock(d) : "[\(d.formatted(.dateTime.locale(DV.nl).weekday(.abbreviated)))] \(DV.clock(d))"
     }
 }
 
@@ -197,7 +197,7 @@ struct ActivityDetailView: View {
                         Image(systemName: a.type.icon).font(.title3)
                         VStack(alignment: .leading, spacing: 0) {
                             Text(a.type.name.uppercased()).font(.subheadline.weight(.bold)).tracking(1.5)
-                            Text("\(a.start.formatted(.dateTime.day().month(.abbreviated))) \(DV.clock(a.start)) tot \(a.end.map(DV.clock) ?? "nu")")
+                            Text("\(a.start.formatted(.dateTime.locale(DV.nl).day().month(.abbreviated))) \(DV.clock(a.start)) tot \(a.end.map(DV.clock) ?? "nu")")
                                 .font(.caption).foregroundStyle(Theme.muted)
                         }
                     }
@@ -398,7 +398,7 @@ struct RouteCard: View {
         let p = pts
         VStack(alignment: .leading, spacing: Theme.gap) {
             if recorder.denied && live {
-                Text("Geen toegang tot je locatie. Zet die aan in Instellingen › HR Monitor › Locatie. Hartslag en statistieken lopen gewoon door.")
+                Text("Geen toegang tot je locatie. Zet die aan in Instellingen › Pulse › Locatie. Hartslag en statistieken lopen gewoon door.")
                     .font(.subheadline).foregroundStyle(Theme.hr)
             } else if live, let f = recorder.lastFix {
                 TimelineView(.periodic(from: .now, by: 10)) { ctx in

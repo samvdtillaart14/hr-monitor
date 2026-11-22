@@ -51,6 +51,7 @@ struct HRMonitorApp: App {
                 ContentView().tabItem { Label("Live", systemImage: "heart.fill") }
                 HealthTab().tabItem { Label("Gezondheid", systemImage: "heart.text.square.fill") }
             }
+                .environment(\.locale, DV.nl)
                 .environmentObject(services.store)
                 .environmentObject(services.acts)
                 .environmentObject(services.scores)
@@ -98,7 +99,7 @@ struct ContentView: View {
             }
             .background(Theme.bg.ignoresSafeArea())
             .scrollContentBackground(.hidden)
-            .navigationTitle("HR Monitor")
+            .navigationTitle("Pulse")
             .toolbar {
                 if devMode {
                     ToolbarItem(placement: .topBarLeading) {
