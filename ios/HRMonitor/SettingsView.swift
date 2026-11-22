@@ -9,7 +9,11 @@ struct SettingsView: View {
     @EnvironmentObject var rec: Recorder
     @EnvironmentObject var raw: RawLogger
     @EnvironmentObject var ble: BLEManager
+    @EnvironmentObject var acts: ActivityStore
     @AppStorage(BLEManager.selfSyncKey) private var selfSync = false
+    @State private var exporting = false
+    @State private var share: WeekShare?
+    @State private var failure: String?
 
     var body: some View {
         List {
@@ -28,6 +32,33 @@ struct SettingsView: View {
                 }
             } header: { Text("Synchronisatie") } footer: {
                 Text(selfSync ? "De app haalt elke 15 minuten zelf de historie op. Draait de Whoop-app mee, dan laat de app het bevestigen aan Whoop over. Is de Whoop-app dicht, dan bevestigt de app zelf en krijgt Whoop die data niet meer." : "Uit: de app leest alleen mee met de Whoop-app; Whoop houdt alle data. Zet aan om zonder Whoop-app te synchroniseren.")
+            }
+            Section {
+                Button {
+                    exporting = true
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        let r = Result { try BandLog.exportWeek() }
+                        DispatchQueue.main.async {
+                            exporting = false
+                            switch r {
+                            case .success(let urls): share = WeekShare(urls: urls)
+                            case .failure(let e): failure = e.localizedDescription
+                            }
+                        }
+                    }
+                } label: {
+                    HStack {
+                        Label("Laatste week delen", systemImage: "square.and.arrow.up")
+                        if exporting { Spacer(); ProgressView() }
+                    }
+                }.disabled(exporting)
+            } header: { Text("Bandgegevens") } footer: {
+                Text("De app bewaart de data van de band automatisch, steeds de laatste \(BandLog.keepDays) dagen. Delen maakt zip-bestanden van max. 25 MB, klein genoeg om naar Claude te sturen.")
+            }
+            Section {
+                Toggle("GPS automatisch aan", isOn: $acts.autoGps).tint(Theme.accent)
+            } header: { Text("Activiteiten") } footer: {
+                Text("Zet de GPS vanzelf aan bij verhoogde hartslag of als je iPhone hardlopen/fietsen ziet. Kies bij locatie \"Altijd\".")
             }
             Section {
                 Toggle("Ontwikkelaarsopties", isOn: $devMode).tint(Theme.accent)
@@ -50,5 +81,10 @@ struct SettingsView: View {
         .scrollContentBackground(.hidden)
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle("Instellingen")
+        .sheet(item: $share) { ShareSheet(items: $0.urls) }
+        .alert("Delen mislukt", isPresented: .init(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
+            Button("OK") {}
+        } message: { Text(failure ?? "") }
     }
 }
+struct WeekShare: Identifiable { let id = UUID(); let urls: [URL] }

@@ -439,6 +439,10 @@ struct RecoveryDetailView: View {
             if let n {
                 BigRing(value: n.recovery.map { Double($0) / 100 }, text: n.recovery.map { "\($0)%" } ?? "--",
                         label: "Herstel", color: DV.recoveryColor(n.recovery))
+                if n.recovery == nil && n.recoveryNeedsNights > 0 {
+                    Text("Te weinig data voor herstel: nog \(n.recoveryNeedsNights) \(n.recoveryNeedsNights == 1 ? "nacht" : "nachten") meten, of vul je normale HRV en rust-hartslag in (Gezondheid → profiel). Herstel vergelijkt met je eigen basislijn; een standaardbasislijn gaf onzin.")
+                        .font(.subheadline).foregroundStyle(Theme.muted)
+                }
                 Card(index: 1) {
                     cmp("waveform.path.ecg", "Hartslagvariabiliteit", n.metrics.hrv, prev.compactMap(\.metrics.hrv), "%.0f", true)
                     Divider().overlay(Theme.line)
@@ -456,7 +460,7 @@ struct RecoveryDetailView: View {
                 TrendCard(title: "Rusthartslag", points: model.nights.map { ($0.date, $0.metrics.rhr) }, line: true)
                 TrendCard(title: "Ademfrequentie", points: model.nights.map { ($0.date, $0.metrics.resp) }, line: true, label: { String(format: "%.1f", $0) })
                 TrendCard(title: "Slaapprestatie", points: model.nights.map { ($0.date, $0.performance) }, line: true, label: { "\(Int($0))%" })
-                Text("Eigen berekening (scores-module): HRV, rust-HR, ademfrequentie en slaap t.o.v. je eigen basislijn. Met minder dan 4 nachten gebruikt de module een standaardbasislijn.")
+                Text("Eigen berekening (scores-module): HRV, rust-HR, ademfrequentie en slaap t.o.v. je eigen basislijn. Basislijn: je Whoop-kalibratie, of anders je eigen nachten (vanaf 4).")
                     .font(.caption).foregroundStyle(Theme.muted)
             } else {
                 Text("Nog geen nacht gemeten.").foregroundStyle(Theme.muted).padding(.top, 40)

@@ -196,6 +196,9 @@ final class DayStore: ObservableObject {
         let prevDay = cal.date(byAdding: .day, value: -1, to: cal.startOfDay(for: day)) ?? day
         let prevKey = Self.dayFmt.string(from: prevDay)
         let start = UInt32((cal.date(bySettingHour: 18, minute: 0, second: 0, of: prevDay) ?? prevDay).timeIntervalSince1970)
-        return sorted(prevKey).filter { $0.t >= start } + sorted(k)
+        let out = sorted(prevKey).filter { $0.t >= start } + sorted(k)
+        // Na een tijdzonewissel kan het bestand van gisteren latere seconden bevatten dan dat van vandaag;
+        // de scores verwachten een oplopende reeks (anders negatieve tijdstappen in belasting en calorieën).
+        return zip(out, out.dropFirst()).allSatisfy { $0.t <= $1.t } ? out : out.sorted { $0.t < $1.t }
     }
 }

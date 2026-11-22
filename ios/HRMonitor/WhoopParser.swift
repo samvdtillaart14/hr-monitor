@@ -55,6 +55,8 @@ final class WhoopParser: ObservableObject {
     }
 
     var onRecord: ((Record) -> Void)?
+    /// Live HR en RR-intervallen (ms) uit het realtime-pakket 0x28.
+    var onLive: ((Int, [Int]) -> Void)?
     /// Einde van een historie-burst (0x31 sub 2): de 8 bytes trim (u32 trim + u32, @21) voor de ack (cmd 23).
     var onHistoryEnd: (([UInt8]) -> Void)?
     /// Antwoord op een commando (0x24): cmd, resultaat (0 fout, 1 ok, 2 bezig, 3 niet ondersteund).
@@ -71,6 +73,20 @@ final class WhoopParser: ObservableObject {
         var c: UInt16 = 0xFFFF
         for x in b { c ^= UInt16(x); for _ in 0..<8 { c = (c & 1) != 0 ? (c >> 1) ^ 0xA001 : c >> 1 } }
         return c
+    }
+
+    /// CRC32 over byte 8 tot de laatste 4 bytes klopt met de trailer (geverifieerd op alle frames in Sams opnames).
+    static func trailerOK(_ f: [UInt8]) -> Bool {
+        guard f.count >= 12 else { return false }
+        let n = f.count
+        let stored = UInt32(f[n - 4]) | UInt32(f[n - 3]) << 8 | UInt32(f[n - 2]) << 16 | UInt32(f[n - 1]) << 24
+        return crc32(Array(f[8..<(n - 4)])) == stored
+    }
+
+    /// Records met een onmogelijke tijd (klok van de band niet gezet, kapot frame) slaan we over:
+    /// die zouden anders als een dag in 1970 of ver in de toekomst worden opgeslagen.
+    static func plausibleTime(_ t: UInt32, now: Date = Date()) -> Bool {
+        t >= 1_577_836_800 && TimeInterval(t) <= now.timeIntervalSince1970 + 86_400   // 2020-01-01 … morgen
     }
 
     private func u16(_ b: [UInt8], _ i: Int) -> Int { Int(b[i]) | Int(b[i + 1]) << 8 }
@@ -98,7 +114,11 @@ final class WhoopParser: ObservableObject {
             let total = u16(buf, i + 2) + 8
             guard total >= 12, total <= 4096 else { i += 1; badFrames += 1; continue }
             guard buf.count - i >= total else { break }
-            handle(Data(buf[i..<(i + total)]))
+            // Ook de CRC32-trailer controleren: valt er een notificatie weg, dan zou een frame anders de bytes van de
+            // volgende frames opslokken (die gaan dan verloren). Met de controle zoekt de parser byte voor byte verder.
+            let f = Array(buf[i..<(i + total)])
+            guard Self.trailerOK(f) else { i += 1; badFrames += 1; continue }
+            handle(Data(f))
             i += total
         }
         buf.removeFirst(i)
@@ -112,12 +132,14 @@ final class WhoopParser: ObservableObject {
         guard b.count >= 12, b[0] == 0xAA, b[1] == 0x01, u16(b, 2) + 8 == b.count,
               Self.crc16Modbus(b[0..<6]) == UInt16(u16(b, 6)) else { badFrames += 1; return }
         frames += 1
+        BandLog.shared.append(b)
         let type = b[8]
         typeCounts[type, default: 0] += 1
 
         switch type {
         case 0x2F where b[9] == 0x12 && b.count >= 124:
             let t = u32(b, 15)
+            guard Self.plausibleTime(t) else { break }
             let hr = Int(b[22])
             let raw = Double(u16(b, 73)) / 100
             var rec = Record(time: t, hr: hr, skinTemp: (5...45).contains(raw) ? raw : nil)
@@ -155,6 +177,7 @@ final class WhoopParser: ObservableObject {
             liveHR = Int(b[16])
             let n = min(Int(b[17]), (b.count - 22) / 2)
             liveRR = (0..<max(0, n)).map { (u16(b, 18 + 2 * $0) * 1000 + 512) / 1024 }
+            onLive?(Int(b[16]), liveRR)
         case 0x32 where b.count > 25:
             // Type 50: tekstlog van de firmware.
             let txt = String(decoding: b[21..<(b.count - 4)].filter { $0 >= 0x20 && $0 < 0x7F || $0 == 0x0A }, as: UTF8.self)

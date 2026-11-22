@@ -159,7 +159,7 @@ export function fitRecovery(cycles) {
   return {
     params: {
       windowDays: best.W, ...Object.fromEntries(RECOVERY_WEIGHTS.map((k, i) => [k, w[i]])), ...refs,
-      baseline: baselineOf(valid.slice(-best.W)), minHistory: 4,
+      baseline: baselineOf(valid.slice(-best.W)), baselinePersonal: true, minHistory: 4,
     },
     stats: { n: rows.length, rmseInSample: rmse(rows.map((r) => predictRec(w, r.x)), rows.map((r) => r.y)), rmseCv: best.err, rmseHoldout: holdout },
   };

@@ -12,6 +12,8 @@ struct Night: Identifiable {
     var stressMin = [0, 0, 0]                     // laag, middel, hoog (minuten tijdens slaap)
     var hr: [(Date, Double)] = []                 // HR per minuut rond de slaap
     var recovery: Int?
+    /// > 0: zoveel nachten extra nodig voordat herstel eerlijk te berekenen is
+    var recoveryNeedsNights = 0
     var metrics = NightMetrics()
 
     var onset: Date { Date(timeIntervalSince1970: r.onset) }
@@ -63,10 +65,11 @@ final class ScoreModel: ObservableObject {
         // Eerdere nachten (buiten dit venster) als basislijn voor herstel, zoals "laatste 30 dagen".
         let firstKey = DayStore.dayFmt.string(from: dates[0])
         let prior = NightArchive.shared.metrics(before: firstKey, limit: fixedCal.recovery.windowDays)
+        let personal = UserProfile.hasPersonalBaseline
         Task {
             let (n, dl) = await Task.detached(priority: .utility) { () -> ([Night], [DayLoad]) in
                 let conv = input.map { ($0.0, $0.1.map(Self.convert), $0.2.map(Self.convert)) }
-                return Self.compute(conv, fixedCal, prior: prior)
+                return Self.compute(conv, fixedCal, prior: prior, personalBaseline: personal)
             }.value
             self.nights = n; self.days = dl; self.busy = false
             NightArchive.shared.store(n.map { (DayStore.dayFmt.string(from: $0.date), $0.metrics) })
@@ -80,7 +83,10 @@ final class ScoreModel: ObservableObject {
 
     nonisolated static func fin(_ v: Double) -> Double? { v.isFinite ? v : nil }
 
-    nonisolated static func compute(_ input: [(Date, [Sample], [Sample])], _ c: Calibration, prior: [NightMetrics] = []) -> ([Night], [DayLoad]) {
+    /// - personalBaseline: true als de kalibratie (met jouw Whoop-basislijn) is geladen. Zonder die kalibratie
+///   en met minder dan `minHistory` eerdere nachten is er geen eerlijke basislijn: dan geen herstelscore.
+    nonisolated static func compute(_ input: [(Date, [Sample], [Sample])], _ c: Calibration, prior: [NightMetrics] = [],
+                                    personalBaseline: Bool = false) -> ([Night], [DayLoad]) {
         var nights: [Night] = [], days: [DayLoad] = [], history: [NightMetrics] = prior
         var prevStrain = 0.0
         let tz = Double(TimeZone.current.secondsFromGMT()) / 60
@@ -135,7 +141,9 @@ final class ScoreModel: ObservableObject {
             n.metrics = NightMetrics(hrv: fin(r.hrv), rhr: fin(r.rhr), resp: fin(r.resp), sleepPerf: n.performance,
                                      skinTemp: fin(r.skinTemp), sufficiency: n.sufficiency, efficiency: r.efficiency,
                                      consistency: n.consistency)
-            n.recovery = n.metrics.hrv == nil ? nil : WhoopScores.recovery(n.metrics, history: history, c)
+            let enoughHistory = personalBaseline || history.filter { $0.hrv != nil }.count >= c.recovery.minHistory
+            n.recovery = n.metrics.hrv == nil || !enoughHistory ? nil : WhoopScores.recovery(n.metrics, history: history, c)
+            n.recoveryNeedsNights = enoughHistory ? 0 : c.recovery.minHistory - history.filter { $0.hrv != nil }.count
             history.append(n.metrics)
             nights.append(n)
         }
