@@ -114,6 +114,7 @@ final class WhoopParser: ObservableObject {
         guard b.count >= 12, b[0] == 0xAA, b[1] == 0x01, u16(b, 2) + 8 == b.count,
               Self.crc16Modbus(b[0..<6]) == UInt16(u16(b, 6)) else { badFrames += 1; return }
         frames += 1
+        BandLog.shared.append(b)
         let type = b[8]
         typeCounts[type, default: 0] += 1
 
