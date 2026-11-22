@@ -192,7 +192,8 @@ public enum SleepPlanner {
         /// Unix-tijd uit een GET-antwoord: eerste plausibele u32 (2020–2100) in de body.
         public static func parseGet(_ body: [UInt8]) -> UInt32? {
             guard body.count >= 4 else { return nil }
-            for i in 0...(body.count - 4) {
+            // Offset 1 eerst (na de vormbyte), daarna de rest.
+            for i in [1] + (0...(body.count - 4)).filter({ $0 != 1 }) where i + 4 <= body.count {
                 let v = UInt32(body[i]) | UInt32(body[i + 1]) << 8 | UInt32(body[i + 2]) << 16 | UInt32(body[i + 3]) << 24
                 if v > 1_577_836_800 && v < 4_102_444_800 { return v }
             }

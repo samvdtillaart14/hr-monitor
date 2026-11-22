@@ -225,7 +225,7 @@ public enum WhoopScores {
         let baseHr = meanHr(longest)
         func quietExtension(_ p: Range<Int>, gapFrom a: Int, to b: Int) -> Bool {
             let h = meanHr(p)
-            if h.isFinite && baseHr.isFinite && h > baseHr + c.extendMaxHrRise { return false }
+            if h.isFinite && baseHr.isFinite && h > baseHr + (c.extendMaxHrRise ?? 4) { return false }
             guard !awake.isEmpty, a < b else { return true }
             let t0 = eps[a].t, t1 = eps[min(b, eps.count - 1)].t
             return !awake.contains { $0.lowerBound < t1 && $0.upperBound > t0 }

@@ -57,7 +57,7 @@ public struct Calibration: Codable, Equatable, Sendable {
         /// Een blok buiten dat venster hoort toch bij de nacht als het er binnen zoveel minuten op aansluit (uitslapen).
         public var nightExtendGapMin: Int = 60
         /// …en alleen als de gemiddelde HR in dat blok hooguit zoveel bpm boven die van de hoofdslaap ligt.
-        public var extendMaxHrRise: Double = 4
+        public var extendMaxHrRise: Double? = nil   // nil = 4 bpm (optioneel: oude kalibraties)
         /// Een los staartje slaap korter dan dit na het wakker worden telt niet mee.
         public var edgeRunMin: Int = 20
         /// Extra wakker-regel op ruwe beweging (× drempel); 0 = uit.
