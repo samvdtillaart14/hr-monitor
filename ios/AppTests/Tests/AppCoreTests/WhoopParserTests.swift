@@ -96,7 +96,11 @@ final class WhoopParserTests: XCTestCase {
 
     func testBLE07_garbageBetweenFrames() throws {
         let chunks = try BLEFixture.load("sync-sessie").whoopChunks
-        let noisy = chunks.enumerated().flatMap { i, x in [(x.0, i % 3 == 0 ? [UInt8(0xAA)] : [0x00, 0xAA, 0x02, 0xAA]), x] }
+        var noisy: [(String, [UInt8])] = []
+        for (i, x) in chunks.enumerated() {
+            let junk: [UInt8] = i % 3 == 0 ? [0xAA] : [0x00, 0xAA, 0x02, 0xAA]
+            noisy.append((x.0, junk)); noisy.append(x)
+        }
         let a = Collector(); a.feed(chunks)
         let b = Collector(); b.feed(noisy)
         XCTAssertEqual(a.records.count, b.records.count)

@@ -39,3 +39,7 @@ Een gratis Apple ID ondertekent apps voor 7 dagen. AltStore vernieuwt ze automat
 - In HR Monitor: *Zoek band* → kies je Whoop → *Start opname*. Je kunt het scherm nu uitzetten.
 - Opnames staan in de app onder *Opnames* (delen/AirDrop) en in de **Bestanden**-app → *Op mijn iPhone → HR Monitor*.
 - Sluit de app niet geforceerd af door hem omhoog te vegen. Dan stopt iOS de Bluetooth-verbinding.
+
+## Testen
+
+Elke push draait de workflow **Tests** (JS-referentie, Swift-scores en app-logica) naast de iOS-build. Merge pas als beide groen zijn. Wat er getest wordt, de randgevallen en de lijst gevonden bugs staan in [docs/TESTPLAN.md](docs/TESTPLAN.md); de korte ronde op de iPhone voor een release in [docs/HANDMATIGE-TESTS.md](docs/HANDMATIGE-TESTS.md).
