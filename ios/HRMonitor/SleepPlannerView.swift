@@ -246,7 +246,7 @@ struct SleepPlannerView: View {
             Button {
                 alarm.probe()
             } label: {
-                Label(alarm.probing ? "Bezig… let op of de band trilt" : "Zoek het juiste commando (±45 s)", systemImage: "magnifyingglass")
+                Label(alarm.probing ? "Bezig… let op of de band trilt" : "Zoek het juiste commando (±50 s)", systemImage: "magnifyingglass")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered).tint(Theme.muted)
