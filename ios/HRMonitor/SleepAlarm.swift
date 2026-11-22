@@ -51,6 +51,10 @@ final class SleepAlarm: ObservableObject {
     /// Tijd die als laatste met SET naar de band ging (en de vorm), wacht op antwoord.
     private var pendingSet: (time: Date, variant: Int)?
     private var bandSentFor: Date?
+    /// Extra wekkers (nummers 2–7) voor de dagen na de eerstvolgende, zodat de band ook zonder app een week
+    /// doorloopt. Of de Whoop 5.0 meer dan één wekker onthoudt, is nog niet zeker: de antwoorden worden geteld.
+    static let extraDays = 6
+    private var extrasSent = 0, extrasOk = 0, extrasAnswered = 0
 
     init(ble: BLEManager, store: DayStore, scores: ScoreModel) {
         self.ble = ble; self.store = store; self.scores = scores
@@ -242,6 +246,25 @@ final class SleepAlarm: ObservableObject {
         bandStatus = "Wekker \(Self.clock(a.wake)) naar de band gestuurd, wacht op antwoord…"
     }
 
+    /// Wekkers 2–7 voor de volgende ochtenden volgens het schema (alleen vorm 0, Whoop 5.0).
+    private func sendExtras(after first: Date) {
+        extrasSent = 0; extrasOk = 0; extrasAnswered = 0
+        var t = first
+        for i in 0..<Self.extraDays {
+            let n = schedule.nextWake(after: t.addingTimeInterval(60))
+            t = n.date
+            guard schedule.enabled, n.rule.enabled else { continue }
+            let u = UInt32(t.timeIntervalSince1970)
+            if send(SleepPlanner.BandAlarm.set, SleepPlanner.BandAlarm.setBody(unix: u, variant: 0, alarmId: UInt8(i + 2))) == nil {
+                extrasSent += 1
+            }
+        }
+        // Als de band het nummer negeert en alleen de laatste wekker onthoudt: de eerstvolgende als laatste opnieuw.
+        if extrasSent > 0 {
+            send(SleepPlanner.BandAlarm.set, SleepPlanner.BandAlarm.setBody(unix: UInt32(first.timeIntervalSince1970), variant: 0))
+        }
+    }
+
     /// Na (her)verbinden opnieuw versturen: de band kan een herstart of een Whoop-sync gehad hebben.
     func bandResend() {
         bandSentFor = nil
@@ -255,13 +278,24 @@ final class SleepAlarm: ObservableObject {
         log("← \(Self.name(cmd)) \(Self.resultText(result)) [\(hex(body))]" + (ours ? "" : " (niet van ons, bv. Whoop-app)"))
         switch cmd {
         case SleepPlanner.BandAlarm.set:
-            guard let p = pendingSet else { return }
+            guard let p = pendingSet else {
+                // Antwoord op een extra wekker.
+                guard extrasAnswered < extrasSent else { return }
+                extrasAnswered += 1
+                if result == 1 { extrasOk += 1 }
+                if extrasAnswered == extrasSent {
+                    bandStatus = (bandStatus.map { $0 + " " } ?? "")
+                        + (extrasOk == extrasSent ? "Ook de \(extrasOk) dagen erna staan op de band."
+                           : "Extra dagen: \(extrasOk) van \(extrasSent) geaccepteerd (de band onthoudt mogelijk maar één wekker).")
+                }
+                return
+            }
             if result == 1 {
                 pendingSet = nil
                 d.set(p.variant, forKey: Self.variantKey)
                 d.set(true, forKey: Self.bandSetKey)
                 bandStatus = "Band accepteerde de wekker (\(Self.clock(p.time, seconds: true))), vorm \(p.variant)."
-                send(SleepPlanner.BandAlarm.get, SleepPlanner.BandAlarm.simpleBody)
+                if p.variant == 0, let a = armed, a.wake == p.time { sendExtras(after: a.wake) }
             } else if p.variant + 1 < SleepPlanner.BandAlarm.variantCount {
                 // Geweigerd of onbekend: volgende vorm proberen.
                 _ = sendSet(p.time, variant: p.variant + 1)
@@ -269,8 +303,8 @@ final class SleepAlarm: ObservableObject {
             } else {
                 pendingSet = nil
                 d.set(0, forKey: Self.variantKey)
-                bandStatus = "De band weigerde alle 4 vormen van het wekkercommando. Gebruik ‘Zoek het juiste commando’ hieronder."
-                send(SleepPlanner.BandAlarm.get, SleepPlanner.BandAlarm.simpleBody)
+                bandStatus = "De band weigerde alle vormen van het wekkercommando."
+
             }
         case SleepPlanner.BandAlarm.get:
             if let t = SleepPlanner.BandAlarm.parseGet(body) {
