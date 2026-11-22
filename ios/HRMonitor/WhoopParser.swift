@@ -55,6 +55,13 @@ final class WhoopParser: ObservableObject {
     }
 
     var onRecord: ((Record) -> Void)?
+    /// Einde van een historie-burst (0x31 sub 2): de 8 bytes trim (u32 trim + u32, @21) voor de ack (cmd 23).
+    var onHistoryEnd: (([UInt8]) -> Void)?
+    /// Antwoord op een commando (0x24): cmd, resultaat (0 fout, 1 ok, 2 bezig, 3 niet ondersteund).
+    var onResponse: ((UInt8, UInt8) -> Void)?
+    /// Historie volledig overgedragen (0x31 sub 3).
+    var onHistoryComplete: (() -> Void)?
+    @Published private(set) var bursts = 0
     private var seen = Set<UInt32>()
     private var file: FileHandle?
     private var writeFailed = false
@@ -133,8 +140,15 @@ final class WhoopParser: ObservableObject {
         case 0x2F where b[9] == 0x15 && b.count >= 1244:
             imu(b)
         case 0x31 where b.count >= 15:
+            // Metadata: sub @10 = 1 START, 2 END (trim @21, 8 bytes), 3 COMPLETE. Tijd u32LE @11.
             let t = u32(b, 11)
             lastLiveTime = Date(timeIntervalSince1970: TimeInterval(t))
+            if b[10] == 2, b.count >= 33 {
+                bursts += 1
+                onHistoryEnd?(Array(b[21..<29]))
+            } else if b[10] == 3 {
+                onHistoryComplete?()
+            }
         case 0x28 where b.count >= 18:
             // Type 40: realtime HR/RR (na cmd 3). Tijd u32LE @10, HR u8 @16, aantal RR u8 @17, RR u16LE @18 in 1/1024 s.
             lastLiveTime = Date(timeIntervalSince1970: TimeInterval(u32(b, 10)))
@@ -151,6 +165,7 @@ final class WhoopParser: ObservableObject {
         case 0x24 where b.count >= 13:
             let res = ["mislukt", "ok", "bezig", "niet ondersteund"]
             lastResponse = "cmd \(b[10]) → " + (Int(b[12]) < res.count ? res[Int(b[12])] : "code \(b[12])")
+            onResponse?(b[10], b[12])
         default:
             break
         }

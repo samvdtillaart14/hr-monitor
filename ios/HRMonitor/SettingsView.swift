@@ -8,11 +8,26 @@ struct SettingsView: View {
     @AppStorage(SettingsView.devKey) private var devMode = false
     @EnvironmentObject var rec: Recorder
     @EnvironmentObject var raw: RawLogger
+    @EnvironmentObject var ble: BLEManager
+    @AppStorage(BLEManager.selfSyncKey) private var selfSync = false
 
     var body: some View {
         List {
             Section {
                 NavigationLink { UpdateView() } label: { Label("Update", systemImage: "arrow.down.circle") }
+            }
+            Section {
+                Toggle("Whoop-app vervangen", isOn: $selfSync).tint(Theme.accent)
+                if selfSync {
+                    Button { ble.syncNow() } label: { Label("Nu synchroniseren", systemImage: "arrow.triangle.2.circlepath") }
+                        .disabled(ble.state != .connected || ble.syncing)
+                    if let s = ble.syncStatus { Text(s).font(.footnote).foregroundStyle(Theme.muted) }
+                    if let d = ble.lastSyncComplete {
+                        Text("Laatst klaar: \(d.formatted(date: .abbreviated, time: .shortened))").font(.footnote).foregroundStyle(Theme.muted)
+                    }
+                }
+            } header: { Text("Synchronisatie") } footer: {
+                Text(selfSync ? "De app haalt elke 15 minuten zelf de historie op. Draait de Whoop-app mee, dan laat de app het bevestigen aan Whoop over. Is de Whoop-app dicht, dan bevestigt de app zelf en krijgt Whoop die data niet meer." : "Uit: de app leest alleen mee met de Whoop-app; Whoop houdt alle data. Zet aan om zonder Whoop-app te synchroniseren.")
             }
             Section {
                 Toggle("Ontwikkelaarsopties", isOn: $devMode).tint(Theme.accent)

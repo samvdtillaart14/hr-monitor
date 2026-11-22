@@ -65,3 +65,7 @@ De commando's van de Whoop-app zelf zijn vanuit onze app niet te zien: iOS toont
 5. Klaar: 0x31 **COMPLETE** (sub 3, 24 B), en in het log `Historical Dump Complete` + `PullStats`.
 
 **Body van 0x17 (nog niet bevestigd):** de inhoud van de write zelf zien we niet. Op basis van Whoop 4 (`01` + batch u32 LE + nullen) is het vermoedelijk `01` + de 8 bytes trim/`08` uit END. Een ack zet de trim-pointer op de band vooruit: data tot die trim komt daarna **niet meer bij de Whoop-app/-cloud**. Daarom niet versturen zolang de Whoop-app in gebruik is.
+
+## Zelf synchroniseren in HR Monitor ("Whoop-app vervangen")
+- **Uit (standaard):** alleen 0x16 bij verbinden, nooit een ack. De Whoop-app houdt alle data.
+- **Aan:** elke 15 min 0x16. Na elke END wacht de app op een ack van de Whoop-app: 3 s bij de eerste burst, daarna 0,3 s zolang de Whoop-app niet gereageerd heeft. Komt er geen ack, dan stuurt de app zelf 0x17. Body-variant 0: `01` + 8 bytes uit END. Krijgt die "mislukt" terug, dan wordt variant 1 gebruikt: `01` + trim u32 + 4 nullen.

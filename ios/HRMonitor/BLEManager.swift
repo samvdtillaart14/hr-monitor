@@ -70,12 +70,30 @@ final class BLEManager: NSObject, ObservableObject {
     private var lastHistoryRequest = Date.distantPast
     private var historyRequestedThisConnection = false
 
+    // MARK: zelf synchroniseren (standalone, zonder Whoop-app)
+    static let selfSyncKey = "sync.selfSync"
+    private static let ackVariantKey = "sync.ackVariant"
+    private static let lastSyncKey = "sync.lastComplete"
+    /// Bezig met een historie-overdracht die wij zelf afhandelen.
+    @Published private(set) var syncing = false
+    @Published private(set) var lastSyncComplete: Date? = UserDefaults.standard.object(forKey: BLEManager.lastSyncKey) as? Date
+    @Published private(set) var syncStatus: String?
+    private var syncStarted = Date.distantPast
+    private var acksSent = 0
+    private var pendingTrim: [UInt8]?
+    private var ourAckPending = false
+    private var whoopAckedThisSync = false
+    var selfSync: Bool { UserDefaults.standard.bool(forKey: Self.selfSyncKey) }
+
     override init() {
         super.init()
         whoop.onRecord = { [weak self] r in
             guard let st = self?.store else { return }
             MainActor.assumeIsolated { st.addRecord(r) }
         }
+        whoop.onHistoryEnd = { [weak self] trim in self?.ackBurst(trim) }
+        whoop.onHistoryComplete = { [weak self] in self?.syncDone() }
+        whoop.onResponse = { [weak self] cmd, res in self?.handleResponse(cmd: cmd, result: res) }
         central = CBCentralManager(delegate: self, queue: .main,
                                    options: [CBCentralManagerOptionRestoreIdentifierKey: Self.restoreID,
                                              CBCentralManagerOptionShowPowerAlertKey: true])
@@ -133,6 +151,10 @@ final class BLEManager: NSObject, ObservableObject {
     /// Stuurt een Whoop-commando naar FD4B0002 (met CRC's). Alleen voor veilige, lezende commando's.
     func sendWhoop(cmd: UInt8, body: [UInt8]) -> String? {
         guard cmd != 23 else { return "Cmd 23 is geblokkeerd: dat kan data op de band wissen." }
+        return sendFrame(cmd: cmd, body: body)
+    }
+
+    private func sendFrame(cmd: UInt8, body: [UInt8]) -> String? {
         guard let p = peripheral, let ch = charRefs.first(where: { $0.key.hasPrefix("FD4B0001") && $0.key.hasSuffix("FD4B0002-CCE1-4033-93CE-002D5875F58A") })?.value
         else { return "Whoop-service niet gevonden. Verbind eerst." }
         let f = whoop.frame(cmd: cmd, body: body)
@@ -312,12 +334,90 @@ extension BLEManager: CBPeripheralDelegate {
         }
         raw.log(service: sid, char: ch.uuid.uuidString, kind: ch.isNotifying ? "NOTIFY" : "READ", data: d)
         if sid.hasPrefix("FD4B") { whoop.handle(d, channel: ch.uuid.uuidString) }
-        if ch.uuid == Self.hrMeasurement { handleHR(d) }
+        if ch.uuid == Self.hrMeasurement { handleHR(d); syncIfDue() }
         else if ch.uuid == Self.batteryLevel, let v = d.first { battery = Int(v) }
     }
 }
 
 extension BLEManager {
+    /// Mogelijke opbouw van de ack (cmd 23). Exact formaat nog niet bevestigd: variant 0 = `01` + 8 bytes uit END
+    /// (trim u32 + u32), variant 1 = `01` + trim u32 + 4 nullen (zoals bij de Whoop 4). Bij "mislukt" schakelen we om.
+    fileprivate func ackBody(_ trim: [UInt8]) -> [UInt8] {
+        UserDefaults.standard.integer(forKey: Self.ackVariantKey) == 1
+            ? [0x01] + Array(trim.prefix(4)) + [0, 0, 0, 0]
+            : [0x01] + trim
+    }
+
+    /// Bevestigt een burst zodat de band de volgende stuurt, alleen als "Whoop-app vervangen" aan staat.
+    /// Draait de Whoop-app mee, dan bevestigt die binnen een fractie van een seconde zelf; wij wachten daarom
+    /// 3 s en bevestigen alleen als er geen ack van de Whoop-app voorbij kwam. Zo blijft de Whoop-app gewoon werken.
+    fileprivate func ackBurst(_ trim: [UInt8]) {
+        guard selfSync else { return }
+        pendingTrim = trim
+        syncing = true; syncStarted = Date()
+        // Eerste burst: 3 s ruimte voor de Whoop-app. Bevestigde die niet, dan draait hij niet en gaan we vlot door.
+        let wait: Double = (whoopAckedThisSync || acksSent == 0) ? 3 : 0.3
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
+            guard let self, self.selfSync, let t = self.pendingTrim, t == trim else { return }
+            self.pendingTrim = nil
+            if self.sendFrame(cmd: 23, body: self.ackBody(t)) == nil {
+                self.ourAckPending = true
+                self.acksSent += 1
+                self.syncStarted = Date()
+                self.syncStatus = "Bezig: \(self.acksSent) blokken opgehaald"
+            }
+        }
+    }
+
+    fileprivate func handleResponse(cmd: UInt8, result: UInt8) {
+        guard selfSync, cmd == 23 else { return }
+        let ours = ourAckPending
+        ourAckPending = false
+        if result == 1 {
+            // Ack van de Whoop-app (of van ons): niets meer zelf bevestigen voor deze burst.
+            if !ours { whoopAckedThisSync = true }
+            pendingTrim = nil
+            return
+        }
+        guard ours else { return }
+        guard result == 0 else { return }
+        // Ack geweigerd: andere opbouw proberen bij de volgende burst en de historie opnieuw opvragen.
+        let v = UserDefaults.standard.integer(forKey: Self.ackVariantKey)
+        UserDefaults.standard.set(v == 0 ? 1 : 0, forKey: Self.ackVariantKey)
+        syncStatus = "Ack geweigerd, andere variant wordt geprobeerd"
+        syncing = false
+        lastHistoryRequest = .distantPast
+    }
+
+    fileprivate func syncDone() {
+        syncing = false
+        if selfSync {
+            lastSyncComplete = Date()
+            UserDefaults.standard.set(lastSyncComplete, forKey: Self.lastSyncKey)
+            syncStatus = acksSent > 0 ? "Klaar: \(acksSent) blokken" : "Klaar, niets nieuws"
+        }
+        acksSent = 0
+        whoopAckedThisSync = false
+    }
+
+    /// Standalone: vraag elke 15 minuten zelf de historie op (gaat mee op de hartslagmeldingen, dus ook op de achtergrond).
+    fileprivate func syncIfDue() {
+        guard selfSync, state == .connected else { return }
+        if syncing, Date().timeIntervalSince(syncStarted) > 120 { syncing = false }   // vastgelopen overdracht
+        guard !syncing, Date().timeIntervalSince(lastHistoryRequest) > 900 else { return }
+        syncNow()
+    }
+
+    /// Start direct een synchronisatie (ook via de knop in Instellingen).
+    func syncNow() {
+        guard state == .connected, sendWhoop(cmd: 22, body: [0x00]) == nil else { return }
+        lastHistoryRequest = Date()
+        acksSent = 0
+        whoopAckedThisSync = false
+        syncing = true; syncStarted = Date()
+        syncStatus = "Historie opgevraagd…"
+    }
+
     /// Haalt na (her)verbinden de opgeslagen historie van de band op (cmd 22, alleen lezen; er wordt nooit
     /// cmd 23 gestuurd, dus de band wist niets). Zo vullen gaten door een weggevallen verbinding zich vanzelf.
     /// Hooguit eens per 10 minuten.
