@@ -236,25 +236,67 @@ struct DeviceSheet: View {
 
 struct FilesView: View {
     @EnvironmentObject var rec: Recorder
+    @State private var busy: String?
+    @State private var share: ShareItems?
+    @State private var failure: String?
+
+    /// Eén opname = alle delen met dezelfde naam (zonder "_deelN").
+    struct Recording: Identifiable {
+        let stem: String
+        var parts: [URL]
+        var id: String { stem }
+        var size: Int { parts.reduce(0) { $0 + ((try? $1.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) } }
+    }
+    struct ShareItems: Identifiable { let id = UUID(); let urls: [URL] }
+
+    private var recordings: [Recording] {
+        var order: [String] = []
+        var map: [String: [URL]] = [:]
+        for u in rec.files {
+            let stem = FileSplitter.baseStem(u.deletingPathExtension().lastPathComponent)
+            if map[stem] == nil { order.append(stem) }
+            map[stem, default: []].append(u)
+        }
+        return order.map { Recording(stem: $0, parts: map[$0]!.sorted { FileSplitter.partNumber($0) < FileSplitter.partNumber($1) }) }
+    }
+
+    private func isActive(_ r: Recording) -> Bool {
+        let raw = UserDefaults.standard.string(forKey: RawLogger.activeKey)
+        return r.parts.contains { (rec.isRecording && $0 == rec.currentURL) || $0.lastPathComponent == raw }
+    }
+
     var body: some View {
         List {
-            ForEach(rec.files, id: \.self) { url in
-                let kind = Recorder.Kind.of(url)
-                let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-                ShareLink(item: url) {
-                    HStack(spacing: 12) {
-                        Image(systemName: kind?.icon ?? "doc.text").foregroundStyle(Theme.accent).frame(width: 24)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(kind?.title ?? "Bestand").font(.headline).foregroundStyle(Theme.text)
-                            Text(url.lastPathComponent).font(.caption.monospaced()).foregroundStyle(Theme.muted)
-                        }
-                        Spacer()
-                        Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)).font(.caption).foregroundStyle(Theme.muted)
+            ForEach(recordings) { r in
+                let kind = r.parts.first.flatMap(Recorder.Kind.of)
+                let row = HStack(spacing: 12) {
+                    Image(systemName: kind?.icon ?? "doc.text").foregroundStyle(Theme.accent).frame(width: 24)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(kind?.title ?? "Bestand").font(.headline).foregroundStyle(Theme.text)
+                        Text(r.stem).font(.caption.monospaced()).foregroundStyle(Theme.muted)
+                    }
+                    Spacer()
+                    if busy == r.stem { ProgressView() } else {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text(ByteCountFormatter.string(fromByteCount: Int64(r.size), countStyle: .file))
+                            if r.parts.count > 1 { Text("\(r.parts.count) delen") }
+                        }.font(.caption).foregroundStyle(Theme.muted)
                     }
                 }
+                Group {
+                    if r.parts.count == 1 && r.size <= ZipExport.zipLimit {
+                        ShareLink(item: r.parts[0]) { row }
+                    } else {
+                        Button { zip(r) } label: { row }.disabled(busy != nil)
+                    }
+                }
+                .contextMenu {
+                    Button { zip(r) } label: { Label("Deel als zip", systemImage: "doc.zipper") }
+                    ShareLink(items: r.parts) { Label("Deel losse CSV's", systemImage: "doc.on.doc") }
+                }
                 .swipeActions {
-                    if url != rec.currentURL || !rec.isRecording {
-                        Button("Verwijder", role: .destructive) { rec.delete(url) }
+                    if !isActive(r) {
+                        Button("Verwijder", role: .destructive) { r.parts.forEach(rec.delete) }
                     }
                 }
             }
@@ -262,5 +304,34 @@ struct FilesView: View {
         .overlay { if rec.files.isEmpty { Text("Nog geen opnames").foregroundStyle(.secondary) } }
         .navigationTitle("Opnames")
         .onAppear { rec.refresh(); rec.splitLargeFiles() }
+        .sheet(item: $share) { ShareSheet(items: $0.urls) }
+        .alert("Zippen mislukt", isPresented: .init(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
+            Button("OK") {}
+        } message: { Text(failure ?? "") }
     }
+
+    /// Zipt alle delen op de achtergrond (max. 25 MB per zip) en opent het deelmenu met alle zips tegelijk.
+    private func zip(_ r: Recording) {
+        guard busy == nil else { return }
+        busy = r.stem
+        let parts = r.parts, stem = r.stem
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = Result { try ZipExport.make(name: stem, files: parts) }
+            DispatchQueue.main.async {
+                busy = nil
+                switch result {
+                case .success(let urls): share = ShareItems(urls: urls)
+                case .failure(let e): failure = e.localizedDescription
+                }
+            }
+        }
+    }
+}
+
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [URL]
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
 }
