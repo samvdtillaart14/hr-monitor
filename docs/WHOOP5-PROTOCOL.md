@@ -54,3 +54,14 @@ De commando's van de Whoop-app zelf zijn vanuit onze app niet te zien: iOS toont
 - **0x03 realtime-HR:** de Whoop-app stuurt dit ook (20:17–20:22 en 07:48). Direct daarna stoppen de 0x28-pakketten; 2A37 loopt door. Waarschijnlijk zet de Whoop-app realtime uit (body 00). Onze app moet 0x03 01 dus opnieuw sturen na een Whoop-sync.
 - **'s Nachts (01:48–07:47) synchroniseerde de Whoop-app niet** (iOS liet hem slapen). Bij openen om 07:47 volgde een inhaaldownload: ~29 acks/min tot na 08:25. Tijdens zo'n download is de ruwe log ~375 MB/uur, 's nachts zonder sync ~17 MB/uur.
 - Om de inhoud van de writes van de Whoop-app te zien is een BLE-sniffer nodig (nRF52840-dongle + nRF Sniffer in Wireshark), of PacketLogger met het Bluetooth-logprofiel op een Mac.
+
+## Historie-sync stap voor stap (gereconstrueerd uit avond 21-11, 1119 bursts)
+1. **0x22 data-range** (app → band). Antwoord-body vanaf @13: `01`, dan u32 nieuwste-pointer, u32 oudste-niet-gesynchroniseerd, u32, u32, u32 `08`, … Voorbeeld: `01 40 03 00 00 eb 00 00 00 11 03 00 00 eb 00 00 00 08 …`. De pointers lopen per sync op (0x340 → 0x580 → 0x800 …). Eerst resultaat 2 (bezig), dan 1.
+2. **0x16 historie versturen** (body `00`) → resultaat 1, body `0b`.
+3. **Band stuurt een burst:** 0x31 **START** (sub @10 = 1, 52 B) → reeks 0x2F-records (per seconde R20 2140 B, R21 1244 B, R18 124 B) → 0x31 **END** (sub @10 = 2, 36 B).
+   - END-body vanaf @9: seq, `02`, u32 tijd, 6 B ?, **u32 trim**, **u32 `08`**, 4× 00. Voorbeeld `0b 02 23 e0 01 6b c2 55 34 00 00 00 8b fe 01 00 08 00 00 00 00 00 00`.
+   - Het firmwarelog (0x32) bevestigt het: `BLE: History burst success. Trim: 0x00000008:000000bb`.
+4. **App stuurt 0x17 (ack met trim)**, waarna de band de volgende burst start. Dat gebeurde in alle 1119 van de 1119 gevallen direct na een END. Zonder ack stopt de band na één burst.
+5. Klaar: 0x31 **COMPLETE** (sub 3, 24 B), en in het log `Historical Dump Complete` + `PullStats`.
+
+**Body van 0x17 (nog niet bevestigd):** de inhoud van de write zelf zien we niet. Op basis van Whoop 4 (`01` + batch u32 LE + nullen) is het vermoedelijk `01` + de 8 bytes trim/`08` uit END. Een ack zet de trim-pointer op de band vooruit: data tot die trim komt daarna **niet meer bij de Whoop-app/-cloud**. Daarom niet versturen zolang de Whoop-app in gebruik is.
