@@ -15,7 +15,7 @@ import WhoopScores
 final class SleepAlarm: ObservableObject {
     private static let scheduleKey = "alarm.schedule", goalKey = "alarm.goal",
                        armedKey = "alarm.armed", usualBedKey = "alarm.usualBed", usualWakeKey = "alarm.usualWake",
-                       workStartKey = "alarm.workStart", variantKey = "alarm.bandVariant", bandSetKey = "alarm.bandSet"
+                       workStartKey = "alarm.workStart", variantKey = "alarm.bandVariant5", bandSetKey = "alarm.bandSet"
 
     struct Armed: Codable, Equatable {
         var wake: Date
@@ -41,7 +41,6 @@ final class SleepAlarm: ObservableObject {
     @Published private(set) var bandSent = 0
     @Published private(set) var bandAnswered = 0
     @Published private(set) var bandOk = 0
-    @Published private(set) var probing = false
     /// Tussenstand tijdens het slimme venster, bv. "Geslapen 6:40 van 7:10".
     @Published private(set) var progress: String?
 
@@ -187,7 +186,8 @@ final class SleepAlarm: ObservableObject {
     private func fire() {
         guard var a = armed else { return }
         a.fired = true; armed = a; saveArmed()
-        if ble.state == .connected, send(SleepPlanner.BandAlarm.run, SleepPlanner.BandAlarm.simpleBody) == nil {
+        // RUN (cmd 68) werkt niet op de 5.0: de wekker op de band over 5 s zetten.
+        if ble.state == .connected, sendSet(Date().addingTimeInterval(5), variant: variant) == nil {
             bandStatus = "Doel gehaald: band gevraagd nu te trillen (\(Self.clock(Date(), seconds: true)))."
         } else {
             bandStatus = "Doel gehaald, maar de band is niet verbonden; de wekker gaat op de ingestelde tijd."
@@ -281,36 +281,6 @@ final class SleepAlarm: ObservableObject {
             if result != 1 { bandStatus = "Band weigerde direct trillen (code \(result)); de wekker gaat op de ingestelde tijd." }
         default:
             break
-        }
-    }
-
-    /// Zoektocht naar de vorm van SET (cmd 66) op de Whoop 5.0. De band accepteert cmd 66 van de Whoop-app
-    /// (resultaat 1, antwoord `04 01 00`), maar weigert `01`+tijd+nullen. Probeert per 2 s een vormbyte
-    /// (geen, 00, 02–06, 10) × opvulling (2, 4, 8 nullen) met een wekker over 2 minuten. Een "ok" in het
-    /// logboek wijst de juiste vorm aan.
-    func probe() {
-        guard !probing else { return }
-        probing = true
-        let t = UInt32(Date().addingTimeInterval(120).timeIntervalSince1970)
-        let le: [UInt8] = [UInt8(t & 0xFF), UInt8((t >> 8) & 0xFF), UInt8((t >> 16) & 0xFF), UInt8(t >> 24)]
-        var bodies: [[UInt8]] = []
-        for rev in [nil, 0x00, 0x02, 0x03, 0x04, 0x05, 0x06, 0x10] as [UInt8?] {
-            for pad in [2, 4, 8] { bodies.append((rev.map { [$0] } ?? []) + le + [UInt8](repeating: 0, count: pad)) }
-        }
-        log("Zoektocht SET gestart (\(bodies.count) vormen, ±\(bodies.count * 2) s)")
-        for (i, b) in bodies.enumerated() {
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 2) { [weak self] in
-                guard let self else { return }
-                self.send(SleepPlanner.BandAlarm.set, b)
-                if i == bodies.count - 1 {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-                        guard let self else { return }
-                        self.probing = false
-                        self.log("Zoektocht klaar")
-                        self.bandResend()
-                    }
-                }
-            }
         }
     }
 
