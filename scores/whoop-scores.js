@@ -34,6 +34,8 @@ export const DEFAULT_CALIBRATION = {
     nightStartHour: 22, nightEndHour: 8, nightMergeGapMin: 240,
     // een blok buiten dat venster hoort toch bij de nacht als het er binnen zoveel minuten op aansluit (uitslapen)
     nightExtendGapMin: 60,
+    // ...en alleen als de gemiddelde HR in dat blok hooguit zoveel bpm boven die van de hoofdslaap ligt
+    extendMaxHrRise: 4,
     // een los staartje slaap korter dan edgeRunMin na het wakker worden telt niet mee (Whoop stopt dan ook)
     edgeRunMin: 20,
     // extra wakker-regel op ruwe beweging (× drempel); 0 = uit
@@ -200,6 +202,11 @@ export function mainSleep(eps, periods, cal = DEFAULT_CALIBRATION, tzOffsetMin =
   if (!periods.length) return null;
   const longest = periods.reduce((a, b) => (b.endIdx - b.startIdx > a.endIdx - a.startIdx ? b : a));
   const night = (p) => { for (let i = p.startIdx; i < p.endIdx; i += 5) if (inNight(eps[i].t, c, tzOffsetMin)) return true; return inNight(eps[p.endIdx - 1].t, c, tzOffsetMin); };
+  // uitslaapblok buiten het nachtvenster alleen als het rustig is (HR niet duidelijk hoger dan in de hoofdslaap)
+  const meanHr = (p) => { const v = []; for (let i = p.startIdx; i < p.endIdx; i++) if (Number.isFinite(eps[i].hr) && eps[i].hr > 0) v.push(eps[i].hr); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : NaN; };
+  const baseHr = meanHr(longest);
+  const rise = c.extendMaxHrRise ?? 4;
+  const quiet = (p) => { const h = meanHr(p); return !(Number.isFinite(h) && Number.isFinite(baseHr) && h > baseHr + rise); };
   const main = { ...longest };
   const parts = [longest];
   if (night(longest)) {
@@ -210,7 +217,9 @@ export function mainSleep(eps, periods, cal = DEFAULT_CALIBRATION, tzOffsetMin =
       const ext = c.nightExtendGapMin ?? 60;
       for (const p of periods) {
         if (parts.includes(p)) continue;
-        const g = night(p) ? gap : ext; // nachtblok: ruim samenvoegen; aansluitend blok buiten de nacht: alleen bij korte onderbreking
+        const inside = night(p);
+        const g = inside ? gap : ext; // nachtblok: ruim samenvoegen; aansluitend blok buiten de nacht: alleen bij korte onderbreking
+        if (!inside && !quiet(p)) continue;
         if (p.endIdx <= main.startIdx && main.startIdx - p.endIdx <= g) { main.startIdx = p.startIdx; parts.push(p); grew = true; }
         else if (p.startIdx >= main.endIdx && p.startIdx - main.endIdx <= g) { main.endIdx = p.endIdx; parts.push(p); grew = true; }
       }

@@ -130,9 +130,15 @@ final class SleepPlannerTests: XCTestCase {
 
     // MARK: band
 
-    func testBandAlarmBodyMatchesWhoop4Layout() {
-        // Openbaar voorbeeld (Whoop 4.0): 07:00 → tijd d0 36 65 66 na `42 01`.
-        XCTAssertEqual(SleepPlanner.bandAlarmBody(unix: 0x666536D0), [0x01, 0xD0, 0x36, 0x65, 0x66, 0, 0, 0, 0])
-        XCTAssertEqual(SleepPlanner.bandAlarmCmd, 0x42)
+    func testBandAlarmBodies() {
+        let t: UInt32 = 0x666536D0
+        XCTAssertEqual(SleepPlanner.BandAlarm.setBody(unix: t, variant: 0), [0x01, 0xD0, 0x36, 0x65, 0x66, 0, 0])
+        XCTAssertEqual(SleepPlanner.BandAlarm.setBody(unix: t, variant: 1), [0xD0, 0x36, 0x65, 0x66, 0, 0, 0, 0])
+        XCTAssertEqual(SleepPlanner.BandAlarm.setBody(unix: t, variant: 2, tzOffsetSec: 3600), [0x01, 0xD0, 0x36, 0x65, 0x66, 0x10, 0x0E, 0, 0])
+        XCTAssertEqual(SleepPlanner.BandAlarm.setBody(unix: t, variant: 3).first, 0x02)
+        XCTAssertTrue(SleepPlanner.BandAlarm.isAlarmCommand(66) && SleepPlanner.BandAlarm.isAlarmCommand(69))
+        XCTAssertFalse(SleepPlanner.BandAlarm.isAlarmCommand(22))
+        XCTAssertEqual(SleepPlanner.BandAlarm.parseGet([0x01, 0xD0, 0x36, 0x65, 0x66, 0, 0]), t)
+        XCTAssertNil(SleepPlanner.BandAlarm.parseGet([0x01, 0, 0]))
     }
 }

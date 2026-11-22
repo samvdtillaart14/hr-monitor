@@ -35,7 +35,6 @@ targets:
         NSMotionUsageDescription: HR Monitor gebruikt je stappen en de bewegingsherkenning van je iPhone om activiteiten (zoals hardlopen) te herkennen en te tellen.
         NSLocationWhenInUseUsageDescription: HR Monitor neemt je route op (kaart, afstand en tempo) tijdens een activiteit die je zelf start.
         NSLocationAlwaysAndWhenInUseUsageDescription: HR Monitor neemt je route op tijdens een activiteit die je zelf start, ook met het scherm uit.
-        NSAlarmKitUsageDescription: HR Monitor zet je wekker, zodat hij ook in stille modus afgaat, eventueel eerder als je slaapdoel is gehaald.
         UIBackgroundModes: [bluetooth-central, location]
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true

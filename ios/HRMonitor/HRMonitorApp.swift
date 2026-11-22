@@ -22,7 +22,7 @@ final class AppServices {
         }
         scores.awakeIntervals = { [weak screen] in screen?.wakeIntervals() ?? [] }
         screen.onMorning = { MorningBrief.send(services: AppServices.shared) }
-        ble.onAlarmResult = { [weak alarm] code in MainActor.assumeIsolated { alarm?.bandResult(code) } }
+        ble.onAlarmResponse = { [weak alarm] cmd, res, body in MainActor.assumeIsolated { alarm?.bandResponse(cmd: cmd, result: res, body: body) } }
         ble.onWhoopReady = { [weak alarm] in MainActor.assumeIsolated { alarm?.bandResend() } }
         alarm.rearm()
     }

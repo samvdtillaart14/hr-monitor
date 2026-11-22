@@ -61,6 +61,8 @@ final class WhoopParser: ObservableObject {
     var onHistoryEnd: (([UInt8]) -> Void)?
     /// Antwoord op een commando (0x24): cmd, resultaat (0 fout, 1 ok, 2 bezig, 3 niet ondersteund).
     var onResponse: ((UInt8, UInt8) -> Void)?
+    /// Zelfde antwoord met de body (vanaf byte 13, zonder CRC32), bv. voor het uitlezen van de bandwekker.
+    var onResponseBody: ((UInt8, UInt8, [UInt8]) -> Void)?
     /// Historie volledig overgedragen (0x31 sub 3).
     var onHistoryComplete: (() -> Void)?
     @Published private(set) var bursts = 0
@@ -189,6 +191,7 @@ final class WhoopParser: ObservableObject {
             let res = ["mislukt", "ok", "bezig", "niet ondersteund"]
             lastResponse = "cmd \(b[10]) → " + (Int(b[12]) < res.count ? res[Int(b[12])] : "code \(b[12])")
             onResponse?(b[10], b[12])
+            onResponseBody?(b[10], b[12], b.count > 17 ? Array(b[13..<(b.count - 4)]) : [])
         default:
             break
         }
