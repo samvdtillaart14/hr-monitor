@@ -21,8 +21,9 @@ final class UserProfileTests: XCTestCase {
     func testPROF01_restHrIsMedianOfPlausibleNights() {
         UserProfile.updateRestHr(from: [60, 62, 200, .nan, 58, 10])
         XCTAssertEqual(UserProfile.measuredRestHr, 60)
-        UserProfile.updateRestHr(from: [])          // niets nieuws: oude waarde blijft
-        XCTAssertEqual(UserProfile.measuredRestHr, 60)
+        // minder dan 3 plausibele nachten: nog geen eigen rust-HR (één nacht met alcohol verschuift anders de zones)
+        UserProfile.updateRestHr(from: [48, 200])
+        XCTAssertNil(UserProfile.measuredRestHr)
     }
 
     func testPROF02_calibrationUsesProfileWithSaneBounds() {

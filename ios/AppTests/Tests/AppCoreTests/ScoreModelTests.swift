@@ -38,8 +38,13 @@ final class ScoreModelTests: XCTestCase {
         XCTAssertGreaterThan(x.r.asleepMin, 60)
         XCTAssertGreaterThan(x.needMin, 0)
         XCTAssertNotNil(x.performance)
-        XCTAssertNotNil(x.recovery)
-        XCTAssertTrue((1...99).contains(x.recovery ?? 0))
+        // eerste nacht zonder eigen basislijn: geen herstelscore, wel hoeveel nachten er nog nodig zijn
+        XCTAssertNil(x.recovery)
+        XCTAssertEqual(x.recoveryNeedsNights, cal.recovery.minHistory)
+        // met een persoonlijke basislijn (geïmporteerde kalibratie) wel, binnen 1–99
+        let (p, _) = ScoreModel.compute([(day(0), s, [])], cal, personalBaseline: true)
+        let r = try XCTUnwrap(p.first?.recovery)
+        XCTAssertTrue((1...99).contains(r))
         XCTAssertEqual(x.stressMin.reduce(0, +), x.r.stressMin.low + x.r.stressMin.medium + x.r.stressMin.high)
         XCTAssertFalse(x.hr.isEmpty)
         XCTAssertNil(x.consistency, "consistentie pas vanaf 2 nachten")
