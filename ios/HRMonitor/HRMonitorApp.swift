@@ -261,6 +261,6 @@ struct FilesView: View {
         }
         .overlay { if rec.files.isEmpty { Text("Nog geen opnames").foregroundStyle(.secondary) } }
         .navigationTitle("Opnames")
-        .onAppear { rec.refresh() }
+        .onAppear { rec.refresh(); rec.splitLargeFiles() }
     }
 }

@@ -105,6 +105,18 @@ final class Recorder: ObservableObject {
         refresh()
     }
 
+    /// Deelt bestaande te grote opnames (> 25 MB) op de achtergrond op in delen, en ververst daarna de lijst.
+    func splitLargeFiles() {
+        guard !splitting else { return }
+        splitting = true
+        let skip = Set([Self.activeKey, RawLogger.activeKey].compactMap { UserDefaults.standard.string(forKey: $0) })
+        DispatchQueue.global(qos: .utility).async {
+            FileSplitter.splitLargeFiles(in: Self.folder, skip: skip)
+            DispatchQueue.main.async { self.splitting = false; self.refresh() }
+        }
+    }
+    private var splitting = false
+
     func refresh() {
         let urls = (try? FileManager.default.contentsOfDirectory(at: Self.folder, includingPropertiesForKeys: [.creationDateKey])) ?? []
         let date = { (u: URL) in (try? u.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast }
