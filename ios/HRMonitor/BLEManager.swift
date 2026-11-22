@@ -126,7 +126,9 @@ final class BLEManager: NSObject, ObservableObject {
         whoop.onHistoryComplete = { [weak self] in self?.syncDone() }
         whoop.onResponse = { [weak self] cmd, res in self?.handleResponse(cmd: cmd, result: res) }
         whoop.onResponseBody = { [weak self] cmd, res, body in
-            if SleepPlanner.BandAlarm.isAlarmCommand(cmd), res != 2 { self?.onAlarmResponse?(cmd, res, body) }
+            // Wekkercommando's, plus onbekende commando's (bv. van de Whoop-app) voor het wekkerlogboek.
+            let routine: Set<UInt8> = [0x03, 0x16, 0x17, 0x22]
+            if res != 2, SleepPlanner.BandAlarm.isAlarmCommand(cmd) || !routine.contains(cmd) { self?.onAlarmResponse?(cmd, res, body) }
         }
         central = CBCentralManager(delegate: self, queue: .main,
                                    options: [CBCentralManagerOptionRestoreIdentifierKey: Self.restoreID,

@@ -36,6 +36,12 @@ final class SleepAlarm: ObservableObject {
     @Published private(set) var bandStatus: String?
     /// Laatste antwoord van de band in bytes, voor het ontcijferen (alleen zichtbaar met ontwikkelaarsopties).
     @Published private(set) var bandRaw: String?
+    /// Logboek van verstuurde commando's en antwoorden (nieuwste boven), en tellers.
+    @Published private(set) var bandLog: [String] = []
+    @Published private(set) var bandSent = 0
+    @Published private(set) var bandAnswered = 0
+    @Published private(set) var bandOk = 0
+    @Published private(set) var probing = false
     /// Tussenstand tijdens het slimme venster, bv. "Geslapen 6:40 van 7:10".
     @Published private(set) var progress: String?
 
@@ -120,7 +126,7 @@ final class SleepAlarm: ObservableObject {
         guard armed != nil else { return }
         armed = nil; saveArmed(); progress = nil
         if d.bool(forKey: Self.bandSetKey), ble.state == .connected,
-           ble.sendBandAlarm(SleepPlanner.BandAlarm.disable, body: SleepPlanner.BandAlarm.simpleBody) == nil {
+           send(SleepPlanner.BandAlarm.disable, SleepPlanner.BandAlarm.simpleBody) == nil {
             bandSentFor = nil
             d.set(false, forKey: Self.bandSetKey)
             bandStatus = "Wekker op de band uitgezet."
@@ -181,7 +187,7 @@ final class SleepAlarm: ObservableObject {
     private func fire() {
         guard var a = armed else { return }
         a.fired = true; armed = a; saveArmed()
-        if ble.state == .connected, ble.sendBandAlarm(SleepPlanner.BandAlarm.run, body: SleepPlanner.BandAlarm.simpleBody) == nil {
+        if ble.state == .connected, send(SleepPlanner.BandAlarm.run, SleepPlanner.BandAlarm.simpleBody) == nil {
             bandStatus = "Doel gehaald: band gevraagd nu te trillen (\(Self.clock(Date(), seconds: true)))."
         } else {
             bandStatus = "Doel gehaald, maar de band is niet verbonden; de wekker gaat op de ingestelde tijd."
@@ -192,10 +198,38 @@ final class SleepAlarm: ObservableObject {
 
     private var variant: Int { d.integer(forKey: Self.variantKey) }
 
+    private func hex(_ b: [UInt8]) -> String { b.isEmpty ? "–" : b.prefix(16).map { String(format: "%02x", $0) }.joined(separator: " ") }
+
+    private func log(_ line: String) {
+        bandLog.insert("\(Self.clock(Date(), seconds: true))  \(line)", at: 0)
+        if bandLog.count > 20 { bandLog.removeLast(bandLog.count - 20) }
+    }
+
+    /// Verstuurt een wekkercommando en zet het in het logboek.
+    @discardableResult
+    private func send(_ cmd: UInt8, _ body: [UInt8]) -> String? {
+        let e = ble.sendBandAlarm(cmd, body: body)
+        if let e { log("✗ \(Self.name(cmd)) niet verstuurd: \(e)") } else { bandSent += 1; log("→ \(Self.name(cmd)) [\(hex(body))]") }
+        return e
+    }
+
+    nonisolated static func name(_ cmd: UInt8) -> String {
+        switch cmd {
+        case SleepPlanner.BandAlarm.set: return "SET(66)"
+        case SleepPlanner.BandAlarm.get: return "GET(67)"
+        case SleepPlanner.BandAlarm.run: return "RUN(68)"
+        case SleepPlanner.BandAlarm.disable: return "DISABLE(69)"
+        default: return "cmd \(cmd)"
+        }
+    }
+    nonisolated static func resultText(_ r: UInt8) -> String {
+        switch r { case 1: return "ok"; case 0: return "geweigerd"; case 3: return "onbekend cmd"; default: return "code \(r)" }
+    }
+
     private func sendSet(_ time: Date, variant v: Int) -> String? {
         let t = UInt32(max(0, min(Double(UInt32.max), time.timeIntervalSince1970)))
-        let e = ble.sendBandAlarm(SleepPlanner.BandAlarm.set,
-                                  body: SleepPlanner.BandAlarm.setBody(unix: t, variant: v, tzOffsetSec: TimeZone.current.secondsFromGMT(for: time)))
+        let e = send(SleepPlanner.BandAlarm.set,
+                     SleepPlanner.BandAlarm.setBody(unix: t, variant: v, tzOffsetSec: TimeZone.current.secondsFromGMT(for: time)))
         if e == nil { pendingSet = (time, v) }
         return e
     }
@@ -215,7 +249,10 @@ final class SleepAlarm: ObservableObject {
     }
 
     func bandResponse(cmd: UInt8, result: UInt8, body: [UInt8]) {
-        bandRaw = "cmd \(cmd) → \(result) · " + body.prefix(16).map { String(format: "%02x", $0) }.joined(separator: " ")
+        bandRaw = "cmd \(cmd) → \(result) · " + hex(body)
+        let ours = SleepPlanner.BandAlarm.isAlarmCommand(cmd)
+        if ours { bandAnswered += 1; if result == 1 { bandOk += 1 } }
+        log("← \(Self.name(cmd)) \(Self.resultText(result)) [\(hex(body))]" + (ours ? "" : " (niet van ons, bv. Whoop-app)"))
         switch cmd {
         case SleepPlanner.BandAlarm.set:
             guard let p = pendingSet else { return }
@@ -224,7 +261,7 @@ final class SleepAlarm: ObservableObject {
                 d.set(p.variant, forKey: Self.variantKey)
                 d.set(true, forKey: Self.bandSetKey)
                 bandStatus = "Band accepteerde de wekker (\(Self.clock(p.time, seconds: true))), vorm \(p.variant)."
-                _ = ble.sendBandAlarm(SleepPlanner.BandAlarm.get, body: SleepPlanner.BandAlarm.simpleBody)
+                send(SleepPlanner.BandAlarm.get, SleepPlanner.BandAlarm.simpleBody)
             } else if p.variant + 1 < SleepPlanner.BandAlarm.variantCount {
                 // Geweigerd of onbekend: volgende vorm proberen.
                 _ = sendSet(p.time, variant: p.variant + 1)
@@ -232,8 +269,8 @@ final class SleepAlarm: ObservableObject {
             } else {
                 pendingSet = nil
                 d.set(0, forKey: Self.variantKey)
-                bandStatus = "De band weigerde alle bekende vormen van het wekkercommando. Deel de bandgegevens, dan zoek ik de juiste vorm."
-                _ = ble.sendBandAlarm(SleepPlanner.BandAlarm.get, body: SleepPlanner.BandAlarm.simpleBody)
+                bandStatus = "De band weigerde alle 4 vormen van het wekkercommando. Gebruik ‘Zoek het juiste commando’ hieronder."
+                send(SleepPlanner.BandAlarm.get, SleepPlanner.BandAlarm.simpleBody)
             }
         case SleepPlanner.BandAlarm.get:
             if let t = SleepPlanner.BandAlarm.parseGet(body) {
@@ -244,6 +281,27 @@ final class SleepAlarm: ObservableObject {
             if result != 1 { bandStatus = "Band weigerde direct trillen (code \(result)); de wekker gaat op de ingestelde tijd." }
         default:
             break
+        }
+    }
+
+    /// Zoektocht: RUN en GET met verschillende bodies, elke 4 s één. Trilt de band, dan staat in het logboek
+    /// welke vorm het was; ok-antwoorden ook.
+    func probe() {
+        guard !probing else { return }
+        probing = true
+        log("Zoektocht gestart: let op of de band trilt")
+        let bodies: [[UInt8]] = [[0x01], [], [0x00], [0x02], [0x01, 0x00]]
+        let steps = bodies.map { (SleepPlanner.BandAlarm.run, $0) } + bodies.map { (SleepPlanner.BandAlarm.get, $0) }
+        for (i, st) in steps.enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 4) { [weak self] in
+                guard let self else { return }
+                self.send(st.0, st.1)
+                if i == steps.count - 1 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                        self?.probing = false; self?.log("Zoektocht klaar")
+                    }
+                }
+            }
         }
     }
 
