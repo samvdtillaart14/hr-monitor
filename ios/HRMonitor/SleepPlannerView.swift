@@ -73,7 +73,6 @@ struct SleepPlannerView: View {
     @EnvironmentObject var alarm: SleepAlarm
     @EnvironmentObject var scores: ScoreModel
     @EnvironmentObject var ble: BLEManager
-    @AppStorage(SettingsView.devKey) private var devMode = false
 
     var body: some View {
         let p = alarm.plan()
@@ -183,9 +182,9 @@ struct SleepPlannerView: View {
 
     private func alarmCard(_ p: TonightPlan, next: (date: Date, rule: AlarmRule)) -> some View {
         let override = alarm.schedule.override != nil && alarm.schedule.override?.day == DayStore.dayFmt.string(from: next.date)
-        return Card(title: "Wekker", index: 3) {
+        return Card(title: "Bandwekker", index: 3) {
             Toggle(isOn: $alarm.schedule.enabled) {
-                Label("Wekker aan", systemImage: "alarm.fill")
+                Label("Bandwekker aan", systemImage: "alarm.fill")
             }
             .tint(Theme.accent)
             Divider().overlay(Theme.line)
@@ -234,7 +233,7 @@ struct SleepPlannerView: View {
 
     private var bandCard: some View {
         Card(title: "Band", index: 4) {
-            Text("De wekker trilt op je band; de iPhone doet niets. Zet je in de Whoop-app ook een wekker, dan kan die deze overschrijven.")
+            Text("Er is geen iPhone-wekker: alles hierboven stuurt alleen de band aan. Zet je in de Whoop-app ook een wekker, dan kan die deze overschrijven.")
                 .font(.caption).foregroundStyle(Theme.muted)
             Button {
                 alarm.testBand()
@@ -244,8 +243,27 @@ struct SleepPlannerView: View {
             }
             .buttonStyle(.bordered).tint(Theme.accent)
             .disabled(ble.state != .connected)
+            Button {
+                alarm.probe()
+            } label: {
+                Label(alarm.probing ? "Bezig… let op of de band trilt" : "Zoek het juiste commando (±45 s)", systemImage: "magnifyingglass")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered).tint(Theme.muted)
+            .disabled(ble.state != .connected || alarm.probing)
             if let s = alarm.bandStatus { Text(s).font(.footnote).foregroundStyle(Theme.accent) }
-            if devMode, let r = alarm.bandRaw { Text(r).font(.caption2.monospaced()).foregroundStyle(Theme.muted) }
+            Text("Verstuurd: \(alarm.bandSent) · antwoorden: \(alarm.bandAnswered) · ok: \(alarm.bandOk)")
+                .font(.caption.monospacedDigit()).foregroundStyle(Theme.muted)
+            if !alarm.bandLog.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(Array(alarm.bandLog.enumerated()), id: \.offset) { _, l in
+                        Text(l).font(.caption2.monospaced()).foregroundStyle(Theme.muted)
+                    }
+                }
+                .textSelection(.enabled)
+            }
+            Text("Tip: zet met deze app open een wekker in de Whoop-app. Het antwoord van de band verschijnt dan hier in het logboek.")
+                .font(.caption2).foregroundStyle(Theme.muted)
         }
     }
 }
