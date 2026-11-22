@@ -45,3 +45,12 @@ Band: WG50_r45, firmware 50.43.2.0, iOS 27 (21-11-2026). Bron voor de basis: ope
 
 ## Belangrijk
 De Whoop-app op dezelfde iPhone deelt de BLE-verbinding. Zijn sync (hello → config → 0x22 → 0x16 → 0x17-acks) is daardoor passief mee te lezen.
+
+## Sync van de Whoop-app (passief gezien, 21/22-11-2026)
+De commando's van de Whoop-app zelf zijn vanuit onze app niet te zien: iOS toont alleen eigen writes. De band beantwoordt wel elk commando op `…0003` (0x24, cmd @10), en die antwoorden komen ook bij ons binnen. Zo is het ritme af te leiden:
+- **Elke 10 min (app op voorgrond/achtergrond actief):** 0x22 (resultaat 2 = bezig, dan 1) → 0x16 → reeks 0x2F-historie → ±40× 0x17-ack.
+- **Elk ±uur:** 0x14, 0x73/0x74 of 0x75, dan ±19× 0x76 en 0x78 (feature-flags).
+- **Bij (her)verbinden:** 0x91 hello (2×), 0x8D, 0x92, 0x45.
+- **0x03 realtime-HR:** de Whoop-app stuurt dit ook (20:17–20:22 en 07:48). Direct daarna stoppen de 0x28-pakketten; 2A37 loopt door. Waarschijnlijk zet de Whoop-app realtime uit (body 00). Onze app moet 0x03 01 dus opnieuw sturen na een Whoop-sync.
+- **'s Nachts (01:48–07:47) synchroniseerde de Whoop-app niet** (iOS liet hem slapen). Bij openen om 07:47 volgde een inhaaldownload: ~29 acks/min tot na 08:25. Tijdens zo'n download is de ruwe log ~375 MB/uur, 's nachts zonder sync ~17 MB/uur.
+- Om de inhoud van de writes van de Whoop-app te zien is een BLE-sniffer nodig (nRF52840-dongle + nRF Sniffer in Wireshark), of PacketLogger met het Bluetooth-logprofiel op een Mac.
