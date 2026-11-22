@@ -128,12 +128,12 @@ final class SleepAlarm: ObservableObject {
     private func disarm() {
         guard armed != nil else { return }
         armed = nil; saveArmed(); progress = nil
-        // DISABLE (69) werkt niet op de 5.0: alle wekkernummers 1–7 een jaar vooruit zetten, dan gaan ze niet af.
+        // DISABLE (69) werkt niet op de 5.0: alle wekkernummers 1–7 naar 2100 zetten, dan gaan ze niet af.
         if d.bool(forKey: Self.bandSetKey), ble.state == .connected {
             for id in 1...(Self.extraDays + 1) { parkBandAlarm(UInt8(id)) }
             bandSentFor = nil
             d.set(false, forKey: Self.bandSetKey)
-            bandStatus = "Wekkers op de band een jaar vooruitgezet (uitgezet); controleer het logboek op ‘ok’."
+            bandStatus = "Wekkers op de band naar 2100 gezet (uitgezet); controleer het logboek op ‘ok’."
         }
     }
 
@@ -247,9 +247,11 @@ final class SleepAlarm: ObservableObject {
         bandStatus = "Wekker \(Self.clock(a.wake)) naar de band gestuurd, wacht op antwoord…"
     }
 
-    /// Wekker `id` een jaar vooruit zetten: zo gaat hij niet af (wissen kan op de 5.0 niet).
+    /// Wekker `id` naar 1-1-2100 zetten: zo gaat hij niet af (wissen kan op de 5.0 niet, een tijd in het
+    /// verleden weigert de band met code 0a).
+    static let parkUnix: UInt32 = 4_102_444_800
     private func parkBandAlarm(_ id: UInt8) {
-        let u = UInt32(Date().addingTimeInterval(365 * 86400).timeIntervalSince1970)
+        let u = Self.parkUnix
         send(SleepPlanner.BandAlarm.set, SleepPlanner.BandAlarm.setBody(unix: u, variant: 0, alarmId: id))
     }
 
