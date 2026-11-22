@@ -9,11 +9,15 @@ struct SettingsView: View {
     @EnvironmentObject var rec: Recorder
     @EnvironmentObject var raw: RawLogger
     @EnvironmentObject var ble: BLEManager
+    @EnvironmentObject var acts: ActivityStore
     @AppStorage(BLEManager.selfSyncKey) private var selfSync = false
     @AppStorage(ScreenMonitor.morningKey) private var morning = true
     @AppStorage(ScreenMonitor.morningStartKey) private var morningStart = 5.0
     @AppStorage(ScreenMonitor.enabledKey) private var screenAsWake = true
     @EnvironmentObject var screen: ScreenMonitor
+    @State private var exporting = false
+    @State private var share: WeekShare?
+    @State private var failure: String?
 
     var body: some View {
         List {
@@ -50,6 +54,33 @@ struct SettingsView: View {
                 Text("De ochtendmelding komt zodra je na \(Self.clock(morningStart)) je telefoon ontgrendelt of het scherm 10 s aan staat, één keer per dag. Met 'Telefoon aan = wakker' tellen minuten met ontgrendelde telefoon (of scherm langer dan 30 s aan) nooit als slaap; een melding die alleen het scherm laat oplichten telt niet. Werkt alleen als de app op de achtergrond draait, dus met de band verbonden. Schermtijd zelf kan iOS niet aan deze app geven.")
             }
             Section {
+                Button {
+                    exporting = true
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        let r = Result { try BandLog.exportWeek() }
+                        DispatchQueue.main.async {
+                            exporting = false
+                            switch r {
+                            case .success(let urls): share = WeekShare(urls: urls)
+                            case .failure(let e): failure = e.localizedDescription
+                            }
+                        }
+                    }
+                } label: {
+                    HStack {
+                        Label("Laatste week delen", systemImage: "square.and.arrow.up")
+                        if exporting { Spacer(); ProgressView() }
+                    }
+                }.disabled(exporting)
+            } header: { Text("Bandgegevens") } footer: {
+                Text("De app bewaart de data van de band automatisch, steeds de laatste \(BandLog.keepDays) dagen. Delen maakt zip-bestanden van max. 25 MB, klein genoeg om naar Claude te sturen.")
+            }
+            Section {
+                Toggle("GPS automatisch aan", isOn: $acts.autoGps).tint(Theme.accent)
+            } header: { Text("Activiteiten") } footer: {
+                Text("Zet de GPS vanzelf aan bij verhoogde hartslag of als je iPhone hardlopen/fietsen ziet. Kies bij locatie \"Altijd\".")
+            }
+            Section {
                 Toggle("Ontwikkelaarsopties", isOn: $devMode).tint(Theme.accent)
                 if devMode {
                     NavigationLink { ExplorerView() } label: { Label("Verkenner (BLE-data en commando's)", systemImage: "antenna.radiowaves.left.and.right") }
@@ -70,7 +101,12 @@ struct SettingsView: View {
         .scrollContentBackground(.hidden)
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle("Instellingen")
+        .sheet(item: $share) { ShareSheet(items: $0.urls) }
+        .alert("Delen mislukt", isPresented: .init(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
+            Button("OK") {}
+        } message: { Text(failure ?? "") }
     }
 
     static func clock(_ h: Double) -> String { String(format: "%02d:%02d", Int(h), Int((h - Double(Int(h))) * 60)) }
 }
+struct WeekShare: Identifiable { let id = UUID(); let urls: [URL] }

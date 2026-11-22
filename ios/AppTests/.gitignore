@@ -1,0 +1,3 @@
+Sources/AppCore/App/
+.build/
+.swiftpm/

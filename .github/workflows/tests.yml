@@ -1,0 +1,39 @@
+name: Tests
+
+# Draait bij elke push en pull request die app-logica, scores, tests of testdata raakt.
+# Zie docs/TESTPLAN.md voor wat elke test dekt.
+on:
+  push:
+    paths: ['scores/**', 'ios/**', 'testdata/**', '.github/workflows/tests.yml']
+  pull_request:
+    paths: ['scores/**', 'ios/**', 'testdata/**', '.github/workflows/tests.yml']
+  workflow_dispatch:
+
+jobs:
+  js:
+    name: JS (scores, BLE-referentie, randgevallen)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node --test test/*.test.mjs
+        working-directory: scores
+
+  swift-scores:
+    name: Swift WhoopScores (pariteit met JS, randgevallen)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test
+        working-directory: ios/WhoopScores
+
+  app-logic:
+    name: Swift app-logica (parser, sync, opslag, ScoreModel, export)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: App-bestanden naar het testpakket kopiëren
+        run: ios/AppTests/sync-app-sources.sh
+      - run: swift test
+        working-directory: ios/AppTests

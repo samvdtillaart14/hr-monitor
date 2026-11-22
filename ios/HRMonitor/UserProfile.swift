@@ -36,15 +36,24 @@ enum UserProfile {
     /// Berekende rust-HR, of de standaard zolang er nog geen nacht is gemeten.
     static var restHr: Double { measuredRestHr ?? (importedCalibration ?? .standard).profile.restingHr }
 
-    /// Rust-HR uit de nachten: mediaan van de rust-HR per nacht (laagste stabiele hartslag tijdens diepe slaap).
+    /// Rust-HR uit de nachten: mediaan van de rust-HR per nacht (gemiddelde HR tijdens de slaap).
+    /// Pas vanaf 3 nachten; één nacht (bv. met alcohol) verschuift anders je hartslagzones.
     static func updateRestHr(from nights: [Double]) {
         let v = nights.filter { $0.isFinite && $0 >= 30 && $0 <= 110 }.sorted()
-        guard !v.isEmpty else { return }
+        guard v.count >= 3 else { d.removeObject(forKey: restHrAutoKey); return }
         let m = v.count % 2 == 1 ? v[v.count / 2] : (v[v.count / 2 - 1] + v[v.count / 2]) / 2
         d.set(m.rounded(), forKey: restHrAutoKey)
     }
 
     static let weightKey = "profile.weight", heightKey = "profile.height"
+    /// Eigen basislijn (zelf ingevuld, bv. uit de Whoop-app): HRV in ms en rust-HR in bpm. 0 = niet ingevuld.
+    static let baseHrvKey = "profile.baseHrv", baseRhrKey = "profile.baseRhr"
+    static var manualBaseline: (hrv: Double?, rhr: Double?) {
+        let h = d.double(forKey: baseHrvKey), r = d.double(forKey: baseRhrKey)
+        return ((10...200).contains(h) ? h : nil, (30...100).contains(r) ? r : nil)
+    }
+    /// Is er een persoonlijke basislijn (kalibratie of zelf ingevuld)?
+    static var hasPersonalBaseline: Bool { importedCalibration != nil || manualBaseline.hrv != nil }
 
     // MARK: kalibratie uit de Whoop-export (whoop-calibration.json)
 
@@ -80,6 +89,12 @@ enum UserProfile {
     /// Kalibratie voor de scores-module met jouw profiel erin.
     static func calibration() -> Calibration {
         var c = importedCalibration ?? Calibration.standard
+        // Een geïmporteerde kalibratie komt uit je eigen Whoop-export: de basislijn daarin is persoonlijk.
+        if importedCalibration != nil { c.recovery.baselinePersonal = true }
+        // Zelf ingevulde basislijn telt tot er genoeg eigen nachten zijn (daarna rekent de module met je nachten).
+        let mb = manualBaseline
+        if let h = mb.hrv { c.recovery.baseline.lnHrvMean = log(h); c.recovery.baselinePersonal = true }
+        if let r = mb.rhr { c.recovery.baseline.rhrMean = r }
         if let age { c.profile.age = age }
         if d.object(forKey: "profile.male") != nil { c.profile.male = d.bool(forKey: "profile.male") }
         let w = d.double(forKey: weightKey), h = d.double(forKey: heightKey)
