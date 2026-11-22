@@ -41,7 +41,9 @@ final class Recorder: ObservableObject {
         return "\(kind.rawValue)_\(df.string(from: Date())).csv"
     }
 
-    static var folder: URL { FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0] }
+    static var folder: URL { folderOverride ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0] }
+    /// Alleen voor tests: alle bestanden in een tijdelijke map in plaats van Documenten.
+    static var folderOverride: URL?
 
     private static let activeKey = "recorder.activeFile"
     private static let rowsKey = "recorder.rows"

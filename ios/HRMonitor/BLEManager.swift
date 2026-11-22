@@ -79,10 +79,7 @@ final class BLEManager: NSObject, ObservableObject {
     @Published private(set) var lastSyncComplete: Date? = UserDefaults.standard.object(forKey: BLEManager.lastSyncKey) as? Date
     @Published private(set) var syncStatus: String?
     private var syncStarted = Date.distantPast
-    private var acksSent = 0
-    private var pendingTrim: [UInt8]?
-    private var ourAckPending = false
-    private var whoopAckedThisSync = false
+    private var sync = HistorySync()
     var selfSync: Bool { UserDefaults.standard.bool(forKey: Self.selfSyncKey) }
 
     override init() {
@@ -139,7 +136,7 @@ final class BLEManager: NSObject, ObservableObject {
         var bytes = [UInt8](); var i = clean.startIndex
         while i < clean.endIndex { let j = clean.index(i, offsetBy: 2); bytes.append(UInt8(clean[i..<j], radix: 16)!); i = j }
         // Nooit cmd 23 (historie bevestigen) naar de band: dat kan data wissen voordat de Whoop-app heeft gesynchroniseerd.
-        if ch.uuid.uuidString.hasPrefix("FD4B0002"), bytes.count > 10, bytes[0] == 0xAA, bytes[8] == 0x23, bytes[10] == 23 {
+        if ch.uuid.uuidString.hasPrefix("FD4B0002"), HistorySync.isAckCommand(bytes) {
             return "Cmd 23 is geblokkeerd: dat kan data op de band wissen."
         }
         let type: CBCharacteristicWriteType = ch.properties.contains(.write) ? .withResponse : .withoutResponse
@@ -340,47 +337,27 @@ extension BLEManager: CBPeripheralDelegate {
 }
 
 extension BLEManager {
-    /// Mogelijke opbouw van de ack (cmd 23). Exact formaat nog niet bevestigd: variant 0 = `01` + 8 bytes uit END
-    /// (trim u32 + u32), variant 1 = `01` + trim u32 + 4 nullen (zoals bij de Whoop 4). Bij "mislukt" schakelen we om.
-    fileprivate func ackBody(_ trim: [UInt8]) -> [UInt8] {
-        UserDefaults.standard.integer(forKey: Self.ackVariantKey) == 1
-            ? [0x01] + Array(trim.prefix(4)) + [0, 0, 0, 0]
-            : [0x01] + trim
-    }
-
     /// Bevestigt een burst zodat de band de volgende stuurt, alleen als "Whoop-app vervangen" aan staat.
     /// Draait de Whoop-app mee, dan bevestigt die binnen een fractie van een seconde zelf; wij wachten daarom
-    /// 3 s en bevestigen alleen als er geen ack van de Whoop-app voorbij kwam. Zo blijft de Whoop-app gewoon werken.
+    /// eerst (zie HistorySync.burstEnded) en bevestigen alleen als er geen ack van de Whoop-app voorbij kwam.
     fileprivate func ackBurst(_ trim: [UInt8]) {
         guard selfSync else { return }
-        pendingTrim = trim
+        let wait = sync.burstEnded(trim: trim)
         syncing = true; syncStarted = Date()
-        // Eerste burst: 3 s ruimte voor de Whoop-app. Bevestigde die niet, dan draait hij niet en gaan we vlot door.
-        let wait: Double = (whoopAckedThisSync || acksSent == 0) ? 3 : 0.3
         DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
-            guard let self, self.selfSync, let t = self.pendingTrim, t == trim else { return }
-            self.pendingTrim = nil
-            if self.sendFrame(cmd: 23, body: self.ackBody(t)) == nil {
-                self.ourAckPending = true
-                self.acksSent += 1
+            guard let self, self.selfSync,
+                  let body = self.sync.ackDue(trim: trim, variant: UserDefaults.standard.integer(forKey: Self.ackVariantKey))
+            else { return }
+            if self.sendFrame(cmd: HistorySync.ackCmd, body: body) == nil {
+                self.sync.ackSent()
                 self.syncStarted = Date()
-                self.syncStatus = "Bezig: \(self.acksSent) blokken opgehaald"
+                self.syncStatus = "Bezig: \(self.sync.acksSent) blokken opgehaald"
             }
         }
     }
 
     fileprivate func handleResponse(cmd: UInt8, result: UInt8) {
-        guard selfSync, cmd == 23 else { return }
-        let ours = ourAckPending
-        ourAckPending = false
-        if result == 1 {
-            // Ack van de Whoop-app (of van ons): niets meer zelf bevestigen voor deze burst.
-            if !ours { whoopAckedThisSync = true }
-            pendingTrim = nil
-            return
-        }
-        guard ours else { return }
-        guard result == 0 else { return }
+        guard selfSync, sync.response(cmd: cmd, result: result) == .rejected else { return }
         // Ack geweigerd: andere opbouw proberen bij de volgende burst en de historie opnieuw opvragen.
         let v = UserDefaults.standard.integer(forKey: Self.ackVariantKey)
         UserDefaults.standard.set(v == 0 ? 1 : 0, forKey: Self.ackVariantKey)
@@ -391,13 +368,12 @@ extension BLEManager {
 
     fileprivate func syncDone() {
         syncing = false
+        let n = sync.reset()
         if selfSync {
             lastSyncComplete = Date()
             UserDefaults.standard.set(lastSyncComplete, forKey: Self.lastSyncKey)
-            syncStatus = acksSent > 0 ? "Klaar: \(acksSent) blokken" : "Klaar, niets nieuws"
+            syncStatus = n > 0 ? "Klaar: \(n) blokken" : "Klaar, niets nieuws"
         }
-        acksSent = 0
-        whoopAckedThisSync = false
     }
 
     /// Standalone: vraag elke 15 minuten zelf de historie op (gaat mee op de hartslagmeldingen, dus ook op de achtergrond).
@@ -412,8 +388,7 @@ extension BLEManager {
     func syncNow() {
         guard state == .connected, sendWhoop(cmd: 22, body: [0x00]) == nil else { return }
         lastHistoryRequest = Date()
-        acksSent = 0
-        whoopAckedThisSync = false
+        sync.reset()
         syncing = true; syncStarted = Date()
         syncStatus = "Historie opgevraagd…"
     }

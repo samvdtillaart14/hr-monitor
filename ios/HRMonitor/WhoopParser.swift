@@ -73,6 +73,20 @@ final class WhoopParser: ObservableObject {
         return c
     }
 
+    /// CRC32 over byte 8 tot de laatste 4 bytes klopt met de trailer (geverifieerd op alle frames in Sams opnames).
+    static func trailerOK(_ f: [UInt8]) -> Bool {
+        guard f.count >= 12 else { return false }
+        let n = f.count
+        let stored = UInt32(f[n - 4]) | UInt32(f[n - 3]) << 8 | UInt32(f[n - 2]) << 16 | UInt32(f[n - 1]) << 24
+        return crc32(Array(f[8..<(n - 4)])) == stored
+    }
+
+    /// Records met een onmogelijke tijd (klok van de band niet gezet, kapot frame) slaan we over:
+    /// die zouden anders als een dag in 1970 of ver in de toekomst worden opgeslagen.
+    static func plausibleTime(_ t: UInt32, now: Date = Date()) -> Bool {
+        t >= 1_577_836_800 && TimeInterval(t) <= now.timeIntervalSince1970 + 86_400   // 2020-01-01 … morgen
+    }
+
     private func u16(_ b: [UInt8], _ i: Int) -> Int { Int(b[i]) | Int(b[i + 1]) << 8 }
     private func u32(_ b: [UInt8], _ i: Int) -> UInt32 {
         UInt32(b[i]) | UInt32(b[i + 1]) << 8 | UInt32(b[i + 2]) << 16 | UInt32(b[i + 3]) << 24
@@ -98,7 +112,11 @@ final class WhoopParser: ObservableObject {
             let total = u16(buf, i + 2) + 8
             guard total >= 12, total <= 4096 else { i += 1; badFrames += 1; continue }
             guard buf.count - i >= total else { break }
-            handle(Data(buf[i..<(i + total)]))
+            // Ook de CRC32-trailer controleren: valt er een notificatie weg, dan zou een frame anders de bytes van de
+            // volgende frames opslokken (die gaan dan verloren). Met de controle zoekt de parser byte voor byte verder.
+            let f = Array(buf[i..<(i + total)])
+            guard Self.trailerOK(f) else { i += 1; badFrames += 1; continue }
+            handle(Data(f))
             i += total
         }
         buf.removeFirst(i)
@@ -118,6 +136,7 @@ final class WhoopParser: ObservableObject {
         switch type {
         case 0x2F where b[9] == 0x12 && b.count >= 124:
             let t = u32(b, 15)
+            guard Self.plausibleTime(t) else { break }
             let hr = Int(b[22])
             let raw = Double(u16(b, 73)) / 100
             var rec = Record(time: t, hr: hr, skinTemp: (5...45).contains(raw) ? raw : nil)
