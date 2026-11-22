@@ -440,7 +440,7 @@ struct RecoveryDetailView: View {
                 BigRing(value: n.recovery.map { Double($0) / 100 }, text: n.recovery.map { "\($0)%" } ?? "--",
                         label: "Herstel", color: DV.recoveryColor(n.recovery))
                 if n.recovery == nil && n.recoveryNeedsNights > 0 {
-                    Text("Te weinig data voor herstel: nog \(n.recoveryNeedsNights) \(n.recoveryNeedsNights == 1 ? "nacht" : "nachten") meten, of laad je Whoop-kalibratie (Gezondheid → profiel → Afstemming op Whoop). Herstel vergelijkt met je eigen basislijn; een standaardbasislijn gaf onzin.")
+                    Text("Te weinig data voor herstel: nog \(n.recoveryNeedsNights) \(n.recoveryNeedsNights == 1 ? "nacht" : "nachten") meten, of vul je normale HRV en rust-hartslag in (Gezondheid → profiel). Herstel vergelijkt met je eigen basislijn; een standaardbasislijn gaf onzin.")
                         .font(.subheadline).foregroundStyle(Theme.muted)
                 }
                 Card(index: 1) {

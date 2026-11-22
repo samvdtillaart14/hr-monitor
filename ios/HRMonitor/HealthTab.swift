@@ -387,6 +387,10 @@ struct ProfileSheet: View {
     @State private var maxHrText = ""
     @AppStorage(UserProfile.weightKey) private var weight: Double = 0
     @AppStorage(UserProfile.heightKey) private var height: Double = 0
+    @AppStorage(UserProfile.baseHrvKey) private var baseHrv: Double = 0
+    @AppStorage(UserProfile.baseRhrKey) private var baseRhr: Double = 0
+    @State private var baseHrvText = ""
+    @State private var baseRhrText = ""
     @State private var weightText = ""
     @State private var heightText = ""
     @State private var importing = false
@@ -418,6 +422,16 @@ struct ProfileSheet: View {
                     }
                 } header: { Text("Lichaam") } footer: { Text("Voor het rustverbruik en de calorieën. Leeg = 75 kg / 180 cm.") }
                 Section {
+                    LabeledContent("HRV (ms)") {
+                        TextField("bv. 30", text: $baseHrvText).keyboardType(.numberPad).multilineTextAlignment(.trailing)
+                    }
+                    LabeledContent("Rust-hartslag (bpm)") {
+                        TextField("bv. 55", text: $baseRhrText).keyboardType(.numberPad).multilineTextAlignment(.trailing)
+                    }
+                } header: { Text("Je normale waarden") } footer: {
+                    Text("Startpunt voor herstel en slaapstress zolang de app nog geen 4 nachten van je heeft gemeten. Neem je gemiddelde uit de Whoop-app. Leeg = herstel verschijnt pas na 4 nachten.")
+                }
+                Section {
                     LabeledContent("Kalibratie", value: calStatus)
                     Button("Kalibratiebestand kiezen…") { importing = true }
                     if UserProfile.importedCalibration != nil {
@@ -442,6 +456,8 @@ struct ProfileSheet: View {
                     maxHr = Double(maxHrText).flatMap { (100...240).contains($0) ? $0 : nil } ?? 0
                     weight = Double(weightText.replacingOccurrences(of: ",", with: ".")).flatMap { (30...250).contains($0) ? $0 : nil } ?? 0
                     height = Double(heightText).flatMap { (120...230).contains($0) ? $0 : nil } ?? 0
+                    baseHrv = Double(baseHrvText.replacingOccurrences(of: ",", with: ".")).flatMap { (10...200).contains($0) ? $0 : nil } ?? 0
+                    baseRhr = Double(baseRhrText.replacingOccurrences(of: ",", with: ".")).flatMap { (30...100).contains($0) ? $0 : nil } ?? 0
                     dismiss()
                 }
             }
@@ -452,6 +468,8 @@ struct ProfileSheet: View {
                 if maxHr > 0 { maxHrText = String(Int(maxHr)) }
                 if weight > 0 { weightText = String(format: "%g", weight) }
                 if height > 0 { heightText = String(Int(height)) }
+                if baseHrv > 0 { baseHrvText = String(Int(baseHrv)) }
+                if baseRhr > 0 { baseRhrText = String(Int(baseRhr)) }
             }
             .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
                 switch result {
