@@ -66,6 +66,8 @@ final class BLEManager: NSObject, ObservableObject {
     private var peripherals: [UUID: CBPeripheral] = [:]
     private var rrWindow: [(Date, Double)] = []
     private var lastWhoopRR = Date.distantPast
+    /// App geopend terwijl de band nog niet verbonden was: historie opvragen zodra dat kan.
+    fileprivate var openRequested = false
 
     /// RR-intervallen toevoegen en live HRV (RMSSD over 5 min) bijwerken. Intervallen die niet bij de hartslag
     /// passen (buiten 300–2000 ms of > 35 % van 60000/HR af) en sprongen > 20 % tussen opeenvolgende slagen
@@ -427,12 +429,25 @@ extension BLEManager {
         syncStatus = "Historie opgevraagd…"
     }
 
+    /// Bij het openen van de app: historie opvragen (cmd 22). Met "Whoop-app vervangen" uit leest de app alleen
+    /// mee en bevestigt niets (geen cmd 23); dan bevestigt de Whoop-app of blijft de data op de band staan.
+    func syncOnOpen() {
+        guard Date().timeIntervalSince(lastHistoryRequest) > 120 else { return }
+        if state == .connected {
+            if selfSync { syncNow() }
+            else if sendWhoop(cmd: 22, body: [0x00]) == nil { lastHistoryRequest = Date() }
+        } else {
+            openRequested = true   // zodra de verbinding er is
+        }
+    }
     /// Haalt na (her)verbinden de opgeslagen historie van de band op (cmd 22, alleen lezen; er wordt nooit
     /// cmd 23 gestuurd, dus de band wist niets). Zo vullen gaten door een weggevallen verbinding zich vanzelf.
     /// Hooguit eens per 10 minuten.
+    /// Na het openen van de app hooguit eens per 2 minuten.
     fileprivate func requestHistoryIfReady() {
+        let minGap: TimeInterval = openRequested ? 120 : 600
         guard !historyRequestedThisConnection,
-              Date().timeIntervalSince(lastHistoryRequest) > 600,
+              Date().timeIntervalSince(lastHistoryRequest) > minGap,
               charRefs.keys.contains(where: { $0.hasPrefix("FD4B0001") && $0.hasSuffix("FD4B0002-CCE1-4033-93CE-002D5875F58A") })
         else { return }
         historyRequestedThisConnection = true
@@ -443,7 +458,7 @@ extension BLEManager {
         // Even wachten tot de notificaties van de band aan staan, anders gaan de eerste records verloren.
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
             guard let self, self.state == .connected else { self?.historyRequestedThisConnection = false; return }
-            if self.sendWhoop(cmd: 22, body: [0x00]) == nil { self.lastHistoryRequest = Date() }
+            if self.sendWhoop(cmd: 22, body: [0x00]) == nil { self.lastHistoryRequest = Date(); self.openRequested = false }
             else { self.historyRequestedThisConnection = false }
         }
     }

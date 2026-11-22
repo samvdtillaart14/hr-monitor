@@ -116,7 +116,7 @@ De beslislogica (wanneer wel of niet zelf cmd 23 sturen) zit sinds deze versie i
 | SCO-01 | Pariteit Swift = JS voor strain, herstel, slaapbehoefte/schuld/prestatie/consistentie, calorieën | ✅ (bestaand) |
 | SCO-02 | Zones, strain monotoon en < 21, kalibratie-JSON tolerant voor oude bestanden | ✅ (bestaand) |
 | SCORE-01 | Geen data: geen nacht, dag met strain 0 en energie 0 | ✅ Swift |
-| SCORE-02 | Eén nacht: behoefte, prestatie, herstel 1–99, stress, HR-grafiek; consistentie pas vanaf 2 nachten | ✅ Swift |
+| SCORE-02 | Eén nacht: behoefte, prestatie, stress, HR-grafiek; zonder eigen basislijn geen herstel maar "nog n nachten", met kalibratie herstel 1–99; consistentie pas vanaf 2 nachten | ✅ Swift |
 | SCORE-03 | Geen RR: geen herstel (nil) in plaats van een gok | ✅ Swift |
 | SCORE-04 | Te weinig data (≤ 30 min): geen nacht | ✅ Swift |
 | SCORE-05 | Slaapschuld loopt door over opeenvolgende nachten, niet over een gat van dagen | ✅ Swift |
@@ -135,7 +135,7 @@ De beslislogica (wanneer wel of niet zelf cmd 23 sturen) zit sinds deze versie i
 
 | ID | Test | Status |
 |---|---|---|
-| PROF-01 | Rust-HR = mediaan van plausibele nachten (30–110) | ✅ Swift |
+| PROF-01 | Rust-HR = mediaan van plausibele nachten (30–110), pas vanaf 3 nachten | ✅ Swift |
 | PROF-02 | Kalibratie gebruikt profiel; rust-HR altijd ≥ 20 onder max-HR | ✅ Swift |
 | PROF-03 | Onzinnig gewicht wordt genegeerd | ✅ Swift |
 | PROF-04 | Ongeldige kalibratie geweigerd; geldige aangevuld met standaardwaarden | ✅ Swift |

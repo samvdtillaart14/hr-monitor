@@ -56,7 +56,7 @@ struct HRMonitorApp: App {
                 .tint(Theme.accent)
         }
         // Openstaande metingen direct wegschrijven als de app naar de achtergrond gaat.
-        .onChange(of: phase) { _, p in if p != .active { services.store.flush(); BandLog.shared.flush(); services.acts.route.persist() } }
+        .onChange(of: phase) { _, p in if p == .active { services.ble.syncOnOpen() }; if p != .active { services.store.flush(); BandLog.shared.flush(); services.acts.route.persist() } }
     }
 }
 
