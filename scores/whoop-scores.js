@@ -28,11 +28,19 @@ export const DEFAULT_CALIBRATION = {
     deepFrac: 0.20, remFrac: 0.22,
     moveThreshold: 0,     // 0 = automatisch per opname
     hrAboveRest: 20, maxGapMin: 15, minPeriodMin: 30,
+    // slaap die (deels) tussen nightStartHour en nightEndHour lokale tijd valt is nachtslaap, nooit een dutje;
+    // blokken binnen nightMergeGapMin van elkaar worden één nacht (de tussentijd telt als wakker)
+    nightStartHour: 22, nightEndHour: 8, nightMergeGapMin: 240,
+    // een los staartje slaap korter dan edgeRunMin na het wakker worden telt niet mee (Whoop stopt dan ook)
+    edgeRunMin: 20,
+    // extra wakker-regel op ruwe beweging (× drempel); 0 = uit
+    wakeMoveFactor: 0,
+    hrvFrom: 'all',
     // slaapschuld = min(cap, carry·schuld gisteren + fromDeficit·(behoefte − geslapen) gisteren)
     debtCarry: 0.1, debtFromDeficit: 0.55, debtCapMin: 127,
   },
   // slaapstress 0–3 per minuut: offset + (HR − basis-rust-HR)/hrScale − (ln RMSSD − basis-ln-HRV)/hrvScale
-  stress: { offset: 1.0, hrScale: 10, hrvScale: 0.5 },
+  stress: { offset: 0, hrScale: 10, hrvScale: 0.5 },
   corrections: { hrv: [0, 1], rhr: [0, 1], resp: [0, 1], skinTemp: [0, 1] }, // whoop ≈ a + b·eigen
 };
 
@@ -163,8 +171,49 @@ export function detectSleep(eps, cal = DEFAULT_CALIBRATION) {
     if (last && i - last.endIdx <= c.maxGapMin) last.endIdx = j; else runs.push({ startIdx: i, endIdx: j });
     i = j;
   }
+  // los staartje aan het eind van een blok (na >= 5 min wakker) weghalen
+  const edge = c.edgeRunMin ?? 20;
+  for (const r of runs) {
+    for (;;) {
+      let e = r.endIdx; while (e > r.startIdx && !cand[e - 1]) e--;
+      let s = e; while (s > r.startIdx && cand[s - 1]) s--;
+      let g = s; while (g > r.startIdx && !cand[g - 1]) g--;
+      if (g > r.startIdx && e - s < edge && s - g >= 5) r.endIdx = g; else { r.endIdx = e; break; }
+    }
+  }
   return { periods: runs.filter((r) => r.endIdx - r.startIdx >= c.minPeriodMin), moveThr, candidate: cand };
 }
+
+/** Lokaal uur (0–24) van een tijdstip. */
+const localHour = (t, tzOffsetMin) => ((((t / 60 + tzOffsetMin) % 1440) + 1440) % 1440) / 60;
+const inNight = (t, c, tz) => { const h = localHour(t, tz), a = c.nightStartHour ?? 22, b = c.nightEndHour ?? 8; return a > b ? h >= a || h < b : h >= a && h < b; };
+
+/**
+ * Hoofdslaap kiezen: het langste blok; ligt dat in de nacht, dan horen alle nachtblokken binnen
+ * nightMergeGapMin erbij (de tussentijd telt als wakker). De rest zijn dutjes.
+ */
+export function mainSleep(eps, periods, cal = DEFAULT_CALIBRATION, tzOffsetMin = defaultTz()) {
+  const c = cal.sleep;
+  if (!periods.length) return null;
+  const longest = periods.reduce((a, b) => (b.endIdx - b.startIdx > a.endIdx - a.startIdx ? b : a));
+  const night = (p) => { for (let i = p.startIdx; i < p.endIdx; i += 5) if (inNight(eps[i].t, c, tzOffsetMin)) return true; return inNight(eps[p.endIdx - 1].t, c, tzOffsetMin); };
+  const main = { ...longest };
+  const parts = [longest];
+  if (night(longest)) {
+    const gap = c.nightMergeGapMin ?? 240;
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const p of periods) {
+        if (parts.includes(p) || !night(p)) continue;
+        if (p.endIdx <= main.startIdx && main.startIdx - p.endIdx <= gap) { main.startIdx = p.startIdx; parts.push(p); grew = true; }
+        else if (p.startIdx >= main.endIdx && p.startIdx - main.endIdx <= gap) { main.endIdx = p.endIdx; parts.push(p); grew = true; }
+      }
+    }
+  }
+  return { main, naps: periods.filter((p) => !parts.includes(p)) };
+}
+const defaultTz = () => -new Date().getTimezoneOffset();
 
 export const STAGE = { WAKE: 0, LIGHT: 1, DEEP: 2, REM: 3 };
 
@@ -173,7 +222,8 @@ export function stageSleep(eps, period, candidate, moveThr, cal = DEFAULT_CALIBR
   const c = cal.sleep;
   const idx = []; for (let i = period.startIdx; i < period.endIdx; i++) idx.push(i);
   const N = idx.length;
-  const stages = idx.map((i) => (!candidate[i] || eps[i].move > 2 * moveThr ? STAGE.WAKE : STAGE.LIGHT));
+  const wf = c.wakeMoveFactor ?? 0;
+  const stages = idx.map((i) => (!candidate[i] || (wf > 0 && eps[i].move > wf * moveThr) ? STAGE.WAKE : STAGE.LIGHT));
   const sl = idx.map((_, k) => k).filter((k) => stages[k] !== STAGE.WAKE);
   if (!sl.length) return stages;
   const zHr = zscores(sl.map((k) => eps[idx[k]].hr));
@@ -194,11 +244,11 @@ export function stageSleep(eps, period, candidate, moveThr, cal = DEFAULT_CALIBR
 
 // ---------- nacht ----------
 /** Volledige nachtanalyse: slaap, fases, HRV, rust-HR, ademfrequentie, huidtemperatuur. */
-export function analyzeNight(samples, cal = DEFAULT_CALIBRATION, baseline = cal.recovery.baseline) {
+export function analyzeNight(samples, cal = DEFAULT_CALIBRATION, baseline = cal.recovery.baseline, tzOffsetMin = defaultTz()) {
   const eps = epochs(samples);
   const { periods, moveThr, candidate } = detectSleep(eps, cal);
   if (!periods.length) return null;
-  const main = periods.reduce((a, b) => (b.endIdx - b.startIdx > a.endIdx - a.startIdx ? b : a));
+  const { main, naps } = mainSleep(eps, periods, cal, tzOffsetMin);
   const bs = beats(samples);
   const t0 = eps[0].t;
   const epochBeats = eps.map(() => []);
@@ -207,7 +257,8 @@ export function analyzeNight(samples, cal = DEFAULT_CALIBRATION, baseline = cal.
   const stages = stageSleep(eps, main, candidate, moveThr, cal, rmEp);
   const at = (k) => main.startIdx + k;
 
-  // 5-minutenvensters; HRV en rust-HR uit de laatste diepe-slaapperiode (Whoop weegt diepe slaap het zwaarst)
+  // 5-minutenvensters voor HRV en rust-HR
+  const c0 = cal.sleep;
   const wins = [];
   for (let k = 0; k + 5 <= stages.length; k += 5) {
     const st = stages.slice(k, k + 5);
@@ -217,7 +268,9 @@ export function analyzeNight(samples, cal = DEFAULT_CALIBRATION, baseline = cal.
     if (!Number.isFinite(v)) continue;
     wins.push({ k, rmssd: v, hr: mean(eps.slice(at(k), at(k + 5)).map((e) => e.hr).filter(Number.isFinite)), deep: st.filter((s) => s === STAGE.DEEP).length >= 3 });
   }
-  let chosen = wins.filter((w) => w.deep);
+  // Standaard: gemiddelde over alle 5-min-vensters in slaap (kwam op echte nacht het dichtst bij Whoop);
+  // hrvFrom 'lastDeep' = laatste aaneengesloten diepe blok.
+  let chosen = (c0.hrvFrom ?? 'all') === 'lastDeep' ? wins.filter((w) => w.deep) : [];
   if (chosen.length) { // laatste aaneengesloten diepe blok
     const lastBlock = [chosen[chosen.length - 1]];
     for (let i = chosen.length - 2; i >= 0 && chosen[i].k === lastBlock[0].k - 5; i--) lastBlock.unshift(chosen[i]);
@@ -259,7 +312,7 @@ export function analyzeNight(samples, cal = DEFAULT_CALIBRATION, baseline = cal.
     hrv: correct(hrv, k.hrv), rhr: correct(rhr, k.rhr), resp: correct(resp, k.resp),
     skinTemp: correct(temps.length ? mean(temps) : NaN, k.skinTemp),
     stress, stressMin, highStressPct: stressTotal ? (100 * stressMin.high) / stressTotal : NaN,
-    stages, naps: periods.filter((p) => p !== main).map((p) => ({ onset: eps[p.startIdx].t, minutes: p.endIdx - p.startIdx })),
+    stages, naps: naps.map((p) => ({ onset: eps[p.startIdx].t, minutes: p.endIdx - p.startIdx })),
   };
 }
 

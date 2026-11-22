@@ -78,7 +78,7 @@ final class WhoopScoresTests: XCTestCase {
 
     func testNightMatchesJS() throws {
         let f = Fixture.shared, e = f.expected.night
-        let n = try XCTUnwrap(WhoopScores.analyzeNight(f.samples, f.calibration))
+        let n = try XCTUnwrap(WhoopScores.analyzeNight(f.samples, f.calibration, tzOffsetMin: 0))
         XCTAssertEqual(n.onset, e.onset); XCTAssertEqual(n.wake, e.wake)
         XCTAssertEqual(n.inBedMin, e.inBedMin); XCTAssertEqual(n.asleepMin, e.asleepMin); XCTAssertEqual(n.awakeMin, e.awakeMin)
         XCTAssertEqual(n.lightMin, e.lightMin); XCTAssertEqual(n.deepMin, e.deepMin); XCTAssertEqual(n.remMin, e.remMin)
@@ -88,7 +88,7 @@ final class WhoopScoresTests: XCTestCase {
         XCTAssertEqual(n.hrv, e.hrv, accuracy: 1e-6); XCTAssertEqual(n.rhr, e.rhr, accuracy: 1e-6)
         XCTAssertEqual(n.resp, e.resp, accuracy: 1e-6); XCTAssertEqual(n.skinTemp, e.skinTemp, accuracy: 1e-6)
         // en inhoudelijk: de synthetische nacht heeft rust-HR 50 en ademfrequentie 15/min
-        XCTAssertEqual(n.rhr, 50, accuracy: 2); XCTAssertEqual(n.resp, 15, accuracy: 0.6)
+        XCTAssertEqual(n.rhr, 55, accuracy: 2); XCTAssertEqual(n.resp, 15, accuracy: 0.6)
     }
 
     func testStrainMatchesJS() {
@@ -157,5 +157,24 @@ final class HistoryTests: XCTestCase {
         XCTAssertEqual(History.trailingMean(r, before: 2) { $0.hrv }!, 25, accuracy: 1e-9)
         XCTAssertEqual(History.nextDebt(after: r.last!), 127, accuracy: 1e-9)
         XCTAssertNil(History.typicalRange(r, before: 2) { $0.deepMin })
+    }
+
+    // MARK: nachtslaap versus dutjes
+
+    func testNightBlocksMergeNapStays() throws {
+        let day = 1795305600.0 // 22-11-2026 00:00 UTC
+        let eps = (0..<1440).map { Epoch(t: day + Double($0) * 60, hr: 55, hrSd: 1, move: 0, skinTemp: .nan, n: 60) }
+        let early = 114..<171, late = 232..<457, nap = 840..<880
+        let r = try XCTUnwrap(WhoopScores.mainSleep(eps, periods: [early, late, nap], .standard, tzOffsetMin: 60))
+        XCTAssertEqual(r.main, 114..<457)
+        XCTAssertEqual(r.naps, [nap])
+    }
+
+    func testTrailingSnippetTrimmed() {
+        let eps = (0..<168).map { i in Epoch(t: Double(i) * 60, hr: 55, hrSd: 1, move: i >= 150 && i < 157 ? 5 : 0.01, skinTemp: .nan, n: 60) }
+        var cal = Calibration.standard; cal.sleep.moveThreshold = 1
+        let d = WhoopScores.detectSleep(eps, cal)
+        XCTAssertEqual(d.periods.count, 1)
+        XCTAssertLessThanOrEqual(d.periods[0].upperBound, 150)
     }
 }

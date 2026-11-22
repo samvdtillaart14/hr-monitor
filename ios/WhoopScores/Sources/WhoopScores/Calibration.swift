@@ -49,12 +49,21 @@ public struct Calibration: Codable, Equatable, Sendable {
         /// 0 = automatisch per opname
         public var moveThreshold: Double = 0
         public var hrAboveRest: Double = 20, maxGapMin: Int = 15, minPeriodMin: Int = 30
+        /// Slaap die (deels) tussen nightStartHour en nightEndHour lokale tijd valt is nachtslaap, nooit een dutje;
+        /// blokken binnen nightMergeGapMin van elkaar worden één nacht (de tussentijd telt als wakker).
+        public var nightStartHour: Double = 22, nightEndHour: Double = 8, nightMergeGapMin: Int = 240
+        /// Een los staartje slaap korter dan dit na het wakker worden telt niet mee.
+        public var edgeRunMin: Int = 20
+        /// Extra wakker-regel op ruwe beweging (× drempel); 0 = uit.
+        public var wakeMoveFactor: Double = 0
+        /// "all" = HRV/rust-HR over alle slaapvensters, "lastDeep" = laatste diepe blok.
+        public var hrvFrom: String = "all"
         /// slaapschuld = min(cap, carry·schuld gisteren + fromDeficit·(behoefte − geslapen) gisteren)
         public var debtCarry: Double = 0.1, debtFromDeficit: Double = 0.55, debtCapMin: Double = 127
     }
     /// slaapstress 0–3: offset + (HR − basis-rust-HR)/hrScale − (ln RMSSD − basis-ln-HRV)/hrvScale
     public struct Stress: Codable, Equatable, Sendable {
-        public var offset: Double = 1.0, hrScale: Double = 10, hrvScale: Double = 0.5
+        public var offset: Double = 0, hrScale: Double = 10, hrvScale: Double = 0.5
     }
     /// whoop ≈ a + b·eigen, als [a, b]
     public struct Corrections: Codable, Equatable, Sendable {

@@ -7,9 +7,9 @@ Gebaseerd op Whoop's eigen uitleg; de vorm van de formules is een eigen keuze, d
 
 | Score | Methode | Parameters uit export |
 |---|---|---|
-| **Slaapdetectie** | Epochs van 60 s. Slaap = weinig beweging (hoekverandering van de oriëntatie-quaternion, 7-min-gemiddelde onder een automatische drempel) én HR < rust-HR + 20. Gaten ≤ 15 min worden samengevoegd. Langste periode = hoofdslaap, de rest dutjes. | – |
+| **Slaapdetectie** | Epochs van 60 s. Slaap = weinig beweging (hoekverandering van de oriëntatie-quaternion, 7-min-mediaan onder een automatische drempel) én HR < rust-HR + 20. Gaten ≤ 15 min worden samengevoegd; een los staartje < 20 min na het wakker worden telt niet mee. Langste periode = hoofdslaap. Slaap tussen 22:00 en 08:00 (lokale tijd) is altijd nachtslaap: alle nachtblokken binnen 4 uur van elkaar worden één nacht, met de tussentijd als wakker. Dutjes alleen overdag. | – |
 | **Slaapfases** | Wakker: beweging of buiten de slaapkandidaten. Diep: lage, stabiele HR, hoge RMSSD, vroeg in de nacht. REM: wisselende HR, lagere RMSSD, later in de nacht, niet in de eerste 45 min. Diep en REM worden op rangorde toegekend, zodat de verdeling jouw gemiddelde Whoop-verdeling volgt. | `deepFrac`, `remFrac` |
-| **HRV** | RMSSD over 5-min-vensters met schone RR (300–2000 ms, ≤ 20 % van de lokale mediaan). Gemiddelde over het laatste diepe-slaapblok, zoals Whoop. | correctie a + b·x |
+| **HRV** | RMSSD over 5-min-vensters met schone RR (300–2000 ms, ≤ 20 % van de lokale mediaan). Gemiddelde over alle 5-min-vensters in slaap (rust-HR idem); dat kwam op een echte nacht het dichtst bij Whoop (HRV ±1 ms, rust-HR ±1 bpm). `hrvFrom: 'lastDeep'` geeft het laatste diepe blok. | correctie a + b·x |
 | **Rust-HR** | Gemiddelde HR in dezelfde vensters. | correctie |
 | **Ademfrequentie** | Piek in 0,1–0,5 Hz van het RR-tachogram (sinusaritmie), mediaan over 2-min-vensters in slaap. | correctie |
 | **Strain** | Minuten per HR-zone (hartslagreserve, zones 50–60 % … 90–100 %), gewogen k^γ (zone 0 apart); `min(21, a·ln(1 + T/b))`. | `a`, `b`, gewicht zone 0, γ |
@@ -53,7 +53,7 @@ De fit-test maakt een nep-export met bekende parameters en controleert dat de ka
 ## API voor de schermen (Swift `WhoopScores`; JS-namen gelijk in `scores/whoop-scores.js`)
 | Functie | Levert |
 |---|---|
-| `analyzeNight(samples, cal, baseline:)` | slaaptijden, fases per minuut, wake-events, HRV, rust-HR, ademfrequentie, huidtemp, **slaapstress per minuut** (`stress`, `stressMin`, `highStressPct`) |
+| `analyzeNight(samples, cal, baseline:, tzOffsetMin:)` | slaaptijden, fases per minuut, wake-events, HRV, rust-HR, ademfrequentie, huidtemp, **slaapstress per minuut** (`stress`, `stressMin`, `highStressPct`) |
 | `sleepNeedParts(debtMin:prevDayStrain:napMin:)` | opbouw behoefte: gezond minimum, strain, schuld, dutjes, totaal |
 | `sleepDebt(prevDebtMin:prevNeedMin:prevAsleepMin:)` | slaapschuld voor de komende nacht |
 | `sleepSufficiency`, `sleepConsistency`, `sleepPerformance` | de bijdragen en de slaapprestatie |

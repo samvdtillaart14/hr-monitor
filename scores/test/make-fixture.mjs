@@ -5,7 +5,7 @@ import * as W from '../whoop-scores.js';
 import { synthNight } from './synth.js';
 
 const { samples } = synthNight({ seed: 7 });
-const night = W.analyzeNight(samples);
+const night = W.analyzeNight(samples, W.DEFAULT_CALIBRATION, W.DEFAULT_CALIBRATION.recovery.baseline, 0);
 const run = Array.from({ length: 2400 }, (_, i) => ({ t: 5000 + i, hr: Math.round(110 + 60 * Math.sin(i / 700)) }));
 const hist = Array.from({ length: 20 }, (_, i) => ({ hrv: 60 + (i % 5) - 2, rhr: 55 + (i % 3) - 1, resp: 15 + 0.1 * (i % 4), skinTemp: 33.5 }));
 const nightIn = { hrv: 62, rhr: 54, resp: 15.4, sleepPerf: 71, skinTemp: 33.7, sufficiency: 76, efficiency: 88 };
