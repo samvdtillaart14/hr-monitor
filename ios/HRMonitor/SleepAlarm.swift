@@ -128,11 +128,12 @@ final class SleepAlarm: ObservableObject {
     private func disarm() {
         guard armed != nil else { return }
         armed = nil; saveArmed(); progress = nil
-        if d.bool(forKey: Self.bandSetKey), ble.state == .connected,
-           send(SleepPlanner.BandAlarm.disable, SleepPlanner.BandAlarm.simpleBody) == nil {
+        // DISABLE (69) werkt niet op de 5.0: alle wekkernummers 1–7 een jaar vooruit zetten, dan gaan ze niet af.
+        if d.bool(forKey: Self.bandSetKey), ble.state == .connected {
+            for id in 1...(Self.extraDays + 1) { parkBandAlarm(UInt8(id)) }
             bandSentFor = nil
             d.set(false, forKey: Self.bandSetKey)
-            bandStatus = "Wekker op de band uitgezet."
+            bandStatus = "Wekkers op de band een jaar vooruitgezet (uitgezet); controleer het logboek op ‘ok’."
         }
     }
 
@@ -246,6 +247,12 @@ final class SleepAlarm: ObservableObject {
         bandStatus = "Wekker \(Self.clock(a.wake)) naar de band gestuurd, wacht op antwoord…"
     }
 
+    /// Wekker `id` een jaar vooruit zetten: zo gaat hij niet af (wissen kan op de 5.0 niet).
+    private func parkBandAlarm(_ id: UInt8) {
+        let u = UInt32(Date().addingTimeInterval(365 * 86400).timeIntervalSince1970)
+        send(SleepPlanner.BandAlarm.set, SleepPlanner.BandAlarm.setBody(unix: u, variant: 0, alarmId: id))
+    }
+
     /// Wekkers 2–7 voor de volgende ochtenden volgens het schema (alleen vorm 0, Whoop 5.0).
     private func sendExtras(after first: Date) {
         extrasSent = 0; extrasOk = 0; extrasAnswered = 0
@@ -253,7 +260,8 @@ final class SleepAlarm: ObservableObject {
         for i in 0..<Self.extraDays {
             let n = schedule.nextWake(after: t.addingTimeInterval(60))
             t = n.date
-            guard schedule.enabled, n.rule.enabled else { continue }
+            // Uitgezette dag: een eerder gezette wekker op dit nummer onschadelijk maken.
+            guard schedule.enabled, n.rule.enabled else { parkBandAlarm(UInt8(i + 2)); continue }
             let u = UInt32(t.timeIntervalSince1970)
             if send(SleepPlanner.BandAlarm.set, SleepPlanner.BandAlarm.setBody(unix: u, variant: 0, alarmId: UInt8(i + 2))) == nil {
                 extrasSent += 1
@@ -315,6 +323,27 @@ final class SleepAlarm: ObservableObject {
             if result != 1 { bandStatus = "Band weigerde direct trillen (code \(result)); de wekker gaat op de ingestelde tijd." }
         default:
             break
+        }
+    }
+
+    /// Test: kan een wekker uit door hem een jaar terug te zetten? Wekker 1 op over 2 min, na 10 s
+    /// overschrijven met een tijd een jaar terug. Goed als: antwoord ok, geen trilling nu en niet over 2 min.
+    func testPast() {
+        let first = Date().addingTimeInterval(120)
+        if let e = send(SleepPlanner.BandAlarm.set, SleepPlanner.BandAlarm.setBody(unix: UInt32(first.timeIntervalSince1970), variant: 0)) {
+            bandStatus = e; return
+        }
+        bandStatus = "Test verleden: wekker om \(Self.clock(first, seconds: true)), over 10 s een jaar terug gezet. Trilt de band nu of om \(Self.clock(first, seconds: true)), dan werkt het niet."
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+            guard let self else { return }
+            let past = UInt32(Date().addingTimeInterval(-365 * 86400).timeIntervalSince1970)
+            self.send(SleepPlanner.BandAlarm.set, SleepPlanner.BandAlarm.setBody(unix: past, variant: 0))
+            self.log("Wekker 1 een jaar terug gezet; let op of de band trilt")
+        }
+        // Na de test de echte wekker terugzetten.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 150) { [weak self] in
+            self?.log("Test verleden klaar; echte wekker wordt teruggezet")
+            self?.bandResend()
         }
     }
 
