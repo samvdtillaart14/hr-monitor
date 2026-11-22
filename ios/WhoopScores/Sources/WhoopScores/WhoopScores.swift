@@ -221,10 +221,11 @@ public enum WhoopScores {
             var grew = true
             while grew {
                 grew = false
-                for p in periods where !parts.contains(p) && night(p) {
-                    if p.upperBound <= main.lowerBound && main.lowerBound - p.upperBound <= c.nightMergeGapMin {
+                for p in periods where !parts.contains(p) {
+                    let g = night(p) ? c.nightMergeGapMin : c.nightExtendGapMin   // aansluitend blok buiten de nacht: alleen bij korte onderbreking
+                    if p.upperBound <= main.lowerBound && main.lowerBound - p.upperBound <= g {
                         main = p.lowerBound..<main.upperBound; parts.append(p); grew = true
-                    } else if p.lowerBound >= main.upperBound && p.lowerBound - main.upperBound <= c.nightMergeGapMin {
+                    } else if p.lowerBound >= main.upperBound && p.lowerBound - main.upperBound <= g {
                         main = main.lowerBound..<p.upperBound; parts.append(p); grew = true
                     }
                 }
@@ -465,12 +466,26 @@ public enum WhoopScores {
     static let floors = (lnHrvSd: 0.05, rhrSd: 1.0, respSd: 0.3, tempSd: 0.1)
 
     /// Basislijn uit eerdere nachten (laatste `windowDays`); valt terug op de gekalibreerde basislijn.
-    public static func baseline(from history: [NightMetrics], _ cal: Calibration = .standard) -> Calibration.Baseline {
+    /// Basislijn uit de laatste `windowDays` nachten. Met minder dan `minHistory` nachten: de gekalibreerde
+    /// basislijn als die persoonlijk is, anders het gemiddelde van je eigen nachten tot nu toe (inclusief `night`)
+    /// met de standaardspreiding. Een populatiebasislijn (HRV 60 ms) gaf bij HRV ~30 ms een herstel van 1–2 %.
+    public static func baseline(from history: [NightMetrics], _ cal: Calibration = .standard, night: NightMetrics? = nil) -> Calibration.Baseline {
         let r = cal.recovery
         let h = history.suffix(r.windowDays)
         func col(_ f: (NightMetrics) -> Double?) -> [Double] { h.compactMap(f).filter { $0.isFinite } }
         let lh = col { n in n.hrv.flatMap { $0 > 0 ? log($0) : nil } }
-        if lh.count < r.minHistory { return r.baseline }
+        if lh.count < r.minHistory {
+            guard !r.baselinePersonal, let night else { return r.baseline }
+            let own = Array(h) + [night]
+            func m(_ f: (NightMetrics) -> Double?, _ fb: Double) -> Double {
+                let v = own.compactMap(f).filter { $0.isFinite }
+                return v.isEmpty ? fb : M.mean(v)
+            }
+            var b = r.baseline
+            b.lnHrvMean = m({ n in n.hrv.flatMap { $0 > 0 ? log($0) : nil } }, b.lnHrvMean)
+            b.rhrMean = m({ $0.rhr }, b.rhrMean); b.respMean = m({ $0.resp }, b.respMean); b.tempMean = m({ $0.skinTemp }, b.tempMean)
+            return b
+        }
         func pick(_ v: [Double], _ m: Double, _ s: Double) -> (Double, Double) { v.count >= r.minHistory ? (M.mean(v), M.sd(v)) : (m, s) }
         let b = r.baseline
         let hv = pick(lh, b.lnHrvMean, b.lnHrvSd), rh = pick(col { $0.rhr }, b.rhrMean, b.rhrSd)
@@ -480,7 +495,7 @@ public enum WhoopScores {
 
     /// Recovery 1–99 %.
     public static func recovery(_ night: NightMetrics, history: [NightMetrics] = [], _ cal: Calibration = .standard) -> Int {
-        let r = cal.recovery, b = baseline(from: history, cal)
+        let r = cal.recovery, b = baseline(from: history, cal, night: night)
         func z(_ v: Double?, _ m: Double, _ s: Double, _ fl: Double) -> Double {
             guard let v, v.isFinite else { return 0 }
             return (v - m) / max(s, fl)

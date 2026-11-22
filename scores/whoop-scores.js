@@ -20,6 +20,7 @@ export const DEFAULT_CALIBRATION = {
     sleepRef: 0.85, sufRef: 0.8, effRef: 0.85, consRef: 0.7,
     baseline: { lnHrvMean: Math.log(60), lnHrvSd: 0.25, rhrMean: 55, rhrSd: 3, respMean: 15, respSd: 0.8, tempMean: 33.5, tempSd: 0.3 },
     minHistory: 4,
+    baselinePersonal: false, // true = baseline hierboven komt uit je eigen data (kalibratie)
   },
   sleep: {
     needBaseMin: 460, needPerDebtMin: 0.3, needPerStrainMin: 3, strainRef: 10,
@@ -31,6 +32,8 @@ export const DEFAULT_CALIBRATION = {
     // slaap die (deels) tussen nightStartHour en nightEndHour lokale tijd valt is nachtslaap, nooit een dutje;
     // blokken binnen nightMergeGapMin van elkaar worden één nacht (de tussentijd telt als wakker)
     nightStartHour: 22, nightEndHour: 8, nightMergeGapMin: 240,
+    // een blok buiten dat venster hoort toch bij de nacht als het er binnen zoveel minuten op aansluit (uitslapen)
+    nightExtendGapMin: 60,
     // een los staartje slaap korter dan edgeRunMin na het wakker worden telt niet mee (Whoop stopt dan ook)
     edgeRunMin: 20,
     // extra wakker-regel op ruwe beweging (× drempel); 0 = uit
@@ -204,10 +207,12 @@ export function mainSleep(eps, periods, cal = DEFAULT_CALIBRATION, tzOffsetMin =
     let grew = true;
     while (grew) {
       grew = false;
+      const ext = c.nightExtendGapMin ?? 60;
       for (const p of periods) {
-        if (parts.includes(p) || !night(p)) continue;
-        if (p.endIdx <= main.startIdx && main.startIdx - p.endIdx <= gap) { main.startIdx = p.startIdx; parts.push(p); grew = true; }
-        else if (p.startIdx >= main.endIdx && p.startIdx - main.endIdx <= gap) { main.endIdx = p.endIdx; parts.push(p); grew = true; }
+        if (parts.includes(p)) continue;
+        const g = night(p) ? gap : ext; // nachtblok: ruim samenvoegen; aansluitend blok buiten de nacht: alleen bij korte onderbreking
+        if (p.endIdx <= main.startIdx && main.startIdx - p.endIdx <= g) { main.startIdx = p.startIdx; parts.push(p); grew = true; }
+        else if (p.startIdx >= main.endIdx && p.startIdx - main.endIdx <= g) { main.endIdx = p.endIdx; parts.push(p); grew = true; }
       }
     }
   }
@@ -412,11 +417,24 @@ export function calories(samples, cal = DEFAULT_CALIBRATION) {
 // ---------- recovery ----------
 const FLOORS = { lnHrvSd: 0.05, rhrSd: 1, respSd: 0.3, tempSd: 0.1 };
 /** Basislijn uit eerdere nachten [{hrv, rhr, resp, skinTemp}], laatste `windowDays`. */
-export function baselineFrom(history, cal = DEFAULT_CALIBRATION) {
+/**
+ * Basislijn uit de laatste `windowDays` nachten. Met minder dan `minHistory` nachten: de gekalibreerde
+ * basislijn als die persoonlijk is (`baselinePersonal`, uit je eigen Whoop-export), anders het gemiddelde
+ * van je eigen nachten tot nu toe (inclusief `night`) met de standaardspreiding. Een populatiebasislijn
+ * (HRV 60 ms) gaf bij iemand met HRV ~30 ms een herstel van 1–2 %.
+ */
+export function baselineFrom(history, cal = DEFAULT_CALIBRATION, night = null) {
   const r = cal.recovery, h = history.slice(-r.windowDays);
   const col = (f) => h.map(f).filter(Number.isFinite);
   const lh = col((n) => (n.hrv > 0 ? Math.log(n.hrv) : NaN));
-  if (lh.length < r.minHistory) return r.baseline;
+  if (lh.length < r.minHistory) {
+    if (r.baselinePersonal || !night) return r.baseline;
+    const own = [...h, night];
+    const m = (f, fb) => { const v = own.map(f).filter(Number.isFinite); return v.length ? mean(v) : fb; };
+    const b = r.baseline;
+    return { ...b, lnHrvMean: m((n) => (n.hrv > 0 ? Math.log(n.hrv) : NaN), b.lnHrvMean), rhrMean: m((n) => n.rhr, b.rhrMean),
+      respMean: m((n) => n.resp, b.respMean), tempMean: m((n) => n.skinTemp, b.tempMean) };
+  }
   const pick = (vals, m, s) => (vals.length >= r.minHistory ? [mean(vals), sd(vals)] : [r.baseline[m], r.baseline[s]]);
   const [lnHrvMean, lnHrvSd] = pick(lh, 'lnHrvMean', 'lnHrvSd');
   const [rhrMean, rhrSd] = pick(col((n) => n.rhr), 'rhrMean', 'rhrSd');
@@ -448,7 +466,7 @@ export const RECOVERY_WEIGHTS = ['intercept', 'wHrv', 'wRhr', 'wResp', 'wSleep',
 /** Recovery 1–99 %. `night`: {hrv, rhr, resp, skinTemp, sleepPerf, sufficiency, efficiency, consistency} (slaap in %);
  *  `history`: eerdere nachten [{hrv, rhr, resp, skinTemp}]. */
 export function recovery(night, history = [], cal = DEFAULT_CALIBRATION) {
-  const r = cal.recovery, d = recoveryDesign(night, baselineFrom(history, cal), r);
+  const r = cal.recovery, d = recoveryDesign(night, baselineFrom(history, cal, night), r);
   const x = RECOVERY_WEIGHTS.reduce((s, k, i) => s + (r[k] ?? 0) * d[i], 0);
   return clamp(Math.round(100 * sigmoid(x)), 1, 99);
 }

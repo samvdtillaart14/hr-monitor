@@ -81,6 +81,8 @@ enum UserProfile {
     /// Kalibratie voor de scores-module met jouw profiel erin.
     static func calibration() -> Calibration {
         var c = importedCalibration ?? Calibration.standard
+        // Een geïmporteerde kalibratie komt uit je eigen Whoop-export: de basislijn daarin is persoonlijk.
+        if importedCalibration != nil { c.recovery.baselinePersonal = true }
         if let age { c.profile.age = age }
         if d.object(forKey: "profile.male") != nil { c.profile.male = d.bool(forKey: "profile.male") }
         let w = d.double(forKey: weightKey), h = d.double(forKey: heightKey)
