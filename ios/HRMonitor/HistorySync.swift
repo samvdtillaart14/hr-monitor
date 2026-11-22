@@ -45,7 +45,8 @@ struct HistorySync {
 
     /// Antwoord van de band (type 0x24).
     mutating func response(cmd: UInt8, result: UInt8) -> Outcome {
-        guard cmd == Self.ackCmd else { return .ignored }
+        // 2 = bezig: het eindantwoord volgt nog, dus nog niet beslissen wiens ack het was.
+        guard cmd == Self.ackCmd, result != 2 else { return .ignored }
         let ours = ourAckPending
         ourAckPending = false
         if result == 1 {
