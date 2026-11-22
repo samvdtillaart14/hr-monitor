@@ -10,6 +10,10 @@ struct SettingsView: View {
     @EnvironmentObject var raw: RawLogger
     @EnvironmentObject var ble: BLEManager
     @AppStorage(BLEManager.selfSyncKey) private var selfSync = false
+    @AppStorage(ScreenMonitor.morningKey) private var morning = true
+    @AppStorage(ScreenMonitor.morningStartKey) private var morningStart = 5.0
+    @AppStorage(ScreenMonitor.enabledKey) private var screenAsWake = true
+    @EnvironmentObject var screen: ScreenMonitor
 
     var body: some View {
         List {
@@ -28,6 +32,22 @@ struct SettingsView: View {
                 }
             } header: { Text("Synchronisatie") } footer: {
                 Text(selfSync ? "De app haalt elke 15 minuten zelf de historie op. Draait de Whoop-app mee, dan laat de app het bevestigen aan Whoop over. Is de Whoop-app dicht, dan bevestigt de app zelf en krijgt Whoop die data niet meer." : "Uit: de app leest alleen mee met de Whoop-app; Whoop houdt alle data. Zet aan om zonder Whoop-app te synchroniseren.")
+            }
+            Section {
+                Toggle("Ochtendmelding", isOn: $morning).tint(Theme.accent)
+                    .onChange(of: morning) { _, on in if on { MorningBrief.requestPermission() } }
+                if morning {
+                    Stepper("Vanaf \(Self.clock(morningStart))", value: $morningStart, in: 3...11, step: 0.5)
+                    Button { MorningBrief.send(services: AppServices.shared) } label: { Label("Nu proberen", systemImage: "bell") }
+                }
+                Toggle("Telefoon aan = wakker", isOn: $screenAsWake).tint(Theme.accent)
+                if devMode {
+                    let tonight = screen.allSpans.filter { $0.end > Date().timeIntervalSince1970 - 86400 }
+                    Text("Scherm nu \(screen.screenOn ? "aan" : "uit") · afgelopen 24 u \(tonight.count)× aan, \(tonight.filter(\.unlocked).count)× ontgrendeld")
+                        .font(.footnote).foregroundStyle(Theme.muted)
+                }
+            } header: { Text("Slaap en ochtend") } footer: {
+                Text("De ochtendmelding komt zodra je na \(Self.clock(morningStart)) je telefoon ontgrendelt of het scherm 10 s aan staat, één keer per dag. Met 'Telefoon aan = wakker' tellen minuten met ontgrendelde telefoon (of scherm langer dan 30 s aan) nooit als slaap; een melding die alleen het scherm laat oplichten telt niet. Werkt alleen als de app op de achtergrond draait, dus met de band verbonden. Schermtijd zelf kan iOS niet aan deze app geven.")
             }
             Section {
                 Toggle("Ontwikkelaarsopties", isOn: $devMode).tint(Theme.accent)
@@ -51,4 +71,6 @@ struct SettingsView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle("Instellingen")
     }
+
+    static func clock(_ h: Double) -> String { String(format: "%02d:%02d", Int(h), Int((h - Double(Int(h))) * 60)) }
 }

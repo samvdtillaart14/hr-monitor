@@ -13,6 +13,8 @@ struct Night: Identifiable {
     var hr: [(Date, Double)] = []                 // HR per minuut rond de slaap
     var recovery: Int?
     var metrics = NightMetrics()
+    /// minuten dat het telefoonscherm aan stond tussen inslapen en wakker worden
+    var phoneMin = 0
 
     var onset: Date { Date(timeIntervalSince1970: r.onset) }
     var wake: Date { Date(timeIntervalSince1970: r.wake) }
@@ -40,6 +42,10 @@ final class ScoreModel: ObservableObject {
     @Published private(set) var nights: [Night] = []
     @Published private(set) var days: [DayLoad] = []
     private var busy = false
+    private var waiters: [() -> Void] = []
+    private var rerun = false
+    /// Periodes dat het telefoonscherm aan stond (wakker); gezet door AppServices.
+    var awakeIntervals: () -> [Range<Double>] = { [] }
 
     var lastNight: Night? {
         guard let n = nights.last, Calendar.current.isDateInToday(n.date) else { return nil }
@@ -47,8 +53,10 @@ final class ScoreModel: ObservableObject {
     }
     var today: DayLoad? { days.last.flatMap { Calendar.current.isDateInToday($0.date) ? $0 : nil } }
 
-    func refresh(store: DayStore) {
-        guard !busy else { return }
+    /// `completion` volgt na de berekening; loopt er al een, dan volgt er nog één met de nieuwste data.
+    func refresh(store: DayStore, completion: (() -> Void)? = nil) {
+        if let completion { waiters.append(completion) }
+        guard !busy else { if completion != nil { rerun = true }; return }
         busy = true
         let cal = Calendar.current
         let today = cal.startOfDay(for: Date())
@@ -63,12 +71,15 @@ final class ScoreModel: ObservableObject {
         // Eerdere nachten (buiten dit venster) als basislijn voor herstel, zoals "laatste 30 dagen".
         let firstKey = DayStore.dayFmt.string(from: dates[0])
         let prior = NightArchive.shared.metrics(before: firstKey, limit: fixedCal.recovery.windowDays)
+        let awake = awakeIntervals()
         Task {
             let (n, dl) = await Task.detached(priority: .utility) { () -> ([Night], [DayLoad]) in
                 let conv = input.map { ($0.0, $0.1.map(Self.convert), $0.2.map(Self.convert)) }
-                return Self.compute(conv, fixedCal, prior: prior)
+                return Self.compute(conv, fixedCal, prior: prior, awake: awake)
             }.value
             self.nights = n; self.days = dl; self.busy = false
+            if self.rerun { self.rerun = false; self.refresh(store: store) }
+            else { let w = self.waiters; self.waiters = []; w.forEach { $0() } }
             NightArchive.shared.store(n.map { (DayStore.dayFmt.string(from: $0.date), $0.metrics) })
             UserProfile.updateRestHr(from: NightArchive.shared.recentRhr(30))
         }
@@ -80,7 +91,8 @@ final class ScoreModel: ObservableObject {
 
     nonisolated static func fin(_ v: Double) -> Double? { v.isFinite ? v : nil }
 
-    nonisolated static func compute(_ input: [(Date, [Sample], [Sample])], _ c: Calibration, prior: [NightMetrics] = []) -> ([Night], [DayLoad]) {
+    nonisolated static func compute(_ input: [(Date, [Sample], [Sample])], _ c: Calibration, prior: [NightMetrics] = [],
+                                    awake: [Range<Double>] = []) -> ([Night], [DayLoad]) {
         var nights: [Night] = [], days: [DayLoad] = [], history: [NightMetrics] = prior
         var prevStrain = 0.0
         let tz = Double(TimeZone.current.secondsFromGMT()) / 60
@@ -100,8 +112,9 @@ final class ScoreModel: ObservableObject {
             defer { days.append(dl); prevStrain = st.strain }
 
             let base = WhoopScores.baseline(from: history, c)
-            guard nightS.count > 1800, let r = WhoopScores.analyzeNight(nightS, c, baseline: base) else { continue }
+            guard nightS.count > 1800, let r = WhoopScores.analyzeNight(nightS, c, baseline: base, awake: awake) else { continue }
             var n = Night(date: date, r: r)
+            n.phoneMin = Int((awake.reduce(0.0) { $0 + max(0, min($1.upperBound, r.wake) - max($1.lowerBound, r.onset)) } / 60).rounded())
             // Slaapbehoefte: gezond minimum + belasting van gisteren + slaaptekort (scores-module)
             if let p = nights.last, date.timeIntervalSince(p.date) < 2 * 86400 {
                 n.debtMin = WhoopScores.sleepDebt(prevDebtMin: p.debtMin, prevNeedMin: p.needMin, prevAsleepMin: Double(p.r.asleepMin), c)

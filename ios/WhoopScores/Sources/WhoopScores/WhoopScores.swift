@@ -160,7 +160,8 @@ public enum WhoopScores {
     }
 
     /// Slaapperiodes: weinig beweging én hartslag dicht bij rust.
-    public static func detectSleep(_ eps: [Epoch], _ cal: Calibration = .standard) -> SleepDetection {
+    /// `awake`: periodes waarin je zeker wakker was (telefoonscherm aan); die minuten zijn nooit slaap.
+    public static func detectSleep(_ eps: [Epoch], _ cal: Calibration = .standard, awake: [Range<Double>] = []) -> SleepDetection {
         let c = cal.sleep
         let moveS = M.movingMedian(eps.map { $0.move }, 7)   // mediaan: een omdraaimoment maakt je niet wakker
         let moveThr = c.moveThreshold > 0 ? c.moveThreshold
@@ -168,8 +169,9 @@ public enum WhoopScores {
         // rustreferentie: gekalibreerde rust-HR, of hoger als de nacht zelf hoger ligt (alcohol, ziekte, warmte)
         let p5 = M.percentile(eps.map { $0.hr }, 0.05)
         let rhr = max(cal.profile.restingHr, p5.isFinite ? p5 : 0)
+        let forcedAwake = ScreenActivity.awakeMask(eps, awake)
         let cand = eps.indices.map { i in
-            moveS[i] < moveThr && (!eps[i].hr.isFinite || eps[i].hr < rhr + c.hrAboveRest) && eps[i].n > 0
+            !forcedAwake[i] && moveS[i] < moveThr && (!eps[i].hr.isFinite || eps[i].hr < rhr + c.hrAboveRest) && eps[i].n > 0
         }
         var runs: [Range<Int>] = []
         var i = 0
@@ -258,11 +260,14 @@ public enum WhoopScores {
     }
 
     /// Volledige nachtanalyse: slaap, fases, HRV, rust-HR, ademfrequentie, huidtemperatuur.
+    /// `awake`: periodes waarin je zeker wakker was (telefoonscherm aan); zie ScreenActivity.wakeIntervals.
     public static func analyzeNight(_ samples: [Sample], _ cal: Calibration = .standard, baseline: Calibration.Baseline? = nil,
-                                    tzOffsetMin: Double = Double(TimeZone.current.secondsFromGMT()) / 60) -> NightResult? {
+                                    tzOffsetMin: Double = Double(TimeZone.current.secondsFromGMT()) / 60,
+                                    awake: [Range<Double>] = []) -> NightResult? {
         let baseline = baseline ?? cal.recovery.baseline
         let eps = epochs(samples)
-        let det = detectSleep(eps, cal)
+        guard !eps.isEmpty else { return nil }
+        let det = detectSleep(eps, cal, awake: awake)
         guard let ms = mainSleep(eps, periods: det.periods, cal, tzOffsetMin: tzOffsetMin) else { return nil }
         let main = ms.main
         let bs = beats(samples)
