@@ -9,6 +9,7 @@ struct SettingsView: View {
     @EnvironmentObject var rec: Recorder
     @EnvironmentObject var raw: RawLogger
     @EnvironmentObject var ble: BLEManager
+    @EnvironmentObject var acts: ActivityStore
     @AppStorage(BLEManager.selfSyncKey) private var selfSync = false
 
     var body: some View {
@@ -28,6 +29,11 @@ struct SettingsView: View {
                 }
             } header: { Text("Synchronisatie") } footer: {
                 Text(selfSync ? "De app haalt elke 15 minuten zelf de historie op. Draait de Whoop-app mee, dan laat de app het bevestigen aan Whoop over. Is de Whoop-app dicht, dan bevestigt de app zelf en krijgt Whoop die data niet meer." : "Uit: de app leest alleen mee met de Whoop-app; Whoop houdt alle data. Zet aan om zonder Whoop-app te synchroniseren.")
+            }
+            Section {
+                Toggle("GPS automatisch aan", isOn: $acts.autoGps).tint(Theme.accent)
+            } header: { Text("Activiteiten") } footer: {
+                Text("Zet de GPS vanzelf aan bij verhoogde hartslag of als je iPhone hardlopen/fietsen ziet. Kies bij locatie \"Altijd\".")
             }
             Section {
                 Toggle("Ontwikkelaarsopties", isOn: $devMode).tint(Theme.accent)

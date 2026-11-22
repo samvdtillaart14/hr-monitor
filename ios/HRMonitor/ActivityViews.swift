@@ -41,15 +41,11 @@ struct ActivitiesCard: View {
                         .background(Theme.cardHi, in: RoundedRectangle(cornerRadius: 12))
                 }
                 .disabled(acts.ongoing != nil)
-                Toggle(isOn: $acts.autoGps) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("GPS automatisch aan").font(.subheadline.weight(.semibold))
-                        Text(acts.autoSession != nil ? "GPS loopt: activiteit gedetecteerd" :
-                             "Bij verhoogde hartslag of als je iPhone hardlopen/fietsen ziet. Kies bij locatie \"Altijd\".")
-                            .font(.caption).foregroundStyle(acts.autoSession != nil ? Theme.accent : Theme.muted)
-                    }
+                // De schakelaar staat in Instellingen; hier alleen een melding als de GPS loopt.
+                if acts.autoSession != nil {
+                    Label("GPS loopt: activiteit gedetecteerd", systemImage: "location.fill")
+                        .font(.caption).foregroundStyle(Theme.accent)
                 }
-                .tint(Theme.accent)
             }
             .buttonStyle(.plain)
         }
