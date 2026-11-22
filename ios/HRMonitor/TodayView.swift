@@ -25,6 +25,7 @@ struct TodayView: View {
                     header
                     rings.padding(.vertical, 8)
                     ActivitiesCard(scores: scores)
+                    TonightCard()
                     HStack(spacing: Theme.gap) {
                         NavigationLink { HealthMonitorView(model: scores) } label: { healthTile }
                         NavigationLink { StressDetailView(model: scores) } label: { stressTile }

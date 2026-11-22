@@ -65,3 +65,10 @@ De fit-test maakt een nep-export met bekende parameters en controleert dat de ka
 | `Calibration.load(from:)` | kalibratie-JSON; ontbrekende velden krijgen standaardwaarden |
 
 Stappen worden nog niet berekend: daarvoor is de IMU-data nodig.
+
+## Slaapplanner en wekker (`SleepPlanner.swift`, app: `SleepAlarm.swift`, `SleepPlannerView.swift`)
+- **Slaapbehoefte vannacht** = basis (`needBaseMin`) + belasting van vandaag (`needPerStrainMin` per punt boven `strainRef`) + slaapschuld (uit de afgelopen nacht: `sleepDebt`) − dutjes van vandaag. Zelfde formules als de slaapbehoefte achteraf, dus planner en slaapscore lopen gelijk.
+- **Bedtijd** = wektijd − (doel × behoefte / efficiëntie + inslaaptijd), afgerond op 5 min. Doelen: 100 / 85 / 70 %. Efficiëntie = gemiddelde van de laatste 7 nachten (anders 90 %), inslaaptijd 15 min.
+- **Ritme** = mediaan van inslapen en opstaan over de laatste 14 nachten (vanaf 3 nachten), anders de ingestelde tijden (standaard 23:30–07:30).
+- **Wekkermodi:** vaste tijd; slaapdoel (eerder zodra de geslapen tijd het doel haalt); groen herstel (eerder zodra de geschatte herstelscore ≥ 67 %). Slimme modi gaan hooguit 90 min eerder af en rekenen elke 5 min op de binnenkomende hartslag; de ingestelde tijd is altijd de laatste tijd.
+- **Wekken:** iPhone via AlarmKit (iOS 26+, klinkt ook in stille modus) of anders meldingen; band (experimenteel) via cmd 0x42, zie WHOOP5-PROTOCOL.md.

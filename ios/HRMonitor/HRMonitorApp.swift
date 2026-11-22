@@ -10,9 +10,16 @@ final class AppServices {
     let ble = BLEManager()
     let acts = ActivityStore()
     let scores = ScoreModel()
+    private(set) lazy var alarm = SleepAlarm(ble: ble, store: store, scores: scores)
     private init() {
+        let alarm = self.alarm
         ble.store = store
-        store.onLive = { [weak acts] in acts?.live(hr: $0) }
+        store.onLive = { [weak acts, weak alarm] hr in
+            MainActor.assumeIsolated { acts?.live(hr: hr); alarm?.tick() }
+        }
+        ble.onAlarmResult = { [weak alarm] code in MainActor.assumeIsolated { alarm?.bandResult(code) } }
+        ble.onWhoopReady = { [weak alarm] in MainActor.assumeIsolated { alarm?.bandResend() } }
+        alarm.rearm()
     }
 }
 
@@ -40,6 +47,7 @@ struct HRMonitorApp: App {
                 .environmentObject(services.store)
                 .environmentObject(services.acts)
                 .environmentObject(services.scores)
+                .environmentObject(services.alarm)
                 .environmentObject(services.ble)
                 .environmentObject(services.ble.recorder)
                 .environmentObject(services.ble.raw)
