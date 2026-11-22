@@ -1,4 +1,4 @@
-# HR Monitor
+# Pulse
 
 Web Bluetooth-app (één HTML-bestand) die rechtstreeks verbindt met een BLE-apparaat, zoals een Whoop-band, en de ruwe data uitleest.
 
@@ -36,8 +36,8 @@ Een gratis Apple ID ondertekent apps voor 7 dagen. AltStore vernieuwt ze automat
 
 ### Gebruik
 - Zet in de Whoop-app **Heart Rate Broadcast** aan en sluit daarna de Whoop-app.
-- In HR Monitor: *Zoek band* → kies je Whoop → *Start opname*. Je kunt het scherm nu uitzetten.
-- Opnames staan in de app onder *Opnames* (delen/AirDrop) en in de **Bestanden**-app → *Op mijn iPhone → HR Monitor*.
+- In Pulse: *Zoek band* → kies je Whoop → *Start opname*. Je kunt het scherm nu uitzetten.
+- Opnames staan in de app onder *Opnames* (delen/AirDrop) en in de **Bestanden**-app → *Op mijn iPhone → Pulse*.
 - Sluit de app niet geforceerd af door hem omhoog te vegen. Dan stopt iOS de Bluetooth-verbinding.
 
 ## Testen

@@ -11,16 +11,16 @@
     "iconURL": "https://raw.githubusercontent.com/samvdtillaart14/hr-monitor/main/icon-512.png",
     "tintColor": "00F19F",
     "versions": [{
-      "version": "1.0.82",
-      "buildVersion": "82",
-      "date": "2026-11-22T18:57:37Z",
+      "version": "1.0.84",
+      "buildVersion": "84",
+      "date": "2026-11-22T19:11:28Z",
       "downloadURL": "https://github.com/samvdtillaart14/hr-monitor/releases/download/latest/HRMonitor.ipa",
-      "size": 1457262,
+      "size": 1457848,
       "minOSVersion": "17.0"
     }],
     "appPermissions": {
       "entitlements": [],
-      "privacy": { "NSBluetoothAlwaysUsageDescription": "HR Monitor verbindt via Bluetooth met je hartslagband." }
+      "privacy": { "NSBluetoothAlwaysUsageDescription": "Pulse verbindt via Bluetooth met je hartslagband." }
     }
   }],
   "news": []
