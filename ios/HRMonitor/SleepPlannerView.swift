@@ -243,6 +243,14 @@ struct SleepPlannerView: View {
             }
             .buttonStyle(.bordered).tint(Theme.accent)
             .disabled(ble.state != .connected)
+            Button {
+                alarm.testPast()
+            } label: {
+                Label("Test: wekker uitzetten via tijd in het verleden (2,5 min)", systemImage: "clock.arrow.circlepath")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered).tint(Theme.muted)
+            .disabled(ble.state != .connected)
             if let s = alarm.bandStatus { Text(s).font(.footnote).foregroundStyle(Theme.accent) }
             Text("Verstuurd: \(alarm.bandSent) · antwoorden: \(alarm.bandAnswered) · ok: \(alarm.bandOk)")
                 .font(.caption.monospacedDigit()).foregroundStyle(Theme.muted)

@@ -326,6 +326,27 @@ final class SleepAlarm: ObservableObject {
         }
     }
 
+    /// Test: kan een wekker uit door hem een jaar terug te zetten? Wekker 1 op over 2 min, na 10 s
+    /// overschrijven met een tijd een jaar terug. Goed als: antwoord ok, geen trilling nu en niet over 2 min.
+    func testPast() {
+        let first = Date().addingTimeInterval(120)
+        if let e = send(SleepPlanner.BandAlarm.set, SleepPlanner.BandAlarm.setBody(unix: UInt32(first.timeIntervalSince1970), variant: 0)) {
+            bandStatus = e; return
+        }
+        bandStatus = "Test verleden: wekker om \(Self.clock(first, seconds: true)), over 10 s een jaar terug gezet. Trilt de band nu of om \(Self.clock(first, seconds: true)), dan werkt het niet."
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+            guard let self else { return }
+            let past = UInt32(Date().addingTimeInterval(-365 * 86400).timeIntervalSince1970)
+            self.send(SleepPlanner.BandAlarm.set, SleepPlanner.BandAlarm.setBody(unix: past, variant: 0))
+            self.log("Wekker 1 een jaar terug gezet; let op of de band trilt")
+        }
+        // Na de test de echte wekker terugzetten.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 150) { [weak self] in
+            self?.log("Test verleden klaar; echte wekker wordt teruggezet")
+            self?.bandResend()
+        }
+    }
+
     /// Test: laat de band over 30 seconden trillen (probeert zo nodig alle vormen).
     func testBand() {
         let at = Date().addingTimeInterval(30)
