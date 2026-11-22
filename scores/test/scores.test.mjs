@@ -78,7 +78,9 @@ test('synthetische nacht: inslapen, ontwaken, fases, HRV, rust-HR, ademfrequenti
   near((n.wake - samples[0].t) / 60, 250, 5, 'ontwaakmoment');
   near(n.deepMin / n.asleepMin, 0.20, 0.02, 'diepe slaap');
   near(n.remMin / n.asleepMin, 0.22, 0.02, 'REM');
-  near(n.rhr, 50, 2, 'rust-HR uit diepe slaap');
+  near(n.rhr, 55, 2, 'rust-HR gemiddeld over de slaap');
+  const deepCal = structuredClone(W.DEFAULT_CALIBRATION); deepCal.sleep.hrvFrom = 'lastDeep';
+  near(W.analyzeNight(samples, deepCal).rhr, 50, 2, 'rust-HR uit laatste diepe blok');
   assert.ok(n.hrv > 40 && n.hrv < 90, String(n.hrv));
   near(n.resp, 15, 0.6, 'ademfrequentie');
   near(n.skinTemp, 33.6, 0.1);
@@ -101,7 +103,7 @@ test('nacht met verhoogde hartslag (alcohol): slaap wordt nog steeds gevonden', 
   const n = W.analyzeNight(hot);
   assert.ok(n, 'geen slaap gevonden');
   near((n.onset - samples[0].t) / 60, 30, 6);
-  near(n.rhr, 68, 3);
+  near(n.rhr, 73, 3);
 });
 
 test('slaapstress: hogere HR en lagere HRV geven meer stress', () => {
@@ -128,4 +130,41 @@ test('calorieën: rustdag rond het rustmetabolisme, inspanning meer', () => {
   near(W.calories(rest), bmr, 1);
   const run = Array.from({ length: 3600 }, (_, i) => ({ t: i, hr: 150 }));
   assert.ok(W.calories(run) > 500 && W.calories(run) < 1000, String(W.calories(run)));
+});
+
+test('gaten in de opname (geen data) breken de bewegingsdrempel niet', () => {
+  const { samples } = synthNight();
+  const t0 = samples[0].t;
+  const holed = samples.filter((s) => s.t - t0 >= 20 * 60).map((s) => ({ ...s }));
+  // 60 min zonder data vóór de opname, zoals een synchronisatiegat
+  holed.unshift({ t: t0 - 3600, hr: 70, rr: [], q: [1, 0, 0, 0], skinTemp: 32 });
+  const n = W.analyzeNight(holed);
+  assert.ok(n, 'geen slaap gevonden');
+  near((n.onset - t0) / 60, 30, 6);
+});
+
+test('ademfrequentie: trage golven (Mayer, 0,1 Hz) winnen niet van de ademhaling', () => {
+  const s = []; let t = 0;
+  for (let i = 0; i < 180; i++) { const rr = 1000 + 25 * Math.sin(2 * Math.PI * 0.24 * t) + 45 * Math.sin(2 * Math.PI * 0.1 * t); t += rr / 1000; s.push(rr); }
+  const secs = s.map((rr, i) => ({ t: 1000 + i, hr: 60, rr: [rr], q: null }));
+  near(W.respRateWindow(W.beats(secs)), 14.4, 0.6);
+});
+
+test('nachtslaap: blokken tussen 22:00 en 08:00 worden één nacht, overdag blijft een dutje', () => {
+  // UTC-middernacht als basis; blokken in minuten
+  const day = Date.UTC(2026, 10, 22) / 1000;
+  const eps = Array.from({ length: 24 * 60 }, (_, i) => ({ t: day + i * 60 }));
+  const P = (a, b) => ({ startIdx: a, endIdx: b });
+  const early = P(114, 171), late = P(232, 457), nap = P(14 * 60, 14 * 60 + 40);
+  const r = W.mainSleep(eps, [early, late, nap], W.DEFAULT_CALIBRATION, 60); // UTC+1
+  assert.deepEqual([r.main.startIdx, r.main.endIdx], [114, 457]);
+  assert.deepEqual(r.naps, [nap]);
+});
+
+test('slaapdetectie: los staartje na het wakker worden telt niet mee', () => {
+  const eps = Array.from({ length: 168 }, (_, i) => ({ t: i * 60, hr: 55, move: i >= 150 && i < 157 ? 5 : 0.01, n: 60 }));
+  const cal = structuredClone(W.DEFAULT_CALIBRATION); cal.sleep.moveThreshold = 1; cal.sleep.maxGapMin = 15;
+  const d = W.detectSleep(eps, cal);
+  assert.equal(d.periods.length, 1);
+  assert.ok(d.periods[0].endIdx <= 150, `eind ${d.periods[0].endIdx}`);
 });

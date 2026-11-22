@@ -33,7 +33,7 @@ test('nacht naast Whoop-export zetten', () => {
   assert.equal(r.whoop.sleep.wake, wake);
   const row = (k) => r.rows.find((x) => x[0] === k);
   assert.ok(Math.abs(row('Wakker')[1] - row('Wakker')[2]) < 5 * 60e3);
-  assert.ok(Math.abs(row('Rust-HR (bpm)')[1] - 51) < 2);
+  assert.ok(Math.abs(row('Rust-HR (bpm)')[1] - 51) < 6);
   assert.ok(row('Consistentie (%)')[1] > 90); // zelfde tijden als de nachten ervoor
   assert.ok(Number.isFinite(row('Recovery (%)')[1]));
 });

@@ -88,7 +88,7 @@ public enum WhoopScores {
         return n >= 10 ? sqrt(s / Double(n)) : .nan
     }
 
-    /// Ademfrequentie (/min) uit respiratoire sinusaritmie: piek in 0,1–0,5 Hz van het RR-tachogram.
+    /// Ademfrequentie (/min) uit respiratoire sinusaritmie: piek in 0,15–0,5 Hz van het RR-tachogram.
     public static func respRateWindow(_ bs: [Beat]) -> Double {
         let good = bs.filter { $0.ok }
         guard good.count >= 40 else { return .nan }
@@ -111,7 +111,7 @@ public enum WhoopScores {
             x[i] = (x[i] - mx - slope * (Double(i) - mi)) * (0.5 - 0.5 * cos(2 * Double.pi * Double(i) / Double(n - 1)))
         }
         var best = 0.0, bestF = Double.nan, total = 0.0
-        var f = 0.1
+        var f = 0.15
         while f <= 0.5 + 1e-9 {
             var re = 0.0, im = 0.0
             for i in 0..<n { let w = 2 * Double.pi * f * Double(i) / fs; re += x[i] * cos(w); im -= x[i] * sin(w) }
@@ -162,8 +162,9 @@ public enum WhoopScores {
     /// Slaapperiodes: weinig beweging én hartslag dicht bij rust.
     public static func detectSleep(_ eps: [Epoch], _ cal: Calibration = .standard) -> SleepDetection {
         let c = cal.sleep
-        let moveS = M.movingAvg(eps.map { $0.move }, 7)
-        let moveThr = c.moveThreshold > 0 ? c.moveThreshold : max(1e-3, 3 * M.percentile(moveS, 0.1))
+        let moveS = M.movingMedian(eps.map { $0.move }, 7)   // mediaan: een omdraaimoment maakt je niet wakker
+        let moveThr = c.moveThreshold > 0 ? c.moveThreshold
+            : max(1e-3, 3 * M.percentile(moveS.indices.filter { eps[$0].n > 0 }.map { moveS[$0] }, 0.1))   // gaten tellen niet mee
         // rustreferentie: gekalibreerde rust-HR, of hoger als de nacht zelf hoger ligt (alcohol, ziekte, warmte)
         let p5 = M.percentile(eps.map { $0.hr }, 0.05)
         let rhr = max(cal.profile.restingHr, p5.isFinite ? p5 : 0)
@@ -179,7 +180,57 @@ public enum WhoopScores {
             else { runs.append(i..<j) }
             i = j + 1
         }
+        // los staartje aan het eind van een blok (na >= 5 min wakker) weghalen
+        for r in runs.indices {
+            let lo = runs[r].lowerBound
+            var end = runs[r].upperBound
+            while true {
+                var e = end; while e > lo && !cand[e - 1] { e -= 1 }
+                var s = e; while s > lo && cand[s - 1] { s -= 1 }
+                var g = s; while g > lo && !cand[g - 1] { g -= 1 }
+                if g > lo && e - s < c.edgeRunMin && s - g >= 5 { end = g } else { end = e; break }
+            }
+            runs[r] = lo..<end
+        }
         return SleepDetection(periods: runs.filter { $0.count >= c.minPeriodMin }, moveThr: moveThr, candidate: cand)
+    }
+
+    static func localHour(_ t: Double, _ tzOffsetMin: Double) -> Double {
+        let m = (t / 60 + tzOffsetMin).truncatingRemainder(dividingBy: 1440)
+        return (m < 0 ? m + 1440 : m) / 60
+    }
+
+    /// Hoofdslaap: het langste blok; ligt dat in de nacht, dan horen alle nachtblokken binnen
+    /// nightMergeGapMin erbij (de tussentijd telt als wakker). De rest zijn dutjes.
+    public static func mainSleep(_ eps: [Epoch], periods: [Range<Int>], _ cal: Calibration = .standard,
+                                 tzOffsetMin: Double = Double(TimeZone.current.secondsFromGMT()) / 60) -> (main: Range<Int>, naps: [Range<Int>])? {
+        let c = cal.sleep
+        guard var longest = periods.first else { return nil }
+        for p in periods where p.count > longest.count { longest = p }
+        func inNight(_ t: Double) -> Bool {
+            let h = localHour(t, tzOffsetMin)
+            return c.nightStartHour > c.nightEndHour ? (h >= c.nightStartHour || h < c.nightEndHour) : (h >= c.nightStartHour && h < c.nightEndHour)
+        }
+        func night(_ p: Range<Int>) -> Bool {
+            for i in stride(from: p.lowerBound, to: p.upperBound, by: 5) where inNight(eps[i].t) { return true }
+            return inNight(eps[p.upperBound - 1].t)
+        }
+        var main = longest
+        var parts = [longest]
+        if night(longest) {
+            var grew = true
+            while grew {
+                grew = false
+                for p in periods where !parts.contains(p) && night(p) {
+                    if p.upperBound <= main.lowerBound && main.lowerBound - p.upperBound <= c.nightMergeGapMin {
+                        main = p.lowerBound..<main.upperBound; parts.append(p); grew = true
+                    } else if p.lowerBound >= main.upperBound && p.lowerBound - main.upperBound <= c.nightMergeGapMin {
+                        main = main.lowerBound..<p.upperBound; parts.append(p); grew = true
+                    }
+                }
+            }
+        }
+        return (main, periods.filter { !parts.contains($0) })
     }
 
     /// Fase per epoch. Diep/REM via rangorde, zodat de verdeling de gekalibreerde fracties volgt.
@@ -187,7 +238,7 @@ public enum WhoopScores {
                                   _ cal: Calibration = .standard, rmssdPerEpoch: [Double]? = nil) -> [Stage] {
         let c = cal.sleep
         let idx = Array(period), N = idx.count
-        var stages: [Stage] = idx.map { !candidate[$0] || eps[$0].move > 2 * moveThr ? .wake : .light }
+        var stages: [Stage] = idx.map { !candidate[$0] || (c.wakeMoveFactor > 0 && eps[$0].move > c.wakeMoveFactor * moveThr) ? .wake : .light }
         let sl = (0..<N).filter { stages[$0] != .wake }
         guard !sl.isEmpty else { return stages }
         let zHr = M.zscores(sl.map { eps[idx[$0]].hr })
@@ -207,12 +258,13 @@ public enum WhoopScores {
     }
 
     /// Volledige nachtanalyse: slaap, fases, HRV, rust-HR, ademfrequentie, huidtemperatuur.
-    public static func analyzeNight(_ samples: [Sample], _ cal: Calibration = .standard, baseline: Calibration.Baseline? = nil) -> NightResult? {
+    public static func analyzeNight(_ samples: [Sample], _ cal: Calibration = .standard, baseline: Calibration.Baseline? = nil,
+                                    tzOffsetMin: Double = Double(TimeZone.current.secondsFromGMT()) / 60) -> NightResult? {
         let baseline = baseline ?? cal.recovery.baseline
         let eps = epochs(samples)
         let det = detectSleep(eps, cal)
-        guard var main = det.periods.first else { return nil }
-        for p in det.periods where p.count > main.count { main = p }
+        guard let ms = mainSleep(eps, periods: det.periods, cal, tzOffsetMin: tzOffsetMin) else { return nil }
+        let main = ms.main
         let bs = beats(samples)
         let t0 = eps[0].t
         var epochBeats = [[Beat]](repeating: [], count: eps.count)
@@ -234,7 +286,7 @@ public enum WhoopScores {
             let hr = M.mean(eps[at(k)..<at(k + 5)].map { $0.hr }.filter { $0.isFinite })
             wins.append(Win(k: k, rmssd: v, hr: hr, deep: st.filter { $0 == .deep }.count >= 3))
         }
-        var chosen = wins.filter { $0.deep }
+        var chosen = cal.sleep.hrvFrom == "lastDeep" ? wins.filter { $0.deep } : []
         if !chosen.isEmpty {
             var lastBlock = [chosen[chosen.count - 1]]
             var i = chosen.count - 2
@@ -278,7 +330,7 @@ public enum WhoopScores {
             skinTemp: M.correct(temps.isEmpty ? .nan : M.mean(temps), cr.skinTemp),
             stress: stress, stressMin: sm, highStressPct: stTotal > 0 ? 100 * Double(sm.high) / Double(stTotal) : .nan,
             stages: stages,
-            naps: det.periods.filter { $0 != main }.map { (onset: eps[$0.lowerBound].t, minutes: $0.count) })
+            naps: ms.naps.map { (onset: eps[$0.lowerBound].t, minutes: $0.count) })
     }
 
     // MARK: Slaapbehoefte en -prestatie
