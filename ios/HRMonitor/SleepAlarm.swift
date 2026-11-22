@@ -284,21 +284,30 @@ final class SleepAlarm: ObservableObject {
         }
     }
 
-    /// Zoektocht: RUN en GET met verschillende bodies, elke 4 s één. Trilt de band, dan staat in het logboek
-    /// welke vorm het was; ok-antwoorden ook.
+    /// Zoektocht naar de vorm van SET (cmd 66) op de Whoop 5.0. De band accepteert cmd 66 van de Whoop-app
+    /// (resultaat 1, antwoord `04 01 00`), maar weigert `01`+tijd+nullen. Probeert per 2 s een vormbyte
+    /// (geen, 00, 02–06, 10) × opvulling (2, 4, 8 nullen) met een wekker over 2 minuten. Een "ok" in het
+    /// logboek wijst de juiste vorm aan.
     func probe() {
         guard !probing else { return }
         probing = true
-        log("Zoektocht gestart: let op of de band trilt")
-        let bodies: [[UInt8]] = [[0x01], [], [0x00], [0x02], [0x01, 0x00]]
-        let steps = bodies.map { (SleepPlanner.BandAlarm.run, $0) } + bodies.map { (SleepPlanner.BandAlarm.get, $0) }
-        for (i, st) in steps.enumerated() {
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 4) { [weak self] in
+        let t = UInt32(Date().addingTimeInterval(120).timeIntervalSince1970)
+        let le: [UInt8] = [UInt8(t & 0xFF), UInt8((t >> 8) & 0xFF), UInt8((t >> 16) & 0xFF), UInt8(t >> 24)]
+        var bodies: [[UInt8]] = []
+        for rev in [nil, 0x00, 0x02, 0x03, 0x04, 0x05, 0x06, 0x10] as [UInt8?] {
+            for pad in [2, 4, 8] { bodies.append((rev.map { [$0] } ?? []) + le + [UInt8](repeating: 0, count: pad)) }
+        }
+        log("Zoektocht SET gestart (\(bodies.count) vormen, ±\(bodies.count * 2) s)")
+        for (i, b) in bodies.enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 2) { [weak self] in
                 guard let self else { return }
-                self.send(st.0, st.1)
-                if i == steps.count - 1 {
+                self.send(SleepPlanner.BandAlarm.set, b)
+                if i == bodies.count - 1 {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-                        self?.probing = false; self?.log("Zoektocht klaar")
+                        guard let self else { return }
+                        self.probing = false
+                        self.log("Zoektocht klaar")
+                        self.bandResend()
                     }
                 }
             }
