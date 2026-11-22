@@ -65,6 +65,8 @@ final class BLEManager: NSObject, ObservableObject {
     private var peripherals: [UUID: CBPeripheral] = [:]
     private var rrWindow: [(Date, Double)] = []
     private var lastWhoopRR = Date.distantPast
+    /// App geopend terwijl de band nog niet verbonden was: historie opvragen zodra dat kan.
+    fileprivate var openRequested = false
 
     /// RR-intervallen toevoegen en live HRV (RMSSD over 5 min) bijwerken. Intervallen die niet bij de hartslag
     /// passen (buiten 300–2000 ms of > 35 % van 60000/HR af) en sprongen > 20 % tussen opeenvolgende slagen
@@ -451,8 +453,6 @@ extension BLEManager {
             openRequested = true   // zodra de verbinding er is
         }
     }
-    private var openRequested = false
-
     /// Haalt na (her)verbinden de opgeslagen historie van de band op (cmd 22, alleen lezen; er wordt nooit
     /// cmd 23 gestuurd, dus de band wist niets). Zo vullen gaten door een weggevallen verbinding zich vanzelf.
     /// Hooguit eens per 10 minuten.
