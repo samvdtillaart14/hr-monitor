@@ -12,12 +12,19 @@ final class AppServices {
     let acts = ActivityStore()
     let scores = ScoreModel()
     let screen = ScreenMonitor()
+    private(set) lazy var alarm = SleepAlarm(ble: ble, store: store, scores: scores)
     private init() {
+        let alarm = self.alarm
         ble.store = store
-        // Bij elke hartslag ook de schermstatus lezen: de app is dan toch wakker (goedkoop, hooguit 1× per 2 s).
-        store.onLive = { [weak acts, weak screen] in acts?.live(hr: $0); screen?.poll() }
+        // Bij elke hartslag ook de schermstatus lezen (hooguit 1× per 2 s) en de slimme wekker bijwerken.
+        store.onLive = { [weak acts, weak screen, weak alarm] hr in
+            MainActor.assumeIsolated { acts?.live(hr: hr); screen?.poll(); alarm?.tick() }
+        }
         scores.awakeIntervals = { [weak screen] in screen?.wakeIntervals() ?? [] }
         screen.onMorning = { MorningBrief.send(services: AppServices.shared) }
+        ble.onAlarmResult = { [weak alarm] code in MainActor.assumeIsolated { alarm?.bandResult(code) } }
+        ble.onWhoopReady = { [weak alarm] in MainActor.assumeIsolated { alarm?.bandResend() } }
+        alarm.rearm()
     }
 }
 
@@ -47,6 +54,7 @@ struct HRMonitorApp: App {
                 .environmentObject(services.store)
                 .environmentObject(services.acts)
                 .environmentObject(services.scores)
+                .environmentObject(services.alarm)
                 .environmentObject(services.ble)
                 .environmentObject(services.ble.recorder)
                 .environmentObject(services.ble.raw)

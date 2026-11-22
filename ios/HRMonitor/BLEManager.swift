@@ -1,6 +1,7 @@
 import Foundation
 import CoreBluetooth
 import UIKit
+import WhoopScores
 
 /// Verbindt met een BLE-hartslagband (standaard Heart Rate Service 0x180D),
 /// blijft op de achtergrond verbonden (UIBackgroundModes: bluetooth-central)
@@ -109,6 +110,10 @@ final class BLEManager: NSObject, ObservableObject {
     private var syncStarted = Date.distantPast
     private var sync = HistorySync()
     var selfSync: Bool { UserDefaults.standard.bool(forKey: Self.selfSyncKey) }
+    /// Antwoord van de band op het wekkercommando (resultaatcode: 1 ok, 3 niet ondersteund).
+    var onAlarmResult: ((UInt8) -> Void)?
+    /// Whoop-service gevonden na (her)verbinden: moment om bv. de wekker opnieuw naar de band te sturen.
+    var onWhoopReady: (() -> Void)?
 
     override init() {
         super.init()
@@ -380,7 +385,14 @@ extension BLEManager {
         }
     }
 
+    /// Zet de wekker op de band (experimenteel, zie SleepPlanner.bandAlarmCmd). nil = verstuurd.
+    func sendBandAlarm(at date: Date) -> String? {
+        let t = UInt32(max(0, min(Double(UInt32.max), date.timeIntervalSince1970)))
+        return sendFrame(cmd: SleepPlanner.bandAlarmCmd, body: SleepPlanner.bandAlarmBody(unix: t))
+    }
+
     fileprivate func handleResponse(cmd: UInt8, result: UInt8) {
+        if cmd == SleepPlanner.bandAlarmCmd, result != 2 { onAlarmResult?(result); return }
         guard selfSync, sync.response(cmd: cmd, result: result) == .rejected else { return }
         // Ack geweigerd: andere opbouw proberen bij de volgende burst en de historie opnieuw opvragen.
         let v = UserDefaults.standard.integer(forKey: Self.ackVariantKey)
@@ -439,6 +451,10 @@ extension BLEManager {
               charRefs.keys.contains(where: { $0.hasPrefix("FD4B0001") && $0.hasSuffix("FD4B0002-CCE1-4033-93CE-002D5875F58A") })
         else { return }
         historyRequestedThisConnection = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard let self, self.state == .connected else { return }
+            self.onWhoopReady?()
+        }
         // Even wachten tot de notificaties van de band aan staan, anders gaan de eerste records verloren.
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
             guard let self, self.state == .connected else { self?.historyRequestedThisConnection = false; return }
