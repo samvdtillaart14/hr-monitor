@@ -135,6 +135,7 @@ final class SleepPlannerTests: XCTestCase {
         // Whoop 5.0, byte voor byte gelijk aan een geaccepteerde write van de Whoop-app (wekker 23-11 18:50 UTC+1).
         XCTAssertEqual(SleepPlanner.BandAlarm.setBody(unix: 0x6B047CC8, variant: 0),
                        [0x04, 0x01, 0xC8, 0x7C, 0x04, 0x6B, 0, 0, 0x2F, 0x98, 0, 0, 0, 0, 0, 0, 0, 0, 0x07, 0x1E, 0x00])
+        XCTAssertEqual(SleepPlanner.BandAlarm.setBody(unix: t, variant: 0, alarmId: 3)[1], 3)
         XCTAssertEqual(SleepPlanner.BandAlarm.setBody(unix: t, variant: 1), [0x01, 0xD0, 0x36, 0x65, 0x66, 0, 0])
         XCTAssertEqual(SleepPlanner.BandAlarm.setBody(unix: t, variant: 2), [0xD0, 0x36, 0x65, 0x66, 0, 0, 0, 0])
         XCTAssertEqual(SleepPlanner.BandAlarm.setBody(unix: t, variant: 3, tzOffsetSec: 3600), [0x01, 0xD0, 0x36, 0x65, 0x66, 0x10, 0x0E, 0, 0])

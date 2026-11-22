@@ -185,13 +185,14 @@ public enum SleepPlanner {
         /// 2: u32 Unix-tijd + 4 nullen (zonder vormbyte)
         /// 3: `01` + u32 Unix-tijd + u32 tijdzone-offset in s (lokale tijd)
         /// 4: `02` + u32 Unix-tijd + `00 00`
-        public static func setBody(unix: UInt32, variant: Int, tzOffsetSec: Int = 0) -> [UInt8] {
+        /// - alarmId: wekkernummer (alleen vorm 0); de Whoop-app gebruikt 1.
+        public static func setBody(unix: UInt32, variant: Int, tzOffsetSec: Int = 0, alarmId: UInt8 = 1) -> [UInt8] {
             switch variant {
             case 1: return [0x01] + le32(unix) + [0, 0]
             case 2: return le32(unix) + [0, 0, 0, 0]
             case 3: return [0x01] + le32(unix) + le32(UInt32(bitPattern: Int32(tzOffsetSec)))
             case 4: return [0x02] + le32(unix) + [0, 0]
-            default: return [0x04, 0x01] + le32(unix) + whoop5Tail
+            default: return [0x04, alarmId] + le32(unix) + whoop5Tail
             }
         }
 
