@@ -105,7 +105,7 @@ De beslislogica (wanneer wel of niet zelf cmd 23 sturen) zit sinds deze versie i
 | SLP-02 | Ademfrequentie uit RSA 15/min; trage golven winnen niet | ✅ (bestaand) |
 | SLP-03 | Nachtblokken tussen 22:00 en 08:00 worden één nacht; middagdutje blijft dutje (RG-13) | ✅ JS + Swift |
 | SLP-04 | Los staartje na het wakker worden telt niet mee | ✅ (bestaand) |
-| SLP-05 | Uitslapen na 08:00 met kort wakker moment blijft één nacht (RG-12) | ⚠️ BUG-2 |
+| SLP-05 | Uitslapen na 08:00 met kort wakker moment blijft één nacht (RG-12) | ✅ JS + Swift (BUG-2) |
 | SLP-06 | Zelfde lokale nacht bij UTC+1 en UTC+2 (zomertijd) geeft dezelfde hoofdslaap (RG-14) | ✅ JS + Swift |
 | SLP-07 | Echte nacht tegen de Whoop-waarden (begin/einde ±15 min, slaapduur ±30 min, fases ±15 %-punt) | 🖐 §4.5, na elke wijziging aan slaap |
 
@@ -123,7 +123,7 @@ De beslislogica (wanneer wel of niet zelf cmd 23 sturen) zit sinds deze versie i
 | SCORE-06 | Dagbelasting en energie (rustverbruik over niet-gemeten tijd) | ✅ Swift |
 | SCORE-07 | Historie uit het nachtarchief wordt gebruikt | ✅ Swift |
 | SCORE-08 | Alle waarden voor de schermen eindig (geen NaN of ∞) | ✅ Swift |
-| RG-09 | Herstel eerste nachten (< 4 nachten historie) bij normale eigen waarden niet extreem | ⚠️ BUG-1 |
+| RG-09 | Herstel eerste nachten (< 4 nachten historie) bij normale eigen waarden niet extreem | ✅ JS + Swift (BUG-1) |
 | RG-10/11 | Herstel met identieke historie (sd 0) eindig en gemiddeld; altijd 1–99 | ✅ JS + Swift |
 | RG-16/17 | Losse hartslagpiek geeft nauwelijks belasting; 0 minuten in zones geeft 0 | ✅ JS (+ Swift RG-16) |
 | RG-18 | Slaapschuld altijd tussen 0 en plafond | ✅ JS + Swift |
@@ -157,7 +157,7 @@ De beslislogica (wanneer wel of niet zelf cmd 23 sturen) zit sinds deze versie i
 |---|---|
 | Geen of weinig data | RG-01, RG-02, SCORE-01, SCORE-04 |
 | Gaten (band af, verbinding weg) | RG-05, BLE-08, BLE-10, SCORE-05; 🖐 B2 |
-| Eerste dag / eerste nachten | RG-09 (BUG-1), SCORE-02, SCORE-07, PROF-01 |
+| Eerste dag / eerste nachten | RG-09, SCORE-02, SCORE-07, PROF-01 |
 | Ontbrekende RR | RG-03, RG-04, SCORE-03 |
 | Ontbrekende beweging (alleen live) | RG-04 (zie BUG-9) |
 | Dubbele data | RG-06, STORE-01, STORE-03, BLE-04 |
@@ -173,8 +173,8 @@ Status: **opgelost** in deze PR, **andere thread** (wordt opgelost in de thread 
 
 | # | Bug | Gevonden met | Status |
 |---|---|---|---|
-| BUG-1 | Herstel 1–2 % bij normale waarden zolang er < 4 nachten historie is: de basislijn valt terug op populatiewaarden (HRV 60 ms, rust-HR 55). Bij Sams HRV ~30 ms geeft dat z ≈ −2,8 → 1–2 %. | RG-09 | andere thread |
-| BUG-2 | Uitslapen: slaap 03:00–08:10, 25 min wakker, 08:35–10:30 → het deel na 08:00 telt als dutje, de nacht wordt 2 uur te kort. `mainSleep` voegt alleen blokken samen die zelf (deels) tussen 22 en 08 liggen. | RG-12 | andere thread (slaapregels) |
+| BUG-1 | Herstel 1–2 % bij normale waarden zolang er < 4 nachten historie is: de basislijn valt terug op populatiewaarden (HRV 60 ms, rust-HR 55). Bij Sams HRV ~30 ms geeft dat z ≈ −2,8 → 1–2 %. | RG-09 | **opgelost** (PR #13) |
+| BUG-2 | Uitslapen: slaap 03:00–08:10, 25 min wakker, 08:35–10:30 → het deel na 08:00 telt als dutje, de nacht wordt 2 uur te kort. `mainSleep` voegt alleen blokken samen die zelf (deels) tussen 22 en 08 liggen. | RG-12 | **opgelost** (PR #13) |
 | BUG-3 | Ongesorteerde samples (na een tijdzonewissel kan het bestand van gisteren latere seconden bevatten) → crash in `epochs` (index −1) en negatieve belasting/energie. | RG-07, RG-08, STORE-08 | **opgelost** in `DayStore.samples` (sorteert als nodig); in het algoritme zelf nog open |
 | BUG-4 | Valt er één BLE-notificatie weg, dan slokte de parser de volgende frames op (alleen de header-CRC werd gecontroleerd). In de test kwamen na een weggevallen notificatie 37 661 i.p.v. 32 522 records terug met CRC32-controle (+16 %). | BLE-08 | **opgelost** (CRC32-controle) |
 | BUG-5 | Records met onmogelijke tijd (bv. klok van de band niet gezet) zouden als dag in 1970 of in de toekomst worden opgeslagen. | BLE-12 | **opgelost** |

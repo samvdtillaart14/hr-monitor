@@ -65,7 +65,7 @@ test('RG-08 belasting en energie nooit negatief, ook bij ongesorteerde invoer', 
   assert.ok(W.calories(s, C) >= 0);
 });
 
-test('RG-09 herstel eerste nachten (<4 nachten historie) bij normale eigen waarden is niet extreem', { todo: 'BUG-1: valt terug op populatie-basislijn (HRV 60 ms) → 1–2% bij HRV ~30 ms' }, () => {
+test('RG-09 herstel eerste nachten (<4 nachten historie) bij normale eigen waarden is niet extreem', () => {
   const sam = { hrv: 31, rhr: 62, resp: 15.5, sleepPerf: 75, skinTemp: 33.5 };
   for (const h of [0, 1, 3]) {
     const hist = Array.from({ length: h }, () => ({ hrv: 31, rhr: 62, resp: 15.5, skinTemp: 33.5 }));
@@ -89,7 +89,7 @@ test('RG-11 herstel blijft binnen 1–99 bij extreme invoer', () => {
   }
 });
 
-test('RG-12 doorslapen na 08:00 met kort wakker moment blijft één nacht (geen dutje)', { todo: 'BUG-2: blok na 08:00 telt als dutje' }, () => {
+test('RG-12 doorslapen na 08:00 met kort wakker moment blijft één nacht (geen dutje)', () => {
   // tz +60: 03:00–08:10 slapen, 25 min wakker, 08:35–10:30 slapen
   const r = W.mainSleep(flatEpochs(DAY, 1440), [P(120, 430), P(455, 570)], C, 60);
   assert.deepEqual(r.main, P(120, 570));

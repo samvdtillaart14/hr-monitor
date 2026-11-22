@@ -78,7 +78,6 @@ final class RandgevallenTests: XCTestCase {
 
     func testRG09_firstNightsRecoveryNotExtreme() {
         let sam = NightMetrics(hrv: 31, rhr: 62, resp: 15.5, sleepPerf: 75, skinTemp: 33.5)
-        XCTExpectFailure("BUG-1: zonder 4 nachten historie valt herstel terug op populatie-basislijn (HRV 60 ms) → 1–2%")
         for h in [0, 1, 3] {
             let hist = (0..<h).map { _ in NightMetrics(hrv: 31, rhr: 62, resp: 15.5, skinTemp: 33.5) }
             let r = WhoopScores.recovery(sam, history: hist, cal)
@@ -103,7 +102,6 @@ final class RandgevallenTests: XCTestCase {
 
     func testRG12_sleepingInAfter8IsStillNight() throws {
         let r = try XCTUnwrap(WhoopScores.mainSleep(flatEpochs(day, 1440), periods: [120..<430, 455..<570], cal, tzOffsetMin: 60))
-        XCTExpectFailure("BUG-2: slaapblok na 08:00 (na kort wakker) telt als dutje")
         XCTAssertEqual(r.main, 120..<570)
         XCTAssertTrue(r.naps.isEmpty)
     }
