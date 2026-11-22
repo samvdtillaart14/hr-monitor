@@ -299,11 +299,11 @@ final class SleepAlarm: ObservableObject {
         else { d.removeObject(forKey: Self.armedKey) }
     }
 
-    static func clock(_ d: Date, seconds: Bool = false) -> String {
+    nonisolated static func clock(_ d: Date, seconds: Bool = false) -> String {
         let f = DateFormatter(); f.dateFormat = seconds ? "HH:mm:ss" : "HH:mm"
         return f.string(from: d)
     }
-    static func clock(minutes m: Int) -> String {
+    nonisolated static func clock(minutes m: Int) -> String {
         let x = ((m % 1440) + 1440) % 1440
         return String(format: "%02d:%02d", x / 60, x % 60)
     }
