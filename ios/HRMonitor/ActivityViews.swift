@@ -86,7 +86,7 @@ struct ActivityRowView: View {
     }
 
     private func timeLabel(_ d: Date) -> String {
-        Calendar.current.isDateInToday(d) ? DV.clock(d) : "[\(d.formatted(.dateTime.weekday(.abbreviated)))] \(DV.clock(d))"
+        Calendar.current.isDateInToday(d) ? DV.clock(d) : "[\(d.formatted(.dateTime.locale(DV.nl).weekday(.abbreviated)))] \(DV.clock(d))"
     }
 }
 
@@ -197,7 +197,7 @@ struct ActivityDetailView: View {
                         Image(systemName: a.type.icon).font(.title3)
                         VStack(alignment: .leading, spacing: 0) {
                             Text(a.type.name.uppercased()).font(.subheadline.weight(.bold)).tracking(1.5)
-                            Text("\(a.start.formatted(.dateTime.day().month(.abbreviated))) \(DV.clock(a.start)) tot \(a.end.map(DV.clock) ?? "nu")")
+                            Text("\(a.start.formatted(.dateTime.locale(DV.nl).day().month(.abbreviated))) \(DV.clock(a.start)) tot \(a.end.map(DV.clock) ?? "nu")")
                                 .font(.caption).foregroundStyle(Theme.muted)
                         }
                     }

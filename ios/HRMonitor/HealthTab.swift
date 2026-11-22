@@ -273,7 +273,7 @@ struct HealthspanView: View {
     private var header: some View {
         let week = Calendar.current.dateInterval(of: .weekOfYear, for: Date())!
         return VStack(spacing: 4) {
-            Text("WEEKOVERZICHT · \(week.start.formatted(.dateTime.day().month(.abbreviated))) – \(Date().formatted(.dateTime.day().month(.abbreviated)))")
+            Text("WEEKOVERZICHT · \(week.start.formatted(.dateTime.locale(DV.nl).day().month(.abbreviated))) – \(Date().formatted(.dateTime.locale(DV.nl).day().month(.abbreviated)))")
                 .font(Theme.label).tracking(1.5).foregroundStyle(Theme.muted)
             HStack {
                 VStack { Text(hasData ? String(format: "%.1f", abs(offset)) : "--").font(Theme.number(24)).foregroundStyle(hasData && offset > 0 ? DV.poor : Theme.hex(0x8EC5FF))

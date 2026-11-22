@@ -45,6 +45,11 @@ struct StressDetailView: View {
                 .rotationEffect(.degrees(135))
             Capsule().fill(.white).frame(width: 5, height: 26).offset(y: -112)
                 .rotationEffect(.degrees(-135 + 270 * v / 3))
+            // Schaal: 0 links onder, 3 rechts onder.
+            HStack {
+                Text("0"); Spacer(); Text("3")
+            }
+            .font(.caption.bold()).foregroundStyle(Theme.muted).frame(width: 170).offset(y: 100)
             VStack(spacing: 4) {
                 Text(current.map { String(format: "%.1f", $0) } ?? "--").font(Theme.number(60)).monospacedDigit()
                 Text(current.map { Self.names[Self.level($0)].uppercased() } ?? "GEEN DATA").font(Theme.label).tracking(2)

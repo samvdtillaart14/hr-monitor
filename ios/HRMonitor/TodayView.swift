@@ -77,7 +77,7 @@ struct TodayView: View {
 
     private var header: some View {
         HStack {
-            Text(Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide))).font(.headline)
+            Text(Date.now.formatted(.dateTime.locale(DV.nl).weekday(.wide).day().month(.wide))).font(.headline)
             Spacer()
             if let b = ble.battery {
                 Label("\(b)%", systemImage: "battery.75percent").font(.subheadline).foregroundStyle(Theme.muted)
@@ -113,7 +113,7 @@ struct TodayView: View {
         let rhr = night?.metrics.rhr
         let delta = rhr.flatMap { r in baselineRHR.map { r - $0 } }
         let elevated = (delta ?? 0) > 3
-        return Card(title: "Gezondheid", index: 1) {
+        return Card(title: "Vitale waarden", index: 1) {
             HStack(spacing: 10) {
                 Image(systemName: elevated ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                     .foregroundStyle(elevated ? Theme.zones[4].color : Theme.accent).font(.title3)
