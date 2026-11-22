@@ -64,6 +64,32 @@ final class BLEManager: NSObject, ObservableObject {
     private var peripheral: CBPeripheral?
     private var peripherals: [UUID: CBPeripheral] = [:]
     private var rrWindow: [(Date, Double)] = []
+    private var lastWhoopRR = Date.distantPast
+
+    /// RR-intervallen toevoegen en live HRV (RMSSD over 5 min) bijwerken. Intervallen die niet bij de hartslag
+    /// passen (buiten 300–2000 ms of > 35 % van 60000/HR af) en sprongen > 20 % tussen opeenvolgende slagen
+    /// tellen niet mee. Pas vanaf 30 bruikbare paren een waarde.
+    func addRR(_ rrs: [Double], hr: Int, fromWhoop: Bool) {
+        let now = Date()
+        if fromWhoop && !rrs.isEmpty { lastWhoopRR = now }
+        let expected = hr > 0 ? 60000 / Double(hr) : nil
+        let ok = rrs.filter { r in r >= 300 && r <= 2000 && (expected.map { abs(r - $0) <= 0.35 * $0 } ?? true) }
+        if let last = ok.last { lastRR = last }
+        else if rrWindow.last(where: { $0.1.isFinite }).map({ now.timeIntervalSince($0.0) > 10 }) ?? true { lastRR = nil }
+        // gat in de reeks markeren met NaN, zodat er geen verschil over het gat wordt berekend
+        if ok.count < rrs.count || (rrWindow.last.map { now.timeIntervalSince($0.0) > 5 } ?? false) { rrWindow.append((now, .nan)) }
+        rrWindow.append(contentsOf: ok.map { (now, $0) })
+        rrWindow.removeAll { now.timeIntervalSince($0.0) > 300 }
+        let w = rrWindow.map(\.1)
+        var s = 0.0, n = 0
+        if w.count > 1 {
+            for k in 1..<w.count where w[k].isFinite && w[k - 1].isFinite {
+                let d = w[k] - w[k - 1]
+                if abs(d) <= 0.2 * w[k - 1] { s += d * d; n += 1 }
+            }
+        }
+        rmssd = n >= 30 ? (s / Double(n)).squareRoot() : nil
+    }
     private var sum = 0.0, count = 0
     private var userDisconnected = false
     /// laatste automatische historie-aanvraag (cmd 22), om niet bij elke korte herverbinding alles opnieuw op te halen
@@ -88,6 +114,7 @@ final class BLEManager: NSObject, ObservableObject {
             guard let st = self?.store else { return }
             MainActor.assumeIsolated { st.addRecord(r) }
         }
+        whoop.onLive = { [weak self] hr, rr in self?.addRR(rr.map(Double.init), hr: hr, fromWhoop: true) }
         whoop.onHistoryEnd = { [weak self] trim in self?.ackBurst(trim) }
         whoop.onHistoryComplete = { [weak self] in self?.syncDone() }
         whoop.onResponse = { [weak self] cmd, res in self?.handleResponse(cmd: cmd, result: res) }
@@ -200,7 +227,9 @@ final class BLEManager: NSObject, ObservableObject {
                 i += 2
             }
         }
-        if flags & 0x04 != 0 { contact = flags & 0x02 != 0 ? "goed" : "geen contact" } else { contact = "niet gemeld" }
+        // De Whoop meldt het contactbit niet; dan leiden we het af uit de hartslag zelf.
+        if flags & 0x04 != 0 { contact = flags & 0x02 != 0 ? "goed" : "geen contact" }
+        else { contact = hr > 0 ? "goed (hartslag ontvangen)" : "geen hartslag" }
 
         let now = Date()
         if sessionStart == nil { sessionStart = now }
@@ -213,15 +242,8 @@ final class BLEManager: NSObject, ObservableObject {
             samples.append(Sample(time: now, bpm: hr))
             samples.removeAll { now.timeIntervalSince($0.time) > 300 }
         }
-        if let last = rrs.last { lastRR = last }
-        rrWindow.append(contentsOf: rrs.map { (now, $0) })
-        rrWindow.removeAll { now.timeIntervalSince($0.0) > 60 }
-        let w = rrWindow.map(\.1)
-        if w.count > 4 {
-            var s = 0.0, n = 0
-            for k in 1..<w.count { let d = w[k] - w[k - 1]; if abs(d) < 300 { s += d * d; n += 1 } }
-            if n > 0 { rmssd = (s / Double(n)).squareRoot() }
-        }
+        // RR van het Whoop-kanaal (0x28) heeft voorrang; die van de standaard-HR-service alleen als dat stil is.
+        if now.timeIntervalSince(lastWhoopRR) > 10 { addRR(rrs, hr: hr, fromWhoop: false) }
         recorder.append(time: now, bpm: hr, rr: rrs, battery: battery)
         if let st = store {
             let rrInt = rrs.map { Int($0.rounded()) }

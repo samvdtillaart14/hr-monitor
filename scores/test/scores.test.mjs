@@ -168,3 +168,24 @@ test('slaapdetectie: los staartje na het wakker worden telt niet mee', () => {
   assert.equal(d.periods.length, 1);
   assert.ok(d.periods[0].endIdx <= 150, `eind ${d.periods[0].endIdx}`);
 });
+
+test('herstel eerste nachten: eigen waarden als basislijn, niet de populatie', () => {
+  const sam = { hrv: 31, rhr: 62, resp: 15.5, sleepPerf: 75, skinTemp: 33.5 };
+  for (const h of [0, 1, 3]) {
+    const hist = Array.from({ length: h }, () => ({ hrv: 31, rhr: 62, resp: 15.5, skinTemp: 33.5 }));
+    const r = W.recovery(sam, hist);
+    assert.ok(r >= 20 && r <= 80, `${h} → ${r}`);
+  }
+  const personal = structuredClone(W.DEFAULT_CALIBRATION); personal.recovery.baselinePersonal = true;
+  assert.ok(W.recovery(sam, [], personal) < 20, 'persoonlijke basislijn blijft gebruikt');
+});
+
+test('uitslapen na 08:00 na kort wakker blijft nacht; middagdutje niet', () => {
+  const day = Date.UTC(2026, 10, 22) / 1000;
+  const eps = Array.from({ length: 1440 }, (_, i) => ({ t: day + i * 60 }));
+  const P = (a, b) => ({ startIdx: a, endIdx: b });
+  const r = W.mainSleep(eps, [P(120, 430), P(455, 570)], W.DEFAULT_CALIBRATION, 60);
+  assert.deepEqual(r.main, P(120, 570)); assert.deepEqual(r.naps, []);
+  const n = W.mainSleep(eps, [P(120, 430), P(780, 840)], W.DEFAULT_CALIBRATION, 60);
+  assert.deepEqual(n.main, P(120, 430)); assert.equal(n.naps.length, 1);
+});

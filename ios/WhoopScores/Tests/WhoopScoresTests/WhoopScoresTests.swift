@@ -177,4 +177,20 @@ final class HistoryTests: XCTestCase {
         XCTAssertEqual(d.periods.count, 1)
         XCTAssertLessThanOrEqual(d.periods[0].upperBound, 150)
     }
+
+    func testFirstNightsRecoveryUsesOwnValues() {
+        let sam = NightMetrics(hrv: 31, rhr: 62, resp: 15.5, sleepPerf: 75, skinTemp: 33.5)
+        for h in [0, 1, 3] {
+            let hist = (0..<h).map { _ in NightMetrics(hrv: 31, rhr: 62, resp: 15.5, skinTemp: 33.5) }
+            XCTAssertTrue((20...80).contains(WhoopScores.recovery(sam, history: hist, .standard)))
+        }
+    }
+
+    func testSleepingInAfter8StaysNight() throws {
+        let eps = (0..<1440).map { Epoch(t: 1795305600 + Double($0) * 60, hr: 55, hrSd: 1, move: 0, skinTemp: .nan, n: 60) }
+        let r = try XCTUnwrap(WhoopScores.mainSleep(eps, periods: [120..<430, 455..<570], .standard, tzOffsetMin: 60))
+        XCTAssertEqual(r.main, 120..<570); XCTAssertTrue(r.naps.isEmpty)
+        let nap = try XCTUnwrap(WhoopScores.mainSleep(eps, periods: [120..<430, 780..<840], .standard, tzOffsetMin: 60))
+        XCTAssertEqual(nap.main, 120..<430); XCTAssertEqual(nap.naps, [780..<840])
+    }
 }

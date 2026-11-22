@@ -36,10 +36,11 @@ enum UserProfile {
     /// Berekende rust-HR, of de standaard zolang er nog geen nacht is gemeten.
     static var restHr: Double { measuredRestHr ?? (importedCalibration ?? .standard).profile.restingHr }
 
-    /// Rust-HR uit de nachten: mediaan van de rust-HR per nacht (laagste stabiele hartslag tijdens diepe slaap).
+    /// Rust-HR uit de nachten: mediaan van de rust-HR per nacht (gemiddelde HR tijdens de slaap).
+    /// Pas vanaf 3 nachten; één nacht (bv. met alcohol) verschuift anders je hartslagzones.
     static func updateRestHr(from nights: [Double]) {
         let v = nights.filter { $0.isFinite && $0 >= 30 && $0 <= 110 }.sorted()
-        guard !v.isEmpty else { return }
+        guard v.count >= 3 else { d.removeObject(forKey: restHrAutoKey); return }
         let m = v.count % 2 == 1 ? v[v.count / 2] : (v[v.count / 2 - 1] + v[v.count / 2]) / 2
         d.set(m.rounded(), forKey: restHrAutoKey)
     }
@@ -80,6 +81,8 @@ enum UserProfile {
     /// Kalibratie voor de scores-module met jouw profiel erin.
     static func calibration() -> Calibration {
         var c = importedCalibration ?? Calibration.standard
+        // Een geïmporteerde kalibratie komt uit je eigen Whoop-export: de basislijn daarin is persoonlijk.
+        if importedCalibration != nil { c.recovery.baselinePersonal = true }
         if let age { c.profile.age = age }
         if d.object(forKey: "profile.male") != nil { c.profile.male = d.bool(forKey: "profile.male") }
         let w = d.double(forKey: weightKey), h = d.double(forKey: heightKey)

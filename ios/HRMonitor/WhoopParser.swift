@@ -55,6 +55,8 @@ final class WhoopParser: ObservableObject {
     }
 
     var onRecord: ((Record) -> Void)?
+    /// Live HR en RR-intervallen (ms) uit het realtime-pakket 0x28.
+    var onLive: ((Int, [Int]) -> Void)?
     /// Einde van een historie-burst (0x31 sub 2): de 8 bytes trim (u32 trim + u32, @21) voor de ack (cmd 23).
     var onHistoryEnd: (([UInt8]) -> Void)?
     /// Antwoord op een commando (0x24): cmd, resultaat (0 fout, 1 ok, 2 bezig, 3 niet ondersteund).
@@ -130,6 +132,7 @@ final class WhoopParser: ObservableObject {
         guard b.count >= 12, b[0] == 0xAA, b[1] == 0x01, u16(b, 2) + 8 == b.count,
               Self.crc16Modbus(b[0..<6]) == UInt16(u16(b, 6)) else { badFrames += 1; return }
         frames += 1
+        BandLog.shared.append(b)
         let type = b[8]
         typeCounts[type, default: 0] += 1
 
@@ -174,6 +177,7 @@ final class WhoopParser: ObservableObject {
             liveHR = Int(b[16])
             let n = min(Int(b[17]), (b.count - 22) / 2)
             liveRR = (0..<max(0, n)).map { (u16(b, 18 + 2 * $0) * 1000 + 512) / 1024 }
+            onLive?(Int(b[16]), liveRR)
         case 0x32 where b.count > 25:
             // Type 50: tekstlog van de firmware.
             let txt = String(decoding: b[21..<(b.count - 4)].filter { $0 >= 0x20 && $0 < 0x7F || $0 == 0x0A }, as: UTF8.self)

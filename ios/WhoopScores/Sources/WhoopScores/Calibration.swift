@@ -40,6 +40,8 @@ public struct Calibration: Codable, Equatable, Sendable {
         public var sleepRef: Double = 0.85, sufRef: Double = 0.8, effRef: Double = 0.85, consRef: Double = 0.7
         public var baseline = Baseline()
         public var minHistory: Int = 4
+        /// true = `baseline` komt uit je eigen data (kalibratie op je Whoop-export)
+        public var baselinePersonal: Bool = false
     }
     public struct Sleep: Codable, Equatable, Sendable {
         public var needBaseMin: Double = 460, needPerDebtMin: Double = 0.3, needPerStrainMin: Double = 3, strainRef: Double = 10
@@ -52,6 +54,8 @@ public struct Calibration: Codable, Equatable, Sendable {
         /// Slaap die (deels) tussen nightStartHour en nightEndHour lokale tijd valt is nachtslaap, nooit een dutje;
         /// blokken binnen nightMergeGapMin van elkaar worden één nacht (de tussentijd telt als wakker).
         public var nightStartHour: Double = 22, nightEndHour: Double = 8, nightMergeGapMin: Int = 240
+        /// Een blok buiten dat venster hoort toch bij de nacht als het er binnen zoveel minuten op aansluit (uitslapen).
+        public var nightExtendGapMin: Int = 60
         /// Een los staartje slaap korter dan dit na het wakker worden telt niet mee.
         public var edgeRunMin: Int = 20
         /// Extra wakker-regel op ruwe beweging (× drempel); 0 = uit.
