@@ -129,3 +129,21 @@ test('calorieën: rustdag rond het rustmetabolisme, inspanning meer', () => {
   const run = Array.from({ length: 3600 }, (_, i) => ({ t: i, hr: 150 }));
   assert.ok(W.calories(run) > 500 && W.calories(run) < 1000, String(W.calories(run)));
 });
+
+test('gaten in de opname (geen data) breken de bewegingsdrempel niet', () => {
+  const { samples } = synthNight();
+  const t0 = samples[0].t;
+  const holed = samples.filter((s) => s.t - t0 >= 20 * 60).map((s) => ({ ...s }));
+  // 60 min zonder data vóór de opname, zoals een synchronisatiegat
+  holed.unshift({ t: t0 - 3600, hr: 70, rr: [], q: [1, 0, 0, 0], skinTemp: 32 });
+  const n = W.analyzeNight(holed);
+  assert.ok(n, 'geen slaap gevonden');
+  near((n.onset - t0) / 60, 30, 6);
+});
+
+test('ademfrequentie: trage golven (Mayer, 0,1 Hz) winnen niet van de ademhaling', () => {
+  const s = []; let t = 0;
+  for (let i = 0; i < 180; i++) { const rr = 1000 + 25 * Math.sin(2 * Math.PI * 0.24 * t) + 45 * Math.sin(2 * Math.PI * 0.1 * t); t += rr / 1000; s.push(rr); }
+  const secs = s.map((rr, i) => ({ t: 1000 + i, hr: 60, rr: [rr], q: null }));
+  near(W.respRateWindow(W.beats(secs)), 14.4, 0.6);
+});

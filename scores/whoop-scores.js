@@ -53,6 +53,10 @@ function movingAvg(a, w) {
   const h = Math.floor(w / 2);
   return a.map((_, i) => { let s = 0, n = 0; for (let j = i - h; j <= i + h; j++) if (j >= 0 && j < a.length) { s += a[j]; n++; } return s / n; });
 }
+function movingMedian(a, w) {
+  const h = Math.floor(w / 2);
+  return a.map((_, i) => median(a.slice(Math.max(0, i - h), Math.min(a.length, i + h + 1))));
+}
 const correct = (v, c) => (Number.isFinite(v) && c ? c[0] + c[1] * v : v);
 
 // ---------- RR-intervallen ----------
@@ -87,7 +91,7 @@ export function rmssd(bs) {
   return n >= 10 ? Math.sqrt(s / n) : NaN;
 }
 
-/** Ademfrequentie (/min) uit respiratoire sinusaritmie: piek in 0,1–0,5 Hz van het RR-tachogram. */
+/** Ademfrequentie (/min) uit respiratoire sinusaritmie: piek in 0,15–0,5 Hz van het RR-tachogram. */
 export function respRateWindow(bs) {
   const good = bs.filter((b) => b.ok);
   if (good.length < 40) return NaN;
@@ -109,7 +113,7 @@ export function respRateWindow(bs) {
   const slope = sxy / sxx;
   for (let i = 0; i < n; i++) x[i] = (x[i] - mx - slope * (i - mi)) * (0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (n - 1)));
   let best = 0, bestF = NaN, total = 0;
-  for (let f = 0.1; f <= 0.5 + 1e-9; f += 0.005) {
+  for (let f = 0.15; f <= 0.5 + 1e-9; f += 0.005) {
     let re = 0, im = 0;
     for (let i = 0; i < n; i++) { const w = (2 * Math.PI * f * i) / fs; re += x[i] * Math.cos(w); im -= x[i] * Math.sin(w); }
     const p = re * re + im * im; total += p;
@@ -146,8 +150,8 @@ export function epochs(samples, epochSec = 60) {
 /** Zoekt slaapperiodes: weinig beweging én hartslag dicht bij rust. Geeft [{startIdx, endIdx}] (endIdx exclusief). */
 export function detectSleep(eps, cal = DEFAULT_CALIBRATION) {
   const c = cal.sleep;
-  const moveS = movingAvg(eps.map((e) => e.move), 7);
-  const moveThr = c.moveThreshold > 0 ? c.moveThreshold : Math.max(1e-3, 3 * percentile(moveS, 0.1));
+  const moveS = movingMedian(eps.map((e) => e.move), 7); // mediaan: een omdraaimoment maakt je niet wakker
+  const moveThr = c.moveThreshold > 0 ? c.moveThreshold : Math.max(1e-3, 3 * percentile(moveS.filter((_, i) => eps[i].n > 0), 0.1)); // gaten (n = 0) tellen niet mee
   // rustreferentie: gekalibreerde rust-HR, of hoger als de nacht zelf hoger ligt (alcohol, ziekte, warmte)
   const rhr = Math.max(cal.profile.restingHr, percentile(eps.map((e) => e.hr), 0.05) || 0);
   const cand = eps.map((e, i) => moveS[i] < moveThr && (!Number.isFinite(e.hr) || e.hr < rhr + c.hrAboveRest) && e.n > 0);

@@ -30,5 +30,9 @@ enum M {
             return s / n
         }
     }
+    static func movingMedian(_ a: [Double], _ w: Int) -> [Double] {
+        let h = w / 2
+        return a.indices.map { i in median(Array(a[max(0, i - h)..<min(a.count, i + h + 1)])) }
+    }
     static func correct(_ v: Double, _ c: [Double]) -> Double { v.isFinite && c.count == 2 ? c[0] + c[1] * v : v }
 }

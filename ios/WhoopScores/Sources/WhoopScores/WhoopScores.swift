@@ -88,7 +88,7 @@ public enum WhoopScores {
         return n >= 10 ? sqrt(s / Double(n)) : .nan
     }
 
-    /// Ademfrequentie (/min) uit respiratoire sinusaritmie: piek in 0,1–0,5 Hz van het RR-tachogram.
+    /// Ademfrequentie (/min) uit respiratoire sinusaritmie: piek in 0,15–0,5 Hz van het RR-tachogram.
     public static func respRateWindow(_ bs: [Beat]) -> Double {
         let good = bs.filter { $0.ok }
         guard good.count >= 40 else { return .nan }
@@ -111,7 +111,7 @@ public enum WhoopScores {
             x[i] = (x[i] - mx - slope * (Double(i) - mi)) * (0.5 - 0.5 * cos(2 * Double.pi * Double(i) / Double(n - 1)))
         }
         var best = 0.0, bestF = Double.nan, total = 0.0
-        var f = 0.1
+        var f = 0.15
         while f <= 0.5 + 1e-9 {
             var re = 0.0, im = 0.0
             for i in 0..<n { let w = 2 * Double.pi * f * Double(i) / fs; re += x[i] * cos(w); im -= x[i] * sin(w) }
@@ -162,8 +162,9 @@ public enum WhoopScores {
     /// Slaapperiodes: weinig beweging én hartslag dicht bij rust.
     public static func detectSleep(_ eps: [Epoch], _ cal: Calibration = .standard) -> SleepDetection {
         let c = cal.sleep
-        let moveS = M.movingAvg(eps.map { $0.move }, 7)
-        let moveThr = c.moveThreshold > 0 ? c.moveThreshold : max(1e-3, 3 * M.percentile(moveS, 0.1))
+        let moveS = M.movingMedian(eps.map { $0.move }, 7)   // mediaan: een omdraaimoment maakt je niet wakker
+        let moveThr = c.moveThreshold > 0 ? c.moveThreshold
+            : max(1e-3, 3 * M.percentile(moveS.indices.filter { eps[$0].n > 0 }.map { moveS[$0] }, 0.1))   // gaten tellen niet mee
         // rustreferentie: gekalibreerde rust-HR, of hoger als de nacht zelf hoger ligt (alcohol, ziekte, warmte)
         let p5 = M.percentile(eps.map { $0.hr }, 0.05)
         let rhr = max(cal.profile.restingHr, p5.isFinite ? p5 : 0)
