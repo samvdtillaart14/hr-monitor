@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import UserNotifications
 
 /// Bluetooth, dagopslag, scores en activiteiten bestaan vanaf de start van de app, ook als iOS de app
 /// op de achtergrond opnieuw start voor de band (dan verschijnt er geen scherm en loopt onAppear niet).
@@ -10,13 +11,17 @@ final class AppServices {
     let ble = BLEManager()
     let acts = ActivityStore()
     let scores = ScoreModel()
+    let screen = ScreenMonitor()
     private(set) lazy var alarm = SleepAlarm(ble: ble, store: store, scores: scores)
     private init() {
         let alarm = self.alarm
         ble.store = store
-        store.onLive = { [weak acts, weak alarm] hr in
-            MainActor.assumeIsolated { acts?.live(hr: hr); alarm?.tick() }
+        // Bij elke hartslag ook de schermstatus lezen (hooguit 1× per 2 s) en de slimme wekker bijwerken.
+        store.onLive = { [weak acts, weak screen, weak alarm] hr in
+            MainActor.assumeIsolated { acts?.live(hr: hr); screen?.poll(); alarm?.tick() }
         }
+        scores.awakeIntervals = { [weak screen] in screen?.wakeIntervals() ?? [] }
+        screen.onMorning = { MorningBrief.send(services: AppServices.shared) }
         ble.onAlarmResult = { [weak alarm] code in MainActor.assumeIsolated { alarm?.bandResult(code) } }
         ble.onWhoopReady = { [weak alarm] in MainActor.assumeIsolated { alarm?.bandResend() } }
         alarm.rearm()
@@ -28,6 +33,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         // Direct aanmaken: CoreBluetooth moet de centrale met het herstel-ID bij het opstarten terugzien.
         _ = AppServices.shared
+        UNUserNotificationCenter.current().delegate = NotificationDelegate.shared
+        if ScreenMonitor.morningOn { MorningBrief.requestPermission() }
         return true
     }
 }
@@ -52,6 +59,7 @@ struct HRMonitorApp: App {
                 .environmentObject(services.ble.recorder)
                 .environmentObject(services.ble.raw)
                 .environmentObject(services.ble.whoop)
+                .environmentObject(services.screen)
                 .preferredColorScheme(.dark)
                 .tint(Theme.accent)
         }
