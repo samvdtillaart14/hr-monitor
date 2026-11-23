@@ -165,7 +165,6 @@ struct HealthTab: View {
             }
             .background(Theme.bg.ignoresSafeArea())
             .navigationTitle("Gezondheid")
-            .pulseLogo()
             .toolbar { Button { showProfile = true } label: { Image(systemName: "person.crop.circle") } }
             .sheet(isPresented: $showProfile) { ProfileSheet(birth: $birth, male: $male, strength: $strength, steps: $steps) }
         }
@@ -183,14 +182,7 @@ struct HealthTab: View {
         let hist = AgeHistory.load()
         let prev = hist.count >= 2 ? hist[hist.count - 2].pace : nil
         let p = AgeModel.pace(offset: offset)
-        return Card(title: "Verouderingstempo") {
-            HStack {
-                Text("Langzaam").foregroundStyle(Theme.muted)
-                Spacer()
-                Text(hasData ? String(format: "%.0f%%", p * 100) : "--").font(Theme.number(28))
-                Spacer()
-                Text("Snel").foregroundStyle(Theme.muted)
-            }.font(.subheadline)
+        return Card(info: CardInfo.text["Verouderingstempo"]) {
             PaceScale(pace: hasData ? p : nil)
             if !hasData {
                 Text("Te weinig data: het tempo verschijnt na \(AgeModel.minNights) gemeten nachten.").font(.caption).foregroundStyle(Theme.muted)

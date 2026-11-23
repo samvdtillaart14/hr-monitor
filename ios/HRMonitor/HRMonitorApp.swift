@@ -106,8 +106,6 @@ struct ContentView: View {
     @EnvironmentObject var whoop: WhoopParser
     @AppStorage(SettingsView.devKey) private var devMode = false
     @AppStorage(Display.liveMinMax) private var showMinMax = true
-    @AppStorage(Display.liveRR) private var showRR = true
-    @AppStorage(Display.liveHRV) private var showHRV = true
     @AppStorage(Display.liveSkin) private var showSkin = true
 
     var body: some View {
@@ -116,17 +114,11 @@ struct ContentView: View {
                 VStack(spacing: Theme.gap) {
                     statusBar
                     HeartRing(bpm: ble.bpm).padding(.vertical, 12)
-                    hrTile
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: Theme.gap), GridItem(.flexible())], spacing: Theme.gap) {
                         if showMinMax { Tile(title: "Min / gem / max", value: mmText, unit: "", small: true, index: 1) }
-                        if showRR { Tile(title: "RR-interval", value: ble.lastRR.map { "\(Int($0))" } ?? "--", unit: "ms", index: 2) }
-                        if showHRV { Tile(title: "HRV (RMSSD)", value: ble.rmssd.map { "\(Int($0))" } ?? "--", unit: "ms", index: 3) }
                         if showSkin { Tile(title: "Huidtemp", value: whoop.lastRecord?.skinTemp.map { String(format: "%.1f", $0) } ?? "--", unit: "°C", index: 4) }
-                        Tile(title: "Batterij", value: ble.battery.map(String.init) ?? "--", unit: "%", index: 5)
-                        Tile(title: "Zone", value: ble.bpm.map { Theme.zone($0).name } ?? "--", unit: "", small: true, index: 6)
                     }
                     chart
-                    Card(title: "Tijd per zone", index: 8) { ZoneTime(samples: ble.samples) }
                     if devMode || rec.isRecording { recordSection }
                 }
                 .padding()
@@ -134,7 +126,6 @@ struct ContentView: View {
             .background(Theme.bg.ignoresSafeArea())
             .scrollContentBackground(.hidden)
             .navigationTitle("Pulse")
-            .pulseLogo()
             .toolbar {
                 if devMode {
                     ToolbarItem(placement: .topBarLeading) {
@@ -165,24 +156,6 @@ struct ContentView: View {
                     Image(systemName: "chevron.right").foregroundStyle(Theme.muted)
                 }
             }.buttonStyle(.plain)
-        }
-    }
-
-    private var hrTile: some View {
-        Card {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("CONTACT").font(Theme.label).foregroundStyle(Theme.muted).tracking(2)
-                    Text(ble.contact).font(.headline)
-                }
-                Spacer()
-                if let s = ble.sessionStart {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text("SESSIE").font(Theme.label).foregroundStyle(Theme.muted).tracking(2)
-                        Text(s, style: .timer).font(.headline).monospacedDigit()
-                    }
-                }
-            }
         }
     }
 

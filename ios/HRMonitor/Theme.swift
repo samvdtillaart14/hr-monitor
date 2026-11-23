@@ -72,7 +72,6 @@ struct Card<Content: View>: View {
 /// Eén zin uitleg in gewone taal per kaart, op kaarttitel. Kaarten zonder titel geven `info:` zelf mee.
 enum CardInfo {
     static let text: [String: String] = [
-        "Activiteiten": "Trainingen en wandelingen die de band vandaag heeft herkend.",
         "Afgelopen nacht": "Hoe lang je sliep en hoe dat zich verhoudt tot wat je lichaam nodig had.",
         "Slaapfases": "Hoeveel tijd je in lichte, diepe en droomslaap doorbracht.",
         "Uren vs. nodig": "Hoeveel procent van je slaapbehoefte je echt hebt geslapen.",
@@ -99,7 +98,6 @@ enum CardInfo {
         "Verouderingstempo": "Hoe snel je lichaam veroudert; 100% is precies even snel als de kalender.",
         "Leeftijd per week": "Je geschatte lichaamsleeftijd per week.",
         "Verbeterpunten": "Wat je het meest helpt om beter te slapen en te herstellen.",
-        "Vannacht": "Wanneer je naar bed moet om genoeg te slapen.",
         "Planning": "Je bedtijd en wekker voor de komende nachten.",
         "Slaapbehoefte vannacht": "Hoeveel slaap je vannacht nodig hebt, inclusief inhalen van tekort.",
         "Bandwekker": "De band trilt je wakker op de ingestelde tijd.",
@@ -107,7 +105,6 @@ enum CardInfo {
         "Je ritme": "Je gewone bed- en opstaantijden, waar de planning op rekent.",
         "Laatste 24 uur": "Je stressniveau over de afgelopen dag.",
         "Vitale waarden": "Je nachtwaarden vergeleken met je eigen normaal.",
-        "Stress": "Je stressniveau nu: 0 is ontspannen, 3 is hoog.",
         "Stress vandaag": "Je stressniveau door de dag; het grijze vlak is je slaap.",
         "Belasting & herstel · 7 dagen": "Of je inspanning en je herstel deze week in balans waren.",
         "Dashboard": "Vandaag naast je eigen normaal (gemiddelde van je eerdere dagen).",
@@ -159,53 +156,3 @@ struct HeartRing: View {
     }
 }
 
-/// Tijd per hartslagzone in deze sessie, als gestapelde balk + legenda.
-struct ZoneTime: View {
-    let samples: [BLEManager.Sample]
-    private var secs: [Int] {
-        var s = Array(repeating: 0, count: Theme.zones.count)
-        let p = UserProfile.current
-        for x in samples { s[Theme.zoneIndex(x.bpm, profile: p)] += 1 }
-        return s
-    }
-    var body: some View {
-        let secs = self.secs
-        let total = max(1, secs.reduce(0, +))
-        VStack(alignment: .leading, spacing: 10) {
-            GeometryReader { g in
-                HStack(spacing: 2) {
-                    ForEach(secs.indices, id: \.self) { i in
-                        if secs[i] > 0 {
-                            RoundedRectangle(cornerRadius: 4).fill(Theme.zones[i].color)
-                                .frame(width: max(4, g.size.width * CGFloat(secs[i]) / CGFloat(total)))
-                        }
-                    }
-                }
-            }
-            .frame(height: 12)
-            .animation(Theme.spring, value: total)
-            ForEach(secs.indices, id: \.self) { i in
-                if secs[i] > 0 {
-                    HStack {
-                        Circle().fill(Theme.zones[i].color).frame(width: 8, height: 8)
-                        Text(Theme.zones[i].name).font(.subheadline)
-                        Spacer()
-                        Text("\(secs[i] / 60):\(String(format: "%02d", secs[i] % 60))").font(.subheadline).monospacedDigit().foregroundStyle(Theme.muted)
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// Klein Pulse-logo linksboven op de tabbladen.
-extension View {
-    func pulseLogo() -> some View {
-        toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Image("PulseLogo").resizable().scaledToFit().frame(height: 24)
-                    .foregroundStyle(.white).accessibilityLabel("Pulse")
-            }
-        }
-    }
-}

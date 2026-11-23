@@ -69,8 +69,7 @@ struct TodayView: View {
                 .padding()
             }
             .background(Theme.bg.ignoresSafeArea())
-            .navigationTitle(isToday ? "Vandaag" : "Terugblik")
-            .pulseLogo()
+            .navigationTitle("").navigationBarTitleDisplayMode(.inline)
             .refreshable { recompute() }
             // Vegen naar rechts = dag terug, naar links = dag vooruit.
             .simultaneousGesture(DragGesture(minimumDistance: 40).onEnded { v in
