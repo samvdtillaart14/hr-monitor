@@ -99,7 +99,7 @@ struct TodayView: View {
             }
             NavigationLink { StrainDetailView(model: scores) } label: {
                 ScoreRing(label: "Belasting", value: strainNow.map { $0 / 21 },
-                          text: strainNow.map { String(format: "%.1f", $0) } ?? "--", color: Theme.zones[1].color)
+                          text: strainNow.map { String(format: "%.0f", $0) } ?? "--", color: Theme.zones[1].color)
             }
         }
         .buttonStyle(.plain)
@@ -120,7 +120,7 @@ struct TodayView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(rhr == nil ? "GEEN DATA" : elevated ? "VERHOOGD" : "NORMAAL")
                         .font(Theme.label).tracking(1.5).foregroundStyle(elevated ? Theme.zones[4].color : Theme.accent)
-                    Text(rhr.map { "Rust-HR \(Int($0.rounded()))" } ?? "Rust-HR").font(.subheadline).foregroundStyle(Theme.muted)
+                    Text(rhr.map { r in "Rust-HR \(Int(r.rounded()))" + (delta.map { " · " + ($0 >= 0 ? "+" : "−") + "\(Int(abs($0).rounded())) vs. normaal" } ?? "") } ?? "Rust-HR").font(.subheadline).foregroundStyle(Theme.muted)
                 }
             }
         }
@@ -134,7 +134,7 @@ struct TodayView: View {
         }()
         return Card(title: "Stress", index: 2) {
             HStack(spacing: 10) {
-                Text(s.map { String(format: "%.1f", $0) } ?? "–").font(Theme.number(20)).foregroundStyle(col)
+                Text(s.map { String(format: "%.0f", $0) } ?? "–").font(Theme.number(20)).foregroundStyle(col)
                     .padding(6).background(col.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(txt).font(Theme.label).tracking(1.5).foregroundStyle(col)
@@ -215,7 +215,7 @@ struct TodayView: View {
             ("Gemeten", fmtMin(Double(measuredMin)), "")
         ]
         return Card(title: "Dashboard", index: 5) {
-            HStack { Spacer(); Text("VANDAAG").frame(width: 90, alignment: .trailing); Text("BASELINE").frame(width: 90, alignment: .trailing) }
+            HStack { Spacer(); Text("VANDAAG").frame(width: 90, alignment: .trailing); Text("JIJ NORMAAL").frame(width: 90, alignment: .trailing) }
                 .font(Theme.label).foregroundStyle(Theme.muted)
             ForEach(rows, id: \.0) { r in
                 HStack {
