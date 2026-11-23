@@ -24,6 +24,10 @@ struct TodayView: View {
                 VStack(spacing: Theme.gap) {
                     header
                     rings.padding(.vertical, 8)
+                    if night == nil {
+                        Text("Geen nachtdata: vannacht is geen slaap gemeten.")
+                            .font(.footnote).foregroundStyle(Theme.muted)
+                    }
                     ActivitiesCard(scores: scores)
                     TonightCard()
                     HStack(spacing: Theme.gap) {

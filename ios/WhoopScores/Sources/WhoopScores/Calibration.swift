@@ -58,6 +58,9 @@ public struct Calibration: Codable, Equatable, Sendable {
         public var nightExtendGapMin: Int = 60
         /// …en alleen als de gemiddelde HR in dat blok hooguit zoveel bpm boven die van de hoofdslaap ligt.
         public var extendMaxHrRise: Double? = nil   // nil = 4 bpm (optioneel: oude kalibraties)
+        /// Slaap die niet in het nachtvenster valt telt alleen als nacht als hij minstens zo lang duurt (late/verschoven nacht).
+        /// Korter = dutje of stilzitten overdag, dan is er geen nacht (geen slaap- en herstelscore).
+        public var minDayMainMin: Int? = nil   // nil = 180 min (optioneel: oude kalibraties)
         /// Een los staartje slaap korter dan dit na het wakker worden telt niet mee.
         public var edgeRunMin: Int = 20
         /// Extra wakker-regel op ruwe beweging (× drempel); 0 = uit.

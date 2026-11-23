@@ -209,8 +209,7 @@ public enum WhoopScores {
                                  tzOffsetMin: Double = Double(TimeZone.current.secondsFromGMT()) / 60,
                                  awake: [Range<Double>] = []) -> (main: Range<Int>, naps: [Range<Int>])? {
         let c = cal.sleep
-        guard var longest = periods.first else { return nil }
-        for p in periods where p.count > longest.count { longest = p }
+        guard !periods.isEmpty else { return nil }
         func inNight(_ t: Double) -> Bool {
             let h = localHour(t, tzOffsetMin)
             return c.nightStartHour > c.nightEndHour ? (h >= c.nightStartHour || h < c.nightEndHour) : (h >= c.nightStartHour && h < c.nightEndHour)
@@ -222,6 +221,13 @@ public enum WhoopScores {
         // Uitslaapblok buiten het nachtvenster telt alleen mee als het echt rustig is: HR niet duidelijk hoger
         // dan in de hoofdslaap (doezelen/wakker liggen heeft een hogere HR) en geen telefoon in de tussentijd.
         func meanHr(_ p: Range<Int>) -> Double { M.mean(eps[p].map(\.hr).filter { $0.isFinite && $0 > 0 }) }
+        // Voorkeur voor het langste blok in het nachtvenster. Is er geen, dan alleen een lang blok (late of
+        // verschoven nacht); kort stilzitten of een dutje overdag is geen nacht.
+        let nightBlocks = periods.filter(night)
+        let pool = nightBlocks.isEmpty ? periods : nightBlocks
+        var longest = pool[0]
+        for p in pool where p.count > longest.count { longest = p }
+        if nightBlocks.isEmpty && longest.count < (c.minDayMainMin ?? 180) { return nil }
         let baseHr = meanHr(longest)
         func quietExtension(_ p: Range<Int>, gapFrom a: Int, to b: Int) -> Bool {
             let h = meanHr(p)
