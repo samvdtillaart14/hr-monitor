@@ -184,4 +184,9 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         [.banner, .list, .sound]
     }
+    /// Tik op de ochtendmelding: ochtendoverzicht openen.
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        guard response.notification.request.identifier == "ochtend" else { return }
+        await MainActor.run { MorningRouter.shared.show = true }
+    }
 }

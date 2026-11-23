@@ -63,6 +63,7 @@ struct HRMonitorApp: App {
                 .environmentObject(services.screen)
                 .preferredColorScheme(.dark)
                 .tint(Theme.accent)
+                .morningOverview()
         }
         // Openstaande metingen direct wegschrijven als de app naar de achtergrond gaat.
         .onChange(of: phase) { _, p in if p == .active { services.ble.syncOnOpen() }; if p != .active { services.store.flush(); BandLog.shared.flush(); services.acts.route.persist() } }

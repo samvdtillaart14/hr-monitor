@@ -5,6 +5,6 @@ set -e
 cd "$(dirname "$0")"
 rm -rf Sources/AppCore/App
 mkdir -p Sources/AppCore/App
-for f in WhoopParser BandLog HistorySync DayStore ScoreModel UserProfile Recorder RawLogger SafeFile FileSplitter ZipExport; do
+for f in WhoopParser BandLog HistorySync DayStore ScoreModel UserProfile Recorder RawLogger SafeFile FileSplitter ZipExport Backup MorningSummary; do
   cp "../HRMonitor/$f.swift" Sources/AppCore/App/
 done
