@@ -42,7 +42,7 @@ final class Journal: ObservableObject {
     }
 
     /// Dag van het dagboek: vóór 05:00 hoort nog bij de avond ervoor.
-    static func key(_ d: Date = Date()) -> String { DayStore.dayFmt.string(from: d.addingTimeInterval(-5 * 3600)) }
+    nonisolated static func key(_ d: Date = Date()) -> String { DayStore.dayFmt.string(from: d.addingTimeInterval(-5 * 3600)) }
 
     func toggle(_ tag: String, day: String = Journal.key()) {
         var s = entries[day] ?? []

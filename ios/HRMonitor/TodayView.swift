@@ -178,6 +178,14 @@ struct TodayView: View {
         let rhr = night?.metrics.rhr
         let delta = rhr.flatMap { r in baselineRHR.map { r - $0 } }
         let elevated = (delta ?? 0) > 3
+        var rhrLine = "Rust-HR"
+        if let r = rhr {
+            rhrLine = "Rust-HR \(Int(r.rounded()))"
+            if let d = delta {
+                let sign = d >= 0 ? "+" : "−"
+                rhrLine += " · \(sign)\(Int(abs(d).rounded())) vs. normaal"
+            }
+        }
         return Card(title: "Vitale waarden", index: 1) {
             HStack(spacing: 10) {
                 Image(systemName: elevated ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
@@ -185,7 +193,7 @@ struct TodayView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(rhr == nil ? "GEEN DATA" : elevated ? "VERHOOGD" : "NORMAAL")
                         .font(Theme.label).tracking(1.5).foregroundStyle(elevated ? Theme.zones[4].color : Theme.accent)
-                    Text(rhr.map { r in "Rust-HR \(Int(r.rounded()))" + (delta.map { " · " + ($0 >= 0 ? "+" : "−") + "\(Int(abs($0).rounded())) vs. normaal" } ?? "") } ?? "Rust-HR").font(.subheadline).foregroundStyle(Theme.muted)
+                    Text(rhrLine).font(.subheadline).foregroundStyle(Theme.muted)
                 }
             }
         }
