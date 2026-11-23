@@ -15,6 +15,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Tests in dezelfde Mac-job: er is dan maar één Mac-runner nodig.
+      - name: Swift-tests WhoopScores
+        working-directory: ios/WhoopScores
+        run: swift test
+
+      - name: Swift-tests app-logica
+        run: |
+          ios/AppTests/sync-app-sources.sh
+          cd ios/AppTests && swift test
+
       - name: XcodeGen installeren en project genereren
         working-directory: ios
         run: |
