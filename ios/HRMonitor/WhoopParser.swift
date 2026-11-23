@@ -18,6 +18,8 @@ final class WhoopParser: ObservableObject {
         var rr: [Int] = []
         var motion: [Float] = []
         var temp2: Double = 0, temp3: Double = 0
+        /// Stappenteller (u16LE @61), cumulatief sinds de laatste herstart van de band.
+        var steps: Int?
     }
 
     @Published private(set) var frames = 0
@@ -152,6 +154,7 @@ final class WhoopParser: ObservableObject {
             rec.motion = (0..<4).map { Float(bitPattern: u32(b, 41 + 4 * $0)) }
             rec.temp2 = Double(u16(b, 69)) / 10
             rec.temp3 = Double(u16(b, 71)) / 10
+            rec.steps = u16(b, 61)
             lastRecord = rec
             if seen.count > 200_000 { seen.removeAll() }   // geheugen begrenzen; DayStore ontdubbelt ook
             if seen.insert(t).inserted {

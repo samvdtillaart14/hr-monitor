@@ -120,4 +120,24 @@ final class DayStoreTests: XCTestCase {
         let t = UInt32(Date().timeIntervalSince1970)
         XCTAssertEqual(DayStore.dayKey(t), f.string(from: Date(timeIntervalSince1970: TimeInterval(t))))
     }
+
+    /// STORE-STEPS: stappen = som van toenames; een daling (herstart band) telt de nieuwe waarde. Blijft na opslaan bewaard.
+    func testSTORE_stepsSumAndReset() {
+        func smp(_ t: UInt32, _ v: Int?) -> DayStore.Sample { var x = DayStore.Sample(t: t, hr: 60); x.steps = v; return x }
+        XCTAssertEqual(DayStore.steps([smp(1, 179), smp(2, nil), smp(3, 200), smp(4, 274)]), 95)
+        XCTAssertEqual(DayStore.steps([smp(1, 250), smp(2, 262), smp(3, 0), smp(4, 30)]), 42)
+        XCTAssertEqual(DayStore.steps([]), 0)
+    }
+
+    @MainActor func testSTORE_stepsRoundTrip() async {
+        let s = await makeStore()
+        let t = now - 100
+        var a = rec(t); a.steps = 10
+        var b = rec(t + 1); b.steps = 13
+        s.addRecord(a); s.addRecord(b)
+        s.flush()
+        let r = await makeStore()
+        XCTAssertEqual(r.byDay[DayStore.dayKey(t)]?[t + 1]?.steps, 13)
+        XCTAssertEqual(DayStore.steps(r.samples(day: Date(timeIntervalSince1970: TimeInterval(t)))), 3)
+    }
 }

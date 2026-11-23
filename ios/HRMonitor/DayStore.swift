@@ -4,7 +4,7 @@ import Foundation
 /// zodat scores over meerdere dagen berekend kunnen worden.
 /// Bronnen: historische Whoop-records (R18) en de live hartslag (0x2A37).
 ///
-/// Kolommen: unix-s ; hr ; rr (ms, spatie) ; beweging ; huidtemp ; q (4 floats) ; bron (L = live, H = historie).
+/// Kolommen: unix-s ; hr ; rr (ms, spatie) ; beweging ; huidtemp ; q (4 floats) ; bron (L = live, H = historie) ; stappenteller.
 /// Oudere bestanden hebben nog geen bronkolom.
 @MainActor
 final class DayStore: ObservableObject {
@@ -17,6 +17,8 @@ final class DayStore: ObservableObject {
         var q: [Float]?        // 4 oriëntatie-floats (R18), voor slaapdetectie
         /// komt uit een historisch Whoop-record (dan zijn hr/rr/q compleet voor deze seconde)
         var rec = false
+        /// stappenteller van de band (R18 @61), cumulatief sinds herstart van de band
+        var steps: Int?
     }
 
     /// Aantal dagen dat in het geheugen blijft (en bij de start wordt ingelezen).
@@ -101,6 +103,7 @@ final class DayStore: ObservableObject {
                     if let m = Float(p[3]) { s.motion = m }
                     if let skin { s.skin = skin }
                     if let q { s.q = q }
+                    if p.count >= 8, let st = Int(p[7]) { s.steps = st }
                     d[t] = s
                 }
                 out[k] = d
@@ -135,7 +138,7 @@ final class DayStore: ObservableObject {
             }
             lastQ = r.motion; lastQTime = r.time
         }
-        add(Sample(t: r.time, hr: r.hr, rr: r.rr, motion: m, skin: r.skinTemp, q: valid ? r.motion : nil, rec: true))
+        add(Sample(t: r.time, hr: r.hr, rr: r.rr, motion: m, skin: r.skinTemp, q: valid ? r.motion : nil, rec: true, steps: r.steps))
     }
 
     private func add(_ s: Sample) {
@@ -153,9 +156,10 @@ final class DayStore: ObservableObject {
         if s.motion != nil { cur.motion = s.motion }
         if s.skin != nil { cur.skin = s.skin }
         if s.q != nil { cur.q = s.q }
+        if s.steps != nil { cur.steps = s.steps }
         byDay[k, default: [:]][s.t] = cur
         sortedCache[k] = nil
-        let line = "\(s.t);\(s.hr);\(s.rr.map(String.init).joined(separator: " "));\(s.motion.map { String($0) } ?? "");\(s.skin.map { String($0) } ?? "");\(s.q.map { $0.map { String($0) }.joined(separator: " ") } ?? "");\(s.rec ? "H" : "L")\n"
+        let line = "\(s.t);\(s.hr);\(s.rr.map(String.init).joined(separator: " "));\(s.motion.map { String($0) } ?? "");\(s.skin.map { String($0) } ?? "");\(s.q.map { $0.map { String($0) }.joined(separator: " ") } ?? "");\(s.rec ? "H" : "L");\(s.steps.map(String.init) ?? "")\n"
         pending[k, default: ""] += line
         scheduleFlush()
     }
@@ -200,6 +204,25 @@ final class DayStore: ObservableObject {
         let s = (byDay[k] ?? [:]).values.sorted { $0.t < $1.t }
         sortedCache[k] = s
         return s
+    }
+
+    /// Stappen op een dag: som van de toenames van de stappenteller. Daalt de teller (herstart van de band),
+    /// dan telt de nieuwe waarde als stappen sinds die herstart.
+    nonisolated static func steps(_ samples: [Sample]) -> Int {
+        var total = 0, prev: Int?
+        for s in samples {
+            guard let v = s.steps else { continue }
+            if let p = prev { total += v >= p ? v - p : v }
+            prev = v
+        }
+        return total
+    }
+
+    /// Stappen van een dag, of nil als er die dag geen stappenteller is gemeten.
+    func steps(day: Date) -> Int? {
+        let s = samples(day: day)
+        guard s.contains(where: { $0.steps != nil }) else { return nil }
+        return Self.steps(s)
     }
 
     /// Alle samples van een dag (op tijd gesorteerd), plus de nacht ervoor vanaf 18:00.

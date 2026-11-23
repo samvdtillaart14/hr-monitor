@@ -13,6 +13,8 @@ struct TodayView: View {
     @State private var lastCompute = Date.distantPast
     @State private var stress: [StressDetailView.Pt] = []
     @State private var measuredMin = 0
+    @State private var stepsToday: Int?
+    @State private var stepsNormal: Int?
     @ObservedObject private var journal = Journal.shared
     @AppStorage(Display.todayStressTile) private var showStressTile = true
     @AppStorage(Display.todayStressChart) private var showStressChart = true
@@ -119,6 +121,11 @@ struct TodayView: View {
     private func updateStress() {
         let s = store.samples(day: selected)
         measuredMin = Set(s.map { $0.t / 60 }).count
+        stepsToday = s.contains(where: { $0.steps != nil }) ? DayStore.steps(s) : nil
+        let past = (1...7).compactMap { n in
+            Calendar.current.date(byAdding: .day, value: -n, to: selected).flatMap { store.steps(day: $0) }
+        }
+        stepsNormal = past.isEmpty ? nil : past.reduce(0, +) / past.count
         stress = StressDetailView.buckets(s, rhr: night?.metrics.rhr ?? 60, sleep: night.map { ($0.r.onset, $0.r.wake) })
     }
 
@@ -285,6 +292,7 @@ struct TodayView: View {
              DV.mean(pastDays.map(\.zones45)).map { "\(Int($0.rounded())) min" } ?? "–"),
             ("Huidtemp (nacht)", night?.metrics.skinTemp.map { String(format: "%.1f °C", $0) } ?? "--",
              DV.mean(pastNights.compactMap(\.metrics.skinTemp)).map { String(format: "%.1f °C", $0) } ?? "–"),
+            ("Stappen", stepsToday.map { "\($0)" } ?? "--", stepsNormal.map { "\($0)" } ?? "–"),
             ("Gemeten", fmtMin(Double(measuredMin)), "")
         ]
         return Card(title: "Dashboard", index: 5) {
