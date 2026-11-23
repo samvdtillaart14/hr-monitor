@@ -114,7 +114,12 @@ final class ActivityStore: ObservableObject {
     func update(_ a: Activity, store: DayStore) {
         guard let i = items.firstIndex(where: { $0.id == a.id }) else { return }
         var a = a
-        if a.start != items[i].start || a.end != items[i].end { a.summary = nil; a.steps = nil }
+        let old = items[i]
+        if a.start != old.start || a.end != old.end {
+            a.summary = nil; a.steps = nil
+            // Herkende activiteit ingekort: het oude stuk niet opnieuw als nieuwe activiteit herkennen.
+            if old.auto { dismissed.append(old.start.timeIntervalSince1970...old.effectiveEnd.timeIntervalSince1970) }
+        }
         items[i] = a; save()
         Task { await self.enrich(a.id, store: store) }
     }

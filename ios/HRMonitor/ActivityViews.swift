@@ -18,6 +18,7 @@ struct ActivitiesCard: View {
     @EnvironmentObject var acts: ActivityStore
     @ObservedObject var scores: ScoreModel
     @State private var adding = false
+    @State private var editing: Activity?
 
     var body: some View {
         Card(title: "Activiteiten", index: 1) {
@@ -32,6 +33,10 @@ struct ActivitiesCard: View {
                     NavigationLink { ActivityDetailView(id: a.id) } label: {
                         ActivityRowView(icon: a.type.icon, value: a.summary.map { String(format: "%.1f", $0.strain) } ?? "–",
                                         name: a.type.name, from: a.start, to: a.end, color: actBlue, auto: a.auto)
+                    }
+                    .contextMenu {
+                        Button { editing = a } label: { Label("Soort of tijden wijzigen", systemImage: "pencil") }
+                        Button(role: .destructive) { acts.delete(a.id) } label: { Label("Verwijder", systemImage: "trash") }
                     }
                 }
                 Button { adding = true } label: {
@@ -50,6 +55,7 @@ struct ActivitiesCard: View {
             .buttonStyle(.plain)
         }
         .sheet(isPresented: $adding) { ActivityEditSheet(existing: nil) }
+        .sheet(item: $editing) { ActivityEditSheet(existing: $0) }
     }
 }
 
@@ -70,7 +76,7 @@ struct ActivityRowView: View {
             .background(color.opacity(0.85), in: RoundedRectangle(cornerRadius: 10))
             VStack(alignment: .leading, spacing: 2) {
                 Text(name.uppercased()).font(.subheadline.weight(.bold)).tracking(1.5)
-                if auto { Text("automatisch herkend").font(.caption2).foregroundStyle(Theme.muted) }
+                if auto { Text("automatisch herkend · houd ingedrukt om te wijzigen").font(.caption2).foregroundStyle(Theme.muted) }
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
@@ -203,7 +209,7 @@ struct ActivityDetailView: View {
                     }
                 }
             }
-            ToolbarItem(placement: .topBarTrailing) { Button { editing = true } label: { Image(systemName: "ellipsis") } }
+            ToolbarItem(placement: .topBarTrailing) { Button("Wijzig") { editing = true } }
         }
         .sheet(isPresented: $editing) { if let a { ActivityEditSheet(existing: a) } }
         .task(id: "\(a?.start.timeIntervalSince1970 ?? 0)-\(a?.end?.timeIntervalSince1970 ?? 0)-\(store.revision)") { loadHr() }
