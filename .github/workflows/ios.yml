@@ -11,9 +11,19 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+
+      # Tests in dezelfde Mac-job: er is dan maar één Mac-runner nodig.
+      - name: Swift-tests WhoopScores
+        working-directory: ios/WhoopScores
+        run: swift test
+
+      - name: Swift-tests app-logica
+        run: |
+          ios/AppTests/sync-app-sources.sh
+          cd ios/AppTests && swift test
 
       - name: XcodeGen installeren en project genereren
         working-directory: ios
@@ -35,6 +45,11 @@ jobs:
         run: |
           mkdir -p Payload
           cp -R build/Build/Products/Release-iphoneos/HRMonitor.app Payload/
+          # Ad-hoc ondertekenen met de app-groep, zodat AltStore de groep voor app en widget registreert.
+          for x in Payload/HRMonitor.app/PlugIns/*.appex; do
+            [ -d "$x" ] && codesign -f -s - --entitlements Shared/AppGroup.entitlements "$x"
+          done
+          codesign -f -s - --entitlements Shared/AppGroup.entitlements Payload/HRMonitor.app
           zip -qry HRMonitor.ipa Payload
 
       - uses: actions/upload-artifact@v4

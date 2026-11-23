@@ -4,6 +4,7 @@ name: Tests
 # Zie docs/TESTPLAN.md voor wat elke test dekt.
 on:
   push:
+    branches: [main]   # andere branches draaien via de pull request (scheelt dubbele Mac-runs)
     paths: ['scores/**', 'ios/**', 'testdata/**', '.github/workflows/tests.yml']
   pull_request:
     paths: ['scores/**', 'ios/**', 'testdata/**', '.github/workflows/tests.yml']
@@ -20,20 +21,4 @@ jobs:
       - run: node --test test/*.test.mjs
         working-directory: scores
 
-  swift-scores:
-    name: Swift WhoopScores (pariteit met JS, randgevallen)
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v4
-      - run: swift test
-        working-directory: ios/WhoopScores
-
-  app-logic:
-    name: Swift app-logica (parser, sync, opslag, ScoreModel, export)
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v4
-      - name: App-bestanden naar het testpakket kopiëren
-        run: ios/AppTests/sync-app-sources.sh
-      - run: swift test
-        working-directory: ios/AppTests
+  # Swift-tests draaien in de iOS build (ios.yml), zodat er maar één Mac nodig is.

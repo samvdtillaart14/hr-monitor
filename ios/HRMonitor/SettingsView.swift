@@ -21,6 +21,7 @@ struct SettingsView: View {
 
     var body: some View {
         List {
+            BandConnectionSection()
             Section {
                 NavigationLink { UpdateView() } label: { Label("Update", systemImage: "arrow.down.circle") }
             }
@@ -75,6 +76,8 @@ struct SettingsView: View {
             } header: { Text("Bandgegevens") } footer: {
                 Text("De app bewaart de data van de band automatisch, steeds de laatste \(BandLog.keepDays) dagen. Delen maakt zip-bestanden van max. 25 MB, klein genoeg om naar Claude te sturen.")
             }
+            InsightSettingsSection()
+            DisplaySettingsSection()
             Section {
                 Toggle("GPS automatisch aan", isOn: $acts.autoGps).tint(Theme.accent)
             } header: { Text("Activiteiten") } footer: {
@@ -91,6 +94,7 @@ struct SettingsView: View {
                      ? "De Verkenner, de opnames en de opnameknop op Live zijn zichtbaar. Lopende opnames gaan door als je dit uitzet."
                      : "Zet aan om de Verkenner, ruwe opnames en de opnameknop te tonen. Alleen nodig voor het ontcijferen van de banddata.")
             }
+            BackupSection()
             if !devMode && (rec.isRecording || raw.isRecording) {
                 Section {
                     if rec.isRecording { Button("Stop hartslagopname", role: .destructive) { rec.stop() } }

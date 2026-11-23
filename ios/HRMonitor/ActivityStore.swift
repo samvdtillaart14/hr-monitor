@@ -114,7 +114,12 @@ final class ActivityStore: ObservableObject {
     func update(_ a: Activity, store: DayStore) {
         guard let i = items.firstIndex(where: { $0.id == a.id }) else { return }
         var a = a
-        if a.start != items[i].start || a.end != items[i].end { a.summary = nil; a.steps = nil }
+        let old = items[i]
+        if a.start != old.start || a.end != old.end {
+            a.summary = nil; a.steps = nil
+            // Herkende activiteit ingekort: het oude stuk niet opnieuw als nieuwe activiteit herkennen.
+            if old.auto { dismissed.append(old.start.timeIntervalSince1970...old.effectiveEnd.timeIntervalSince1970) }
+        }
         items[i] = a; save()
         Task { await self.enrich(a.id, store: store) }
     }
@@ -241,6 +246,9 @@ final class ActivityStore: ObservableObject {
     private var liveHr: [(t: Double, hr: Double)] = []
     private var lastActive = 0.0
     private var moving = false
+    /// laatste moment dat de iPhone autorijden zag (dan nooit automatisch GPS)
+    private var lastDriving = 0.0
+    private var driving: Bool { Date().timeIntervalSince1970 - lastDriving < 180 }
 
     /// Live hartslag (per seconde). Start GPS na 2 min verhoogde hartslag, stopt na 5 min rust.
     func live(hr: Int) {
@@ -255,6 +263,11 @@ final class ActivityStore: ObservableObject {
     }
 
     private func tick(_ now: Double, active: Bool) {
+        // In de auto: geen GPS en geen activiteit (de bewegingsherkenning ziet rijden soms als fietsen).
+        if driving {
+            if autoSession != nil { stopAuto(discard: true) }
+            return
+        }
         if active || moving { lastActive = now }
         if autoSession == nil {
             if (active || moving) && ongoing == nil && route.activityId == nil { startAuto(now) }
@@ -268,7 +281,8 @@ final class ActivityStore: ObservableObject {
         motion.startActivityUpdates(to: .main) { [weak self] a in
             guard let self, let a else { return }
             MainActor.assumeIsolated {
-                self.moving = (a.running || a.cycling) && a.confidence != .low
+                if a.automotive { self.lastDriving = Date().timeIntervalSince1970 }
+                self.moving = (a.running || a.cycling) && !a.automotive && a.confidence != .low
                 if self.autoGps { self.tick(Date().timeIntervalSince1970, active: false) }
             }
         }
@@ -285,10 +299,19 @@ final class ActivityStore: ObservableObject {
         }
     }
 
-    private func stopAuto() {
+    private func stopAuto(discard: Bool = false) {
         guard let s = autoSession else { return }
         autoTimer?.invalidate(); autoTimer = nil
         if route.activityId == s.id { route.stop() }
+        if discard {
+            // Rit: route weggooien en deze periode niet als activiteit herkennen.
+            Route.delete(s.id)
+            dismissed.append(s.start...Date().timeIntervalSince1970)
+            autoSession = nil
+            UserDefaults.standard.removeObject(forKey: Self.autoSessionKey)
+            save()
+            return
+        }
         pending.append((s.id, s.start, Date().timeIntervalSince1970))
         autoSession = nil
         UserDefaults.standard.removeObject(forKey: Self.autoSessionKey)

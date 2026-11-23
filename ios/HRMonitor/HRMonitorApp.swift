@@ -1,6 +1,8 @@
 import SwiftUI
 import Charts
 import UserNotifications
+import Combine
+import WidgetKit
 
 /// Bluetooth, dagopslag, scores en activiteiten bestaan vanaf de start van de app, ook als iOS de app
 /// op de achtergrond opnieuw start voor de band (dan verschijnt er geen scherm en loopt onAppear niet).
@@ -13,18 +15,37 @@ final class AppServices {
     let scores = ScoreModel()
     let screen = ScreenMonitor()
     private(set) lazy var alarm = SleepAlarm(ble: ble, store: store, scores: scores)
+    private var widgetSub: AnyCancellable?
     private init() {
         let alarm = self.alarm
         ble.store = store
         // Bij elke hartslag ook de schermstatus lezen (hooguit 1× per 2 s) en de slimme wekker bijwerken.
         store.onLive = { [weak acts, weak screen, weak alarm] hr in
-            MainActor.assumeIsolated { acts?.live(hr: hr); screen?.poll(); alarm?.tick() }
+            MainActor.assumeIsolated { acts?.live(hr: hr); screen?.poll(); alarm?.tick(); InsightNotifications.checkWeekly() }
         }
         scores.awakeIntervals = { [weak screen] in screen?.wakeIntervals() ?? [] }
         screen.onMorning = { MorningBrief.send(services: AppServices.shared) }
         ble.onAlarmResponse = { [weak alarm] cmd, res, body in MainActor.assumeIsolated { alarm?.bandResponse(cmd: cmd, result: res, body: body) } }
         ble.onWhoopReady = { [weak alarm] in MainActor.assumeIsolated { alarm?.bandResend() } }
         alarm.rearm()
+        InsightNotifications.scheduleJournal()
+        // Widget bijwerken zodra er nieuwe nachtscores zijn.
+        widgetSub = scores.$nights.dropFirst().sink { [weak self] _ in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.updateWidget() } }
+        }
+    }
+
+    func updateWidget() {
+        let n = scores.lastNight
+        let p = alarm.plan()
+        var s = WidgetSnapshot()
+        s.recovery = n?.recovery
+        s.sleepPerf = n?.performance.map { Int($0.rounded()) }
+        s.asleepMin = n?.r.asleepMin
+        s.bedtime = p.bedtime
+        s.wake = p.wake
+        s.save()
+        WidgetCenter.shared.reloadAllTimelines()
     }
 }
 
@@ -44,6 +65,8 @@ struct HRMonitorApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @Environment(\.scenePhase) private var phase
     private let services = AppServices.shared
+    @ObservedObject private var router = AppRouter.shared
+    @State private var splash = true
     var body: some Scene {
         WindowGroup {
             TabView {
@@ -51,6 +74,13 @@ struct HRMonitorApp: App {
                 ContentView().tabItem { Label("Live", systemImage: "heart.fill") }
                 HealthTab().tabItem { Label("Gezondheid", systemImage: "heart.text.square.fill") }
             }
+                .sheet(item: $router.sheet) { s in
+                    switch s {
+                    case .journal: JournalView()
+                    case .week: WeekReportSheet()
+                    }
+                }
+                .overlay { if splash { SplashView(visible: $splash).transition(.opacity) } }
                 .environment(\.locale, DV.nl)
                 .environmentObject(services.store)
                 .environmentObject(services.acts)
@@ -63,6 +93,7 @@ struct HRMonitorApp: App {
                 .environmentObject(services.screen)
                 .preferredColorScheme(.dark)
                 .tint(Theme.accent)
+                .morningOverview()
         }
         // Openstaande metingen direct wegschrijven als de app naar de achtergrond gaat.
         .onChange(of: phase) { _, p in if p == .active { services.ble.syncOnOpen() }; if p != .active { services.store.flush(); BandLog.shared.flush(); services.acts.route.persist() } }
@@ -73,8 +104,11 @@ struct ContentView: View {
     @EnvironmentObject var ble: BLEManager
     @EnvironmentObject var rec: Recorder
     @EnvironmentObject var whoop: WhoopParser
-    @State private var showDevices = false
     @AppStorage(SettingsView.devKey) private var devMode = false
+    @AppStorage(Display.liveMinMax) private var showMinMax = true
+    @AppStorage(Display.liveRR) private var showRR = true
+    @AppStorage(Display.liveHRV) private var showHRV = true
+    @AppStorage(Display.liveSkin) private var showSkin = true
 
     var body: some View {
         NavigationStack {
@@ -84,10 +118,10 @@ struct ContentView: View {
                     HeartRing(bpm: ble.bpm).padding(.vertical, 12)
                     hrTile
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: Theme.gap), GridItem(.flexible())], spacing: Theme.gap) {
-                        Tile(title: "Min / gem / max", value: mmText, unit: "", small: true, index: 1)
-                        Tile(title: "RR-interval", value: ble.lastRR.map { "\(Int($0))" } ?? "--", unit: "ms", index: 2)
-                        Tile(title: "HRV (RMSSD)", value: ble.rmssd.map { "\(Int($0))" } ?? "--", unit: "ms", index: 3)
-                        Tile(title: "Huidtemp", value: whoop.lastRecord?.skinTemp.map { String(format: "%.1f", $0) } ?? "--", unit: "°C", index: 4)
+                        if showMinMax { Tile(title: "Min / gem / max", value: mmText, unit: "", small: true, index: 1) }
+                        if showRR { Tile(title: "RR-interval", value: ble.lastRR.map { "\(Int($0))" } ?? "--", unit: "ms", index: 2) }
+                        if showHRV { Tile(title: "HRV (RMSSD)", value: ble.rmssd.map { "\(Int($0))" } ?? "--", unit: "ms", index: 3) }
+                        if showSkin { Tile(title: "Huidtemp", value: whoop.lastRecord?.skinTemp.map { String(format: "%.1f", $0) } ?? "--", unit: "°C", index: 4) }
                         Tile(title: "Batterij", value: ble.battery.map(String.init) ?? "--", unit: "%", index: 5)
                         Tile(title: "Zone", value: ble.bpm.map { Theme.zone($0).name } ?? "--", unit: "", small: true, index: 6)
                     }
@@ -100,6 +134,7 @@ struct ContentView: View {
             .background(Theme.bg.ignoresSafeArea())
             .scrollContentBackground(.hidden)
             .navigationTitle("Pulse")
+            .pulseLogo()
             .toolbar {
                 if devMode {
                     ToolbarItem(placement: .topBarLeading) {
@@ -111,7 +146,6 @@ struct ContentView: View {
                     NavigationLink { SettingsView() } label: { Image(systemName: "gearshape") }
                 }
             }
-            .sheet(isPresented: $showDevices) { DeviceSheet(isPresented: $showDevices) }
         }
     }
 
@@ -120,37 +154,17 @@ struct ContentView: View {
         return "\(a) / \(Int(b.rounded())) / \(c)"
     }
 
-    private var statusBar: some View {
-        HStack {
-            Circle().fill(statusColor).frame(width: 10, height: 10)
-                .shadow(color: statusColor, radius: ble.state == .connected ? 6 : 0)
-            Text(statusText).font(.subheadline)
-            Spacer()
-            if ble.state == .connected || ble.state == .connecting {
-                Button("Verbreek", role: .destructive) { ble.disconnect() }
-            } else {
-                Button("Zoek band") { showDevices = true; ble.scan() }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(ble.state == .off || ble.state == .unauthorized)
-            }
-        }
-    }
-
-    private var statusText: String {
-        switch ble.state {
-        case .off: return "Bluetooth staat uit"
-        case .unauthorized: return "Geen Bluetooth-toestemming (Instellingen)"
-        case .idle: return "Niet verbonden"
-        case .scanning: return "Zoeken…"
-        case .connecting: return "Wachten op \(ble.deviceName ?? "band")…"
-        case .connected: return "Verbonden: \(ble.deviceName ?? "band")"
-        }
-    }
-    private var statusColor: Color {
-        switch ble.state {
-        case .connected: return .green
-        case .connecting, .scanning: return .orange
-        default: return .gray
+    /// Alleen als er geen verbinding is: korte verwijzing naar Instellingen (verbinden/verbreken staat daar).
+    @ViewBuilder private var statusBar: some View {
+        if ble.state != .connected {
+            NavigationLink { SettingsView() } label: {
+                HStack {
+                    Circle().fill(ble.state == .connecting || ble.state == .scanning ? Color.orange : Color.gray).frame(width: 10, height: 10)
+                    Text(ble.state == .connecting ? "Wachten op de band…" : "Niet verbonden · verbinden in Instellingen").font(.subheadline)
+                    Spacer()
+                    Image(systemName: "chevron.right").foregroundStyle(Theme.muted)
+                }
+            }.buttonStyle(.plain)
         }
     }
 

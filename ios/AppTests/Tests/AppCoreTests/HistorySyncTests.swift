@@ -93,4 +93,14 @@ final class HistorySyncTests: XCTestCase {
         XCTAssertEqual(doubleAcks, 0)
         for t in fx.expected.trims { XCTAssertEqual(t.count, 16, "trim is 8 bytes") }
     }
+
+    /// Afgebroken burst (trim ff…ff, gezien 23-11-2026 na abort door de Whoop-app): nooit bevestigen.
+    func testSYNC_abortTrimNeverAcked() {
+        var s = HistorySync()
+        let ff = [UInt8](repeating: 0xFF, count: 8)
+        XCTAssertTrue(HistorySync.isAbortTrim(ff))
+        XCTAssertFalse(HistorySync.isAbortTrim(trimA))
+        _ = s.burstEnded(trim: ff)
+        XCTAssertNil(s.ackDue(trim: ff, variant: 0))
+    }
 }

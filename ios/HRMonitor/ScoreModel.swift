@@ -17,6 +17,10 @@ struct Night: Identifiable {
     var metrics = NightMetrics()
     /// minuten dat het telefoonscherm aan stond tussen inslapen en wakker worden
     var phoneMin = 0
+    /// minuten van scherm uit tot inslapen (nil = geen telefoon gebruikt vlak voor het slapen)
+    var latencyMin: Int?
+    /// slaapschuld over de laatste 7 nachten (min)
+    var weekDebtMin = 0.0
 
     var onset: Date { Date(timeIntervalSince1970: r.onset) }
     var wake: Date { Date(timeIntervalSince1970: r.wake) }
@@ -49,19 +53,26 @@ final class ScoreModel: ObservableObject {
     /// Periodes dat het telefoonscherm aan stond (wakker); gezet door AppServices.
     var awakeIntervals: () -> [Range<Double>] = { [] }
 
+    /// Dag waarop de berekening eindigt (vandaag, of een eerdere dag bij terugbladeren).
+    @Published private(set) var anchor = Date()
+    private var requestedEnd: Date?
+
     var lastNight: Night? {
-        guard let n = nights.last, Calendar.current.isDateInToday(n.date) else { return nil }
+        guard let n = nights.last, Calendar.current.isDate(n.date, inSameDayAs: anchor) else { return nil }
         return n
     }
-    var today: DayLoad? { days.last.flatMap { Calendar.current.isDateInToday($0.date) ? $0 : nil } }
+    var today: DayLoad? { days.last.flatMap { Calendar.current.isDate($0.date, inSameDayAs: anchor) ? $0 : nil } }
 
     /// `completion` volgt na de berekening; loopt er al een, dan volgt er nog één met de nieuwste data.
-    func refresh(store: DayStore, completion: (() -> Void)? = nil) {
+    /// - end: laatste dag van het venster (nil = vandaag).
+    func refresh(store: DayStore, end: Date? = nil, completion: (() -> Void)? = nil) {
         if let completion { waiters.append(completion) }
-        guard !busy else { if completion != nil { rerun = true }; return }
+        requestedEnd = end
+        guard !busy else { rerun = true; return }
         busy = true
         let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
+        let endDay = end ?? Date()
+        let today = cal.startOfDay(for: endDay)
         let dates = (0..<7).reversed().map { cal.date(byAdding: .day, value: -$0, to: today)! }
         // Invoer op de main actor verzamelen (alleen kopieën), omrekenen en rekenen los daarvan.
         var input: [(Date, [DayStore.Sample], [DayStore.Sample])] = []
@@ -80,11 +91,11 @@ final class ScoreModel: ObservableObject {
                 let conv = input.map { ($0.0, $0.1.map(Self.convert), $0.2.map(Self.convert)) }
                 return Self.compute(conv, fixedCal, prior: prior, personalBaseline: personal, awake: awake)
             }.value
-            self.nights = n; self.days = dl; self.busy = false
-            if self.rerun { self.rerun = false; self.refresh(store: store) }
+            self.nights = n; self.days = dl; self.anchor = endDay; self.busy = false
+            if self.rerun { self.rerun = false; self.refresh(store: store, end: self.requestedEnd) }
             else { let w = self.waiters; self.waiters = []; w.forEach { $0() } }
             NightArchive.shared.store(n.map { (DayStore.dayFmt.string(from: $0.date), $0.metrics) })
-            UserProfile.updateRestHr(from: NightArchive.shared.recentRhr(30))
+            if end == nil { UserProfile.updateRestHr(from: NightArchive.shared.recentRhr(30)) }
         }
     }
 
@@ -132,6 +143,8 @@ final class ScoreModel: ObservableObject {
             n.efficiency = r.efficiency
             let windows = nights.map { (onset: $0.r.onset, wake: $0.r.wake) } + [(onset: r.onset, wake: r.wake)]
             n.consistency = fin(WhoopScores.sleepConsistency(windows, tzOffsetMin: tz))
+            n.latencyMin = SleepHabits.latencyMin(onset: r.onset, awake: awake)
+            n.weekDebtMin = SleepHabits.weekDebtMin((nights + [n]).map { (asleepMin: Double($0.r.asleepMin), needMin: $0.needMin) })
             n.performance = fin(WhoopScores.sleepPerformance(asleepMin: Double(r.asleepMin), needMin: n.needMin,
                                                              efficiency: r.efficiency, consistency: n.consistency, c))
 
@@ -157,6 +170,8 @@ final class ScoreModel: ObservableObject {
             let enoughHistory = personalBaseline || history.filter { $0.hrv != nil }.count >= c.recovery.minHistory
             n.recovery = n.metrics.hrv == nil || !enoughHistory ? nil : WhoopScores.recovery(n.metrics, history: history, c)
             n.recoveryNeedsNights = enoughHistory ? 0 : c.recovery.minHistory - history.filter { $0.hrv != nil }.count
+            n.metrics.recovery = n.recovery.map(Double.init)
+            n.metrics.asleepMin = Double(r.asleepMin)
             history.append(n.metrics)
             nights.append(n)
         }
@@ -180,6 +195,9 @@ final class NightArchive {
     func metrics(before key: String, limit: Int) -> [NightMetrics] {
         byDay.keys.filter { $0 < key }.sorted().suffix(limit).compactMap { byDay[$0] }
     }
+
+    /// Alle bewaarde nachten (jjjj-mm-dd → waarden).
+    var all: [String: NightMetrics] { byDay }
 
     func recentRhr(_ n: Int) -> [Double] {
         byDay.keys.sorted().suffix(n).compactMap { byDay[$0]?.rhr }

@@ -17,7 +17,9 @@ private func fmtDur(_ s: TimeInterval) -> String {
 struct ActivitiesCard: View {
     @EnvironmentObject var acts: ActivityStore
     @ObservedObject var scores: ScoreModel
+    var day: Date = Date()
     @State private var adding = false
+    @State private var editing: Activity?
 
     var body: some View {
         Card(title: "Activiteiten", index: 1) {
@@ -28,12 +30,17 @@ struct ActivitiesCard: View {
                                         from: n.onset, to: n.wake, color: DV.sleep)
                     }
                 }
-                ForEach(acts.on(day: Date())) { a in
+                ForEach(acts.on(day: day)) { a in
                     NavigationLink { ActivityDetailView(id: a.id) } label: {
-                        ActivityRowView(icon: a.type.icon, value: a.summary.map { String(format: "%.1f", $0.strain) } ?? "–",
+                        ActivityRowView(icon: a.type.icon, value: a.summary.map { String(format: "%.0f", $0.strain) } ?? "–",
                                         name: a.type.name, from: a.start, to: a.end, color: actBlue, auto: a.auto)
                     }
+                    .contextMenu {
+                        Button { editing = a } label: { Label("Soort of tijden wijzigen", systemImage: "pencil") }
+                        Button(role: .destructive) { acts.delete(a.id) } label: { Label("Verwijder", systemImage: "trash") }
+                    }
                 }
+                if Calendar.current.isDateInToday(day) {
                 Button { adding = true } label: {
                     Label(acts.ongoing == nil ? "Activiteit toevoegen" : "Activiteit loopt…", systemImage: "plus")
                         .font(.subheadline.weight(.semibold)).tracking(1)
@@ -41,6 +48,7 @@ struct ActivitiesCard: View {
                         .background(Theme.cardHi, in: RoundedRectangle(cornerRadius: 12))
                 }
                 .disabled(acts.ongoing != nil)
+                }
                 // De schakelaar staat in Instellingen; hier alleen een melding als de GPS loopt.
                 if acts.autoSession != nil {
                     Label("GPS loopt: activiteit gedetecteerd", systemImage: "location.fill")
@@ -50,6 +58,7 @@ struct ActivitiesCard: View {
             .buttonStyle(.plain)
         }
         .sheet(isPresented: $adding) { ActivityEditSheet(existing: nil) }
+        .sheet(item: $editing) { ActivityEditSheet(existing: $0) }
     }
 }
 
@@ -70,7 +79,7 @@ struct ActivityRowView: View {
             .background(color.opacity(0.85), in: RoundedRectangle(cornerRadius: 10))
             VStack(alignment: .leading, spacing: 2) {
                 Text(name.uppercased()).font(.subheadline.weight(.bold)).tracking(1.5)
-                if auto { Text("automatisch herkend").font(.caption2).foregroundStyle(Theme.muted) }
+                if auto { Text("automatisch herkend · houd ingedrukt om te wijzigen").font(.caption2).foregroundStyle(Theme.muted) }
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
@@ -203,7 +212,7 @@ struct ActivityDetailView: View {
                     }
                 }
             }
-            ToolbarItem(placement: .topBarTrailing) { Button { editing = true } label: { Image(systemName: "ellipsis") } }
+            ToolbarItem(placement: .topBarTrailing) { Button("Wijzig") { editing = true } }
         }
         .sheet(isPresented: $editing) { if let a { ActivityEditSheet(existing: a) } }
         .task(id: "\(a?.start.timeIntervalSince1970 ?? 0)-\(a?.end?.timeIntervalSince1970 ?? 0)-\(store.revision)") { loadHr() }
@@ -236,8 +245,8 @@ struct ActivityDetailView: View {
                     .buttonStyle(.borderedProminent).tint(Theme.hr).controlSize(.large)
                 }
                 HStack(alignment: .top, spacing: 28) {
-                    big(sum.map { String(format: "%.1f", $0.strain) } ?? "–", "Belasting", color: actBlue,
-                        avg: DV.mean(ps.map(\.strain)).map { String(format: "%.1f", $0) }, delta: sum.flatMap { s in DV.mean(ps.map(\.strain)).map { s.strain - $0 } })
+                    big(sum.map { String(format: "%.0f", $0.strain) } ?? "–", "Belasting", color: actBlue,
+                        avg: DV.mean(ps.map(\.strain)).map { String(format: "%.0f", $0) }, delta: sum.flatMap { s in DV.mean(ps.map(\.strain)).map { s.strain - $0 } })
                     let st = prev.compactMap(\.steps).map(Double.init)
                     big(a.steps.map { $0.formatted() } ?? "–", "Stappen", color: Theme.text,
                         avg: DV.mean(st).map { Int($0).formatted() }, delta: a.steps.flatMap { s in DV.mean(st).map { Double(s) - $0 } })
@@ -483,8 +492,8 @@ struct RouteCard: View {
         var climb = 0.0, ref = p[0].alt
         for x in p.dropFirst() { if x.alt - ref > 1 { climb += x.alt - ref; ref = x.alt } else if x.alt < ref { ref = x.alt } }
         let items: [(String, String)] = [
-            ("Afstand", String(format: "%.2f km", dist / 1000)),
-            ("Gem. snelheid", String(format: "%.1f km/h", kmh)),
+            ("Afstand", String(format: "%.1f km", dist / 1000)),
+            ("Gem. snelheid", String(format: "%.0f km/h", kmh)),
             ("Gem. tempo", pace > 0 && pace < 3600 ? "\(fmtPace(pace)) /km" : "–"),
             ("Gem. HR", DV.mean(hrs).map { "\(Int($0.rounded())) bpm" } ?? "–"),
             ("Max. HR", hrs.max().map { "\(Int($0.rounded())) bpm" } ?? "–"),

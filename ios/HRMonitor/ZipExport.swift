@@ -8,6 +8,11 @@ enum ZipExport {
     /// Maakt zips in een tijdelijke map. Elk bestand gaat in z'n geheel in één zip;
     /// een nieuwe zip begint als het volgende bestand er niet meer bij past.
     static func make(name: String, files: [URL]) throws -> [URL] {
+        try make(name: name, entries: files.map { ($0, $0.lastPathComponent) })
+    }
+
+    /// Zelfde, met een eigen naam (pad) per bestand in de zip, bijv. "data/2026-11-23.csv".
+    static func make(name: String, entries files: [(url: URL, name: String)]) throws -> [URL] {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("export", isDirectory: true)
         try? FileManager.default.removeItem(at: dir)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -20,7 +25,7 @@ enum ZipExport {
             writer = try Writer(url: u); zips.append(u)
         }
         for file in files {
-            let entry = try Entry(file)
+            let entry = try Entry(file.url, name: file.name)
             if writer == nil || (writer!.size + entry.byteCount > zipLimit && writer!.count > 0) { try next() }
             try writer!.add(entry)
         }
@@ -39,9 +44,9 @@ enum ZipExport {
         let name: Data, crc: UInt32, rawSize: UInt32, packed: Data, method: UInt16, date: (time: UInt16, day: UInt16)
         var byteCount: Int { 30 + name.count + packed.count + 46 + name.count }
 
-        init(_ url: URL) throws {
+        init(_ url: URL, name zipName: String? = nil) throws {
             let data = try Data(contentsOf: url, options: .mappedIfSafe)
-            name = Data(url.lastPathComponent.utf8)
+            name = Data((zipName ?? url.lastPathComponent).utf8)
             crc = CRC32.checksum(data)
             rawSize = UInt32(clamping: data.count)
             // NSData .zlib levert ruwe Deflate (RFC 1951), precies wat zip verwacht.

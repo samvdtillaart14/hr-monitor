@@ -77,6 +77,8 @@ struct CompareRow: View {
     var baseline: String? = nil
     var delta: Double? = nil
     var higherIsBetter: Bool? = true
+    /// Opmaak van het verschil met je normaal (standaard: hele getallen).
+    var deltaText: (Double) -> String = { "\(Int($0.rounded()))" }
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon).foregroundStyle(Theme.muted).frame(width: 24)
@@ -84,7 +86,10 @@ struct CompareRow: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
                 Text(value).font(Theme.number(24)).monospacedDigit()
-                if let baseline { Text(baseline).font(.caption.weight(.semibold)).foregroundStyle(Theme.muted).monospacedDigit() }
+                if let baseline {
+                    Text("jij normaal \(baseline)" + (delta.map { " · " + ($0 >= 0 ? "+" : "−") + deltaText(abs($0)) } ?? ""))
+                        .font(.caption.weight(.semibold)).foregroundStyle(Theme.muted).monospacedDigit()
+                }
             }
             arrow.frame(width: 14)
         }
@@ -129,6 +134,13 @@ struct TrendCard: View {
                                 .annotation(position: .top) { Text(label(p.1)).font(.caption2.weight(.semibold)).foregroundStyle(color(p.1)) }
                         }
                     }
+                    if pts.count > 1, let m = DV.mean(pts.dropLast().map(\.1)) {
+                        RuleMark(y: .value("normaal", m))
+                            .foregroundStyle(Theme.muted).lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                            .annotation(position: .top, alignment: .leading) {
+                                Text("jij normaal \(label(m))").font(.caption2).foregroundStyle(Theme.muted)
+                            }
+                    }
                 }
                 .chartXScale(domain: weekDomain)
                 .chartYScale(domain: domain ?? 0...((pts.map(\.1).max() ?? 1) * 1.25 + 0.001))
@@ -168,6 +180,7 @@ struct SleepDetailView: View {
     @ObservedObject var model: ScoreModel
 
     @AppStorage("ui.sleepDetails") private var showDetails = false
+    @AppStorage(Display.sleepStages) private var showStages = true
     @AppStorage("ui.sleepTrends") private var showTrends = false
     private var n: Night? { model.lastNight ?? model.nights.last }
     private var prev: [Night] { Array(model.nights.dropLast()) }
@@ -178,8 +191,9 @@ struct SleepDetailView: View {
                 BigRing(value: n.performance.map { $0 / 100 }, text: n.performance.map { "\(Int($0.rounded()))%" } ?? "--",
                         label: "Slaap\nprestatie", color: DV.sleep)
                 contributors(n)
+                SleepHabitsCard(n: n, prev: prev)
                 lastNight(n)
-                stages(n)
+                if showStages { stages(n) }
                 Collapsible(title: "Details", open: $showDetails) {
                     needed(n)
                     consistency(n)
@@ -197,7 +211,7 @@ struct SleepDetailView: View {
     }
 
     private func contributors(_ n: Night) -> some View {
-        Card(index: 1) {
+        Card(index: 1, info: "Wat je slaapscore bepaalt, elk onderdeel apart beoordeeld.") {
             row("moon.zzz", "Uren vs. nodig", n.sufficiency, Rating.of(n.sufficiency, optimal: 85, fair: 70))
             Divider().overlay(Theme.line)
             row("calendar", "Regelmaat", n.consistency, Rating.of(n.consistency, optimal: 80, fair: 70))
@@ -451,22 +465,22 @@ struct RecoveryDetailView: View {
                     Text("Te weinig data voor herstel: nog \(n.recoveryNeedsNights) \(n.recoveryNeedsNights == 1 ? "nacht" : "nachten") meten, of vul je normale HRV en rust-hartslag in (Gezondheid → profiel). Herstel vergelijkt met je eigen basislijn; een standaardbasislijn gaf onzin.")
                         .font(.subheadline).foregroundStyle(Theme.muted)
                 }
-                Card(index: 1) {
+                Card(index: 1, info: "Waarden van afgelopen nacht naast je eigen normaal; groen pijltje is gunstig.") {
                     cmp("waveform.path.ecg", "Hartslagvariabiliteit", n.metrics.hrv, prev.compactMap(\.metrics.hrv), "%.0f", true)
                     Divider().overlay(Theme.line)
                     cmp("heart", "Rusthartslag", n.metrics.rhr, prev.compactMap(\.metrics.rhr), "%.0f", false)
                     Divider().overlay(Theme.line)
-                    cmp("lungs", "Ademfrequentie", n.metrics.resp, prev.compactMap(\.metrics.resp), "%.1f", nil)
+                    cmp("lungs", "Ademfrequentie", n.metrics.resp, prev.compactMap(\.metrics.resp), "%.0f", nil)
                     Divider().overlay(Theme.line)
                     cmp("moon", "Slaapprestatie", n.performance, prev.compactMap(\.performance), "%.0f%%", true)
-                    Label("Vandaag vs. eerdere nachten (gemiddelde eronder)", systemImage: "arrow.up.arrow.down").font(.caption).foregroundStyle(Theme.muted)
+                    Label("Vandaag vergeleken met je eigen normaal (gemiddelde van eerdere nachten)", systemImage: "arrow.up.arrow.down").font(.caption).foregroundStyle(Theme.muted)
                 }
                 Text("Weektrends").font(.title2.bold()).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
                 TrendCard(title: "Herstel", points: model.nights.map { ($0.date, $0.recovery.map(Double.init)) }, domain: 0...125,
                           color: { DV.recoveryColor(Int($0)) }, label: { "\(Int($0))%" })
                 TrendCard(title: "Hartslagvariabiliteit", points: model.nights.map { ($0.date, $0.metrics.hrv) }, line: true)
                 TrendCard(title: "Rusthartslag", points: model.nights.map { ($0.date, $0.metrics.rhr) }, line: true)
-                TrendCard(title: "Ademfrequentie", points: model.nights.map { ($0.date, $0.metrics.resp) }, line: true, label: { String(format: "%.1f", $0) })
+                TrendCard(title: "Ademfrequentie", points: model.nights.map { ($0.date, $0.metrics.resp) }, line: true, label: { String(format: "%.0f", $0) })
                 TrendCard(title: "Slaapprestatie", points: model.nights.map { ($0.date, $0.performance) }, line: true, label: { "\(Int($0))%" })
                 Text("Eigen berekening (scores-module): HRV, rust-HR, ademfrequentie en slaap t.o.v. je eigen basislijn. Basislijn: je Whoop-kalibratie, of anders je eigen nachten (vanaf 4).")
                     .font(.caption).foregroundStyle(Theme.muted)
@@ -493,8 +507,8 @@ struct StrainDetailView: View {
     var body: some View {
         detailScroll("Belasting") {
             if let d {
-                BigRing(value: d.strain / 21, text: String(format: "%.1f", d.strain), label: "Belasting", color: DV.strainC)
-                Card(index: 1) {
+                BigRing(value: d.strain / 21, text: String(format: "%.0f", d.strain), label: "Belasting", color: DV.strainC)
+                Card(index: 1, info: "Tijd in rustige en zware hartslagzones vandaag, naast je eigen normaal.") {
                     cmp("heart", "Hartslagzones 1–3", d.zones13, prev.map(\.zones13))
                     Divider().overlay(Theme.line)
                     cmp("bolt.heart", "Hartslagzones 4–5", d.zones45, prev.map(\.zones45))
@@ -503,7 +517,7 @@ struct StrainDetailView: View {
                 }
                 Text("Weektrends").font(.title2.bold()).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
                 TrendCard(title: "Belasting", points: model.days.map { ($0.date, $0.strain) }, domain: 0...24,
-                          color: { _ in DV.strainC }, label: { String(format: "%.1f", $0) })
+                          color: { _ in DV.strainC }, label: { String(format: "%.0f", $0) })
                 zoneStack
                 TrendCard(title: "Hartslagzones 4–5", points: model.days.map { ($0.date, $0.zones45) },
                           color: { _ in Theme.zones[4].color }, label: { DV.hm($0) })
@@ -517,7 +531,7 @@ struct StrainDetailView: View {
 
     private func cmp(_ icon: String, _ t: String, _ v: Double, _ hist: [Double]) -> some View {
         let base = DV.mean(hist)
-        return CompareRow(icon: icon, title: t, value: DV.hm(v), baseline: base.map(DV.hm), delta: base.map { v - $0 }, higherIsBetter: true)
+        return CompareRow(icon: icon, title: t, value: DV.hm(v), baseline: base.map(DV.hm), delta: base.map { v - $0 }, higherIsBetter: true, deltaText: DV.hm)
     }
 
     private var zoneStack: some View {
@@ -549,7 +563,7 @@ struct HealthMonitorView: View {
         detailScroll("Vitale waarden") {
             hrCard
             LazyVGrid(columns: [GridItem(.flexible(), spacing: Theme.gap), GridItem(.flexible())], spacing: Theme.gap) {
-                tile("lungs", "Ademfrequentie", n?.metrics.resp, "/min", "%.1f", prev.compactMap(\.metrics.resp), higherIsBad: true)
+                tile("lungs", "Ademfrequentie", n?.metrics.resp, "/min", "%.0f", prev.compactMap(\.metrics.resp), higherIsBad: true)
                 tile("heart", "Rust-HR", n?.metrics.rhr, "bpm", "%.0f", prev.compactMap(\.metrics.rhr), higherIsBad: true)
                 tile("waveform.path.ecg", "HRV", n?.metrics.hrv, "ms", "%.0f", prev.compactMap(\.metrics.hrv), higherIsBad: false)
                 skinTile
@@ -578,7 +592,7 @@ struct HealthMonitorView: View {
     }
 
     private func tile(_ icon: String, _ t: String, _ v: Double?, _ unit: String, _ f: String, _ hist: [Double], higherIsBad: Bool) -> some View {
-        Card {
+        Card(info: ["HRV": "Hoger dan normaal is meestal een teken van goed herstel.", "Rust-HR": "Hoger dan normaal kan wijzen op vermoeidheid of ziekte.", "Ademfrequentie": "Een stijging t.o.v. normaal kan een vroeg teken van ziekte zijn."][t]) {
             Label(t.uppercased(), systemImage: icon).font(Theme.label).tracking(1.2).foregroundStyle(Theme.muted)
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(v.map { String(format: f, $0) } ?? "--").font(Theme.number(30)).monospacedDigit()
@@ -603,7 +617,7 @@ struct HealthMonitorView: View {
         let hist = prev.compactMap(\.metrics.skinTemp)
         let base = DV.mean(hist)
         let delta = n?.metrics.skinTemp.flatMap { v in base.map { v - $0 } }
-        return Card {
+        return Card(info: "Verschil met je normale huidtemperatuur; een stijging kan op ziekte wijzen.") {
             Label("HUIDTEMP Δ", systemImage: "thermometer.medium").font(Theme.label).tracking(1.2).foregroundStyle(Theme.muted)
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(delta.map { String(format: "%+.1f", $0) } ?? "--").font(Theme.number(30)).monospacedDigit()

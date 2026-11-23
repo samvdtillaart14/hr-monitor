@@ -40,19 +40,24 @@ enum Theme {
 struct Card<Content: View>: View {
     var title: String? = nil
     var index = 0
+    var info: String? = nil
     var content: Content
     @State private var shown = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(title: String? = nil, index: Int = 0, @ViewBuilder content: () -> Content) {
+    init(title: String? = nil, index: Int = 0, info: String? = nil, @ViewBuilder content: () -> Content) {
         self.title = title
         self.index = index
+        self.info = info ?? title.flatMap { CardInfo.text[$0] }
         self.content = content()
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let title { Text(title.uppercased()).font(Theme.label).foregroundStyle(Theme.muted).tracking(2) }
             content
+            if let info {
+                Text(info).font(.footnote).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
@@ -62,6 +67,53 @@ struct Card<Content: View>: View {
         .opacity(shown || reduceMotion ? 1 : 0).offset(y: shown || reduceMotion ? 0 : 40)
         .onAppear { withAnimation(.easeOut(duration: 0.9).delay(0.08 * Double(index))) { shown = true } }
     }
+}
+
+/// Eén zin uitleg in gewone taal per kaart, op kaarttitel. Kaarten zonder titel geven `info:` zelf mee.
+enum CardInfo {
+    static let text: [String: String] = [
+        "Activiteiten": "Trainingen en wandelingen die de band vandaag heeft herkend.",
+        "Afgelopen nacht": "Hoe lang je sliep en hoe dat zich verhoudt tot wat je lichaam nodig had.",
+        "Slaapfases": "Hoeveel tijd je in lichte, diepe en droomslaap doorbracht.",
+        "Uren vs. nodig": "Hoeveel procent van je slaapbehoefte je echt hebt geslapen.",
+        "Regelmaat": "Hoe gelijk je bedtijd en opstaantijd zijn aan die van de dagen ervoor.",
+        "Slaapefficiëntie": "Welk deel van je tijd in bed je echt sliep.",
+        "Slaapstress": "Hoeveel van de nacht je lichaam nog in de stressstand stond.",
+        "Slaapprestatie": "Je totale slaapscore: lengte, regelmaat en efficiëntie samen.",
+        "Herstellende slaap": "Diepe slaap plus droomslaap: de slaap waarin je lichaam echt herstelt.",
+        "Tijd in bed": "Van naar bed gaan tot opstaan, per nacht.",
+        "Efficiëntie": "Welk deel van je tijd in bed je echt sliep.",
+        "Slaaptekort": "Slaap die je de afgelopen nachten tekort bent gekomen.",
+        "Hoge slaapstress": "Deel van de nacht waarin je lichaam niet tot rust kwam.",
+        "Herstel": "Hoe klaar je lichaam is voor inspanning, vergeleken met je eigen normaal.",
+        "Hartslagvariabiliteit": "Hogere HRV dan normaal betekent meestal dat je goed hersteld bent.",
+        "Rusthartslag": "Een rust-HR hoger dan normaal wijst vaak op vermoeidheid of ziekte.",
+        "Ademfrequentie": "Ademhalingen per minuut in je slaap; een stijging kan op ziekte wijzen.",
+        "Belasting": "Hoe zwaar je hart en lichaam vandaag hebben gewerkt (0 tot 21).",
+        "Hartslagzones 1–3": "Rustige inspanning zoals wandelen en licht sporten.",
+        "Hartslagzones 4–5": "Zware inspanning waarbij je hart hard werkt.",
+        "Energie (geschat, kcal)": "Een schatting van wat je vandaag verbrandde.",
+        "Hartslag": "Je hartslag op dit moment, live van de band.",
+        "Tijd per zone": "Hoe lang je vandaag in elke hartslagzone zat.",
+        "Hartslag · laatste 5 min": "Het verloop van je hartslag in de laatste vijf minuten.",
+        "Verouderingstempo": "Hoe snel je lichaam veroudert; 100% is precies even snel als de kalender.",
+        "Leeftijd per week": "Je geschatte lichaamsleeftijd per week.",
+        "Verbeterpunten": "Wat je het meest helpt om beter te slapen en te herstellen.",
+        "Vannacht": "Wanneer je naar bed moet om genoeg te slapen.",
+        "Planning": "Je bedtijd en wekker voor de komende nachten.",
+        "Slaapbehoefte vannacht": "Hoeveel slaap je vannacht nodig hebt, inclusief inhalen van tekort.",
+        "Bandwekker": "De band trilt je wakker op de ingestelde tijd.",
+        "Band": "Verbinding en batterij van je band.",
+        "Je ritme": "Je gewone bed- en opstaantijden, waar de planning op rekent.",
+        "Laatste 24 uur": "Je stressniveau over de afgelopen dag.",
+        "Vitale waarden": "Je nachtwaarden vergeleken met je eigen normaal.",
+        "Stress": "Je stressniveau nu: 0 is ontspannen, 3 is hoog.",
+        "Stress vandaag": "Je stressniveau door de dag; het grijze vlak is je slaap.",
+        "Belasting & herstel · 7 dagen": "Of je inspanning en je herstel deze week in balans waren.",
+        "Dashboard": "Vandaag naast je eigen normaal (gemiddelde van je eerdere dagen).",
+        "Route": "De route die je hebt afgelegd.",
+        "Per kilometer": "Je tempo en hartslag per kilometer.",
+    ]
 }
 
 /// Grote hartslagring met zonekleur, vloeiend geanimeerd, en een kloppend hart op het ritme van de HR.
@@ -141,6 +193,18 @@ struct ZoneTime: View {
                         Text("\(secs[i] / 60):\(String(format: "%02d", secs[i] % 60))").font(.subheadline).monospacedDigit().foregroundStyle(Theme.muted)
                     }
                 }
+            }
+        }
+    }
+}
+
+/// Klein Pulse-logo linksboven op de tabbladen.
+extension View {
+    func pulseLogo() -> some View {
+        toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Image("PulseLogo").resizable().scaledToFit().frame(height: 24)
+                    .foregroundStyle(.white).accessibilityLabel("Pulse")
             }
         }
     }

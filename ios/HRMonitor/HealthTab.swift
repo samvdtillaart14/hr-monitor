@@ -112,6 +112,8 @@ struct HealthTab: View {
     @State private var showProfile = false
     @State private var phoneSteps: Double?
     @State private var stepsLoaded = false
+    @AppStorage(Display.healthAge) private var showAge = true
+    @AppStorage(Display.healthPace) private var showPace = true
 
     private var tips: [Improvement] {
         Improvements.build(ImprovementData.input(model: model, acts: acts, age: age, male: male,
@@ -139,8 +141,17 @@ struct HealthTab: View {
                             Button("Profiel invullen") { showProfile = true }.buttonStyle(.borderedProminent)
                         }
                     }
-                    AgeOrb(bio: hasData ? age.map { $0 + offset } : nil, offset: offset, size: 250)
-                    paceCard
+                    if showAge { AgeOrb(bio: hasData ? age.map { $0 + offset } : nil, offset: offset, size: 250) }
+                    if showPace { paceCard }
+                    NavigationLink { WeekReportView() } label: {
+                        Card(title: "Weekrapport") {
+                            HStack {
+                                Text("Slaap, herstel en trends van deze week, met één advies").font(.subheadline).foregroundStyle(Theme.text)
+                                Spacer()
+                                Image(systemName: "chevron.right").foregroundStyle(Theme.muted)
+                            }
+                        }
+                    }.buttonStyle(.plain)
                     let t = tips
                     NavigationLink { ImprovementsView(tips: t) } label: { ImprovementsCard(tips: t, loading: !stepsLoaded) }
                         .buttonStyle(.plain)
@@ -154,6 +165,7 @@ struct HealthTab: View {
             }
             .background(Theme.bg.ignoresSafeArea())
             .navigationTitle("Gezondheid")
+            .pulseLogo()
             .toolbar { Button { showProfile = true } label: { Image(systemName: "person.crop.circle") } }
             .sheet(isPresented: $showProfile) { ProfileSheet(birth: $birth, male: $male, strength: $strength, steps: $steps) }
         }
@@ -175,7 +187,7 @@ struct HealthTab: View {
             HStack {
                 Text("Langzaam").foregroundStyle(Theme.muted)
                 Spacer()
-                Text(hasData ? String(format: "%.1f×", p) : "--").font(Theme.number(28))
+                Text(hasData ? String(format: "%.0f%%", p * 100) : "--").font(Theme.number(28))
                 Spacer()
                 Text("Snel").foregroundStyle(Theme.muted)
             }.font(.subheadline)
@@ -202,13 +214,13 @@ struct AgeOrb: View {
                 .overlay(Circle().stroke(Theme.hex(0x6FA6E8).opacity(0.6), lineWidth: 2))
                 .shadow(color: Theme.hex(0x3E7FBF).opacity(0.5), radius: 30)
             VStack(spacing: 6) {
-                Text(bio.map { String(format: "%.1f", $0) } ?? "--").font(Theme.number(size * 0.22)).monospacedDigit()
+                Text(bio.map { String(format: "%.0f", $0) } ?? "--").font(Theme.number(size * 0.22)).monospacedDigit()
                 Text("BIOLOGISCHE LEEFTIJD").font(Theme.label).tracking(1.5)
                 if bio == nil && size > 200 {
                     Text("Te weinig data").font(.headline).foregroundStyle(Theme.muted)
                 }
                 if bio != nil && size > 200 {
-                    Text(String(format: "%.1f jaar %@", abs(offset), offset >= 0 ? "ouder" : "jonger"))
+                    Text(String(format: "%.0f jaar %@", abs(offset), offset >= 0 ? "ouder" : "jonger"))
                         .font(.headline).foregroundStyle(offset > 0 ? DV.poor : Theme.hex(0x8EC5FF))
                 }
             }
@@ -245,6 +257,7 @@ struct HealthspanView: View {
     let offset: Double
     var hasData = true
     @State private var open: String? = nil
+    @AppStorage(Display.healthWeekAge) private var showWeekAge = true
 
     private var hist: [AgeHistory.Week] { AgeHistory.load() }
 
@@ -252,7 +265,7 @@ struct HealthspanView: View {
         ScrollView {
             VStack(spacing: Theme.gap) {
                 header
-                trendCard
+                if showWeekAge { trendCard }
                 ForEach(["Slaap", "Belasting", "Fitheid"], id: \.self) { g in
                     HStack {
                         Text(g).font(.title2.bold())
@@ -276,10 +289,10 @@ struct HealthspanView: View {
             Text("WEEKOVERZICHT · \(week.start.formatted(.dateTime.locale(DV.nl).day().month(.abbreviated))) – \(Date().formatted(.dateTime.locale(DV.nl).day().month(.abbreviated)))")
                 .font(Theme.label).tracking(1.5).foregroundStyle(Theme.muted)
             HStack {
-                VStack { Text(hasData ? String(format: "%.1f", abs(offset)) : "--").font(Theme.number(24)).foregroundStyle(hasData && offset > 0 ? DV.poor : Theme.hex(0x8EC5FF))
+                VStack { Text(hasData ? String(format: "%.0f", abs(offset)) : "--").font(Theme.number(24)).foregroundStyle(hasData && offset > 0 ? DV.poor : Theme.hex(0x8EC5FF))
                     Text(offset >= 0 ? "JAAR OUDER" : "JAAR JONGER").font(Theme.label).tracking(1) }.frame(maxWidth: .infinity)
                 AgeOrb(bio: hasData ? age + offset : nil, offset: offset, size: 140).frame(width: 150)
-                VStack { Text(hasData ? String(format: "%.1f×", AgeModel.pace(offset: offset)) : "--").font(Theme.number(24))
+                VStack { Text(hasData ? String(format: "%.0f%%", AgeModel.pace(offset: offset) * 100) : "--").font(Theme.number(24))
                     Text("TEMPO").font(Theme.label).tracking(1) }.frame(maxWidth: .infinity)
             }
         }
@@ -319,7 +332,7 @@ struct HealthspanView: View {
             HStack(alignment: .center, spacing: 12) {
                 ScaleBar(f: f, thirty: f.value, six: six)
                 VStack(alignment: .trailing, spacing: 0) {
-                    Text(f.value == nil ? "–" : String(format: "%+.1f", f.years)).font(Theme.number(22))
+                    Text(f.value == nil ? "–" : String(format: "%+.0f", f.years)).font(Theme.number(22))
                         .foregroundStyle(f.years > 0.05 ? DV.poor : f.years < -0.05 ? DV.good : Theme.muted)
                     Text("jaar").font(.caption).foregroundStyle(Theme.muted)
                 }.frame(width: 64)
@@ -330,7 +343,7 @@ struct HealthspanView: View {
             if isOpen {
                 Text(f.value == nil ? (f.missing ?? "Nog geen waarde.") :
                         (f.years > 0.05 ? "Kans om te verbeteren. " : f.years < -0.05 ? "Dit werkt in je voordeel. " : "Neutraal. ")
-                        + String(format: "Deze factor telt nu %+.1f jaar mee. ", f.years) + f.info)
+                        + String(format: "Deze factor telt nu %+.0f jaar mee. ", f.years) + f.info)
                     .font(.subheadline).foregroundStyle(Theme.muted)
             }
         }

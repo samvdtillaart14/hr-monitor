@@ -13,10 +13,23 @@ struct TodayView: View {
     @State private var lastCompute = Date.distantPast
     @State private var stress: [StressDetailView.Pt] = []
     @State private var measuredMin = 0
+    @State private var stepsToday: Int?
+    @State private var stepsNormal: Int?
+    @ObservedObject private var journal = Journal.shared
+    @AppStorage(Display.todayStressTile) private var showStressTile = true
+    @AppStorage(Display.todayStressChart) private var showStressChart = true
+    /// Getoonde dag: vandaag of tot 30 dagen terug.
+    @State private var selected = Date()
+    @StateObject private var past = ScoreModel()
+    static let maxDaysBack = 30
 
-    private var night: Night? { scores.lastNight }
-    private var pastNights: [Night] { scores.nights.filter { !Calendar.current.isDateInToday($0.date) } }
-    private var pastDays: [DayLoad] { scores.days.filter { !Calendar.current.isDateInToday($0.date) } }
+    private var isToday: Bool { Calendar.current.isDateInToday(selected) }
+    /// Vandaag: het gedeelde model (meldingen, widget); eerdere dag: een eigen model.
+    private var model: ScoreModel { isToday ? scores : past }
+    private var night: Night? { model.lastNight }
+    private var pastNights: [Night] { model.nights.filter { !Calendar.current.isDate($0.date, inSameDayAs: selected) } }
+    private var pastDays: [DayLoad] { model.days.filter { !Calendar.current.isDate($0.date, inSameDayAs: selected) } }
+    private var minDate: Date { Calendar.current.date(byAdding: .day, value: -Self.maxDaysBack, to: Calendar.current.startOfDay(for: Date()))! }
 
     var body: some View {
         NavigationStack {
@@ -24,13 +37,30 @@ struct TodayView: View {
                 VStack(spacing: Theme.gap) {
                     header
                     rings.padding(.vertical, 8)
-                    ActivitiesCard(scores: scores)
-                    TonightCard()
-                    HStack(spacing: Theme.gap) {
-                        NavigationLink { HealthMonitorView(model: scores) } label: { healthTile }
-                        NavigationLink { StressDetailView(model: scores) } label: { stressTile }
+                    if night == nil {
+                        Text(isToday ? "Geen nachtdata: vannacht is geen slaap gemeten." : "Geen nachtdata voor deze dag.")
+                            .font(.footnote).foregroundStyle(Theme.muted)
+                    }
+                    ActivitiesCard(scores: model, day: selected)
+                    if isToday {
+                    Button { AppRouter.shared.sheet = .journal } label: {
+                        Card(title: "Dagboek") {
+                            HStack {
+                                let n = journal.entries[Journal.key()]?.count
+                                Text(n.map { $0 == 0 ? "Vandaag: niets bijzonders" : "Vandaag: \($0) aangetikt" } ?? "Tik aan wat vandaag gold")
+                                    .font(.subheadline).foregroundStyle(Theme.text)
+                                Spacer()
+                                Image(systemName: "chevron.right").foregroundStyle(Theme.muted)
+                            }
+                        }
                     }.buttonStyle(.plain)
-                    stressChart
+                    TonightCard()
+                    }
+                    HStack(spacing: Theme.gap) {
+                        NavigationLink { HealthMonitorView(model: model) } label: { healthTile }
+                        if showStressTile && isToday { NavigationLink { StressDetailView(model: model) } label: { stressTile } }
+                    }.buttonStyle(.plain)
+                    if showStressChart { stressChart }
                     weekChart
                     metrics
                     Text("Eigen berekeningen op basis van je banddata; geen officiële Whoop-scores. Scores worden beter naarmate er meer dagen (en nachten) zijn gemeten.")
@@ -39,10 +69,17 @@ struct TodayView: View {
                 .padding()
             }
             .background(Theme.bg.ignoresSafeArea())
-            .navigationTitle("Vandaag")
+            .navigationTitle(isToday ? "Vandaag" : "Terugblik")
+            .pulseLogo()
             .refreshable { recompute() }
+            // Vegen naar rechts = dag terug, naar links = dag vooruit.
+            .simultaneousGesture(DragGesture(minimumDistance: 40).onEnded { v in
+                guard abs(v.translation.width) > 2 * abs(v.translation.height) else { return }
+                step(v.translation.width > 0 ? -1 : 1)
+            })
         }
         .onAppear(perform: recompute)
+        .onChange(of: selected) { _, _ in recompute() }
         // Alleen herberekenen als de app zichtbaar is, hooguit 1× per 30 s: spaart CPU op de achtergrond,
         // anders kan iOS de app 's nachts afsluiten.
         .onChange(of: store.revision) { _, _ in
@@ -58,26 +95,61 @@ struct TodayView: View {
         }
     }
 
+    private func step(_ d: Int) {
+        let cal = Calendar.current
+        guard let n = cal.date(byAdding: .day, value: d, to: selected) else { return }
+        if cal.startOfDay(for: n) < minDate || n > Date() && !cal.isDateInToday(n) { return }
+        withAnimation(.easeInOut(duration: 0.2)) { selected = cal.isDateInToday(n) ? Date() : n }
+    }
+
     private func recompute() {
         lastCompute = Date()
-        scores.refresh(store: store)
-        updateStress()
+        if isToday {
+            scores.refresh(store: store) { InsightNotifications.checkIllness(scores.lastNight) }
+            updateStress()
+        } else {
+            let day = selected
+            past.awakeIntervals = scores.awakeIntervals
+            Task {
+                await store.ensureLoaded(end: day)
+                past.refresh(store: store, end: day) { updateStress() }
+            }
+        }
     }
 
     /// Zelfde berekening als het stressscherm.
     private func updateStress() {
-        let s = store.samples(day: Date())
+        let s = store.samples(day: selected)
         measuredMin = Set(s.map { $0.t / 60 }).count
+        stepsToday = s.contains(where: { $0.steps != nil }) ? DayStore.steps(s) : nil
+        let past = (1...7).compactMap { n in
+            Calendar.current.date(byAdding: .day, value: -n, to: selected).flatMap { store.steps(day: $0) }
+        }
+        stepsNormal = past.isEmpty ? nil : past.reduce(0, +) / past.count
         stress = StressDetailView.buckets(s, rhr: night?.metrics.rhr ?? 60, sleep: night.map { ($0.r.onset, $0.r.wake) })
     }
 
     private var sleepPerf: Int? { night?.performance.map { Int($0.rounded()) } }
     private var recoveryNow: Int? { night?.recovery }
-    private var strainNow: Double? { scores.today?.strain }
+    private var strainNow: Double? { model.today?.strain }
+
+    private var dayLabel: String {
+        let cal = Calendar.current
+        if cal.isDateInToday(selected) { return selected.formatted(.dateTime.locale(DV.nl).weekday(.wide).day().month(.wide)) }
+        if cal.isDateInYesterday(selected) { return "Gisteren, " + selected.formatted(.dateTime.locale(DV.nl).day().month(.wide)) }
+        return selected.formatted(.dateTime.locale(DV.nl).weekday(.wide).day().month(.wide))
+    }
 
     private var header: some View {
-        HStack {
-            Text(Date.now.formatted(.dateTime.locale(DV.nl).weekday(.wide).day().month(.wide))).font(.headline)
+        HStack(spacing: 8) {
+            Button { step(-1) } label: { Image(systemName: "chevron.left").font(.headline) }
+                .disabled(Calendar.current.startOfDay(for: selected) <= minDate)
+            Text(dayLabel).font(.headline)
+            Button { step(1) } label: { Image(systemName: "chevron.right").font(.headline) }
+                .disabled(isToday)
+            if !isToday {
+                Button("Vandaag") { withAnimation { selected = Date() } }.font(.subheadline)
+            }
             Spacer()
             if let b = ble.battery {
                 Label("\(b)%", systemImage: "battery.75percent").font(.subheadline).foregroundStyle(Theme.muted)
@@ -99,7 +171,7 @@ struct TodayView: View {
             }
             NavigationLink { StrainDetailView(model: scores) } label: {
                 ScoreRing(label: "Belasting", value: strainNow.map { $0 / 21 },
-                          text: strainNow.map { String(format: "%.1f", $0) } ?? "--", color: Theme.zones[1].color)
+                          text: strainNow.map { String(format: "%.0f", $0) } ?? "--", color: Theme.zones[1].color)
             }
         }
         .buttonStyle(.plain)
@@ -113,6 +185,14 @@ struct TodayView: View {
         let rhr = night?.metrics.rhr
         let delta = rhr.flatMap { r in baselineRHR.map { r - $0 } }
         let elevated = (delta ?? 0) > 3
+        var rhrLine = "Rust-HR"
+        if let r = rhr {
+            rhrLine = "Rust-HR \(Int(r.rounded()))"
+            if let d = delta {
+                let sign = d >= 0 ? "+" : "−"
+                rhrLine += " · \(sign)\(Int(abs(d).rounded())) vs. normaal"
+            }
+        }
         return Card(title: "Vitale waarden", index: 1) {
             HStack(spacing: 10) {
                 Image(systemName: elevated ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
@@ -120,7 +200,7 @@ struct TodayView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(rhr == nil ? "GEEN DATA" : elevated ? "VERHOOGD" : "NORMAAL")
                         .font(Theme.label).tracking(1.5).foregroundStyle(elevated ? Theme.zones[4].color : Theme.accent)
-                    Text(rhr.map { "Rust-HR \(Int($0.rounded()))" } ?? "Rust-HR").font(.subheadline).foregroundStyle(Theme.muted)
+                    Text(rhrLine).font(.subheadline).foregroundStyle(Theme.muted)
                 }
             }
         }
@@ -134,7 +214,7 @@ struct TodayView: View {
         }()
         return Card(title: "Stress", index: 2) {
             HStack(spacing: 10) {
-                Text(s.map { String(format: "%.1f", $0) } ?? "–").font(Theme.number(20)).foregroundStyle(col)
+                Text(s.map { String(format: "%.0f", $0) } ?? "–").font(Theme.number(20)).foregroundStyle(col)
                     .padding(6).background(col.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(txt).font(Theme.label).tracking(1.5).foregroundStyle(col)
@@ -147,11 +227,11 @@ struct TodayView: View {
     // MARK: grafieken
 
     private var stressChart: some View {
-        Card(title: "Stress vandaag", index: 3) {
+        Card(title: isToday ? "Stress vandaag" : "Stress", index: 3) {
             if stress.count > 1 {
                 Chart {
                     if let n = night {
-                        RectangleMark(xStart: .value("", max(n.onset, Calendar.current.startOfDay(for: Date()))), xEnd: .value("", n.wake))
+                        RectangleMark(xStart: .value("", max(n.onset, Calendar.current.startOfDay(for: selected))), xEnd: .value("", n.wake))
                             .foregroundStyle(Theme.hex(0x8FA8C8).opacity(0.12))
                     }
                     ForEach(stress.indices, id: \.self) { i in
@@ -173,11 +253,11 @@ struct TodayView: View {
         let cal = Calendar.current
         return Card(title: "Belasting & herstel · 7 dagen", index: 4) {
             Chart {
-                ForEach(scores.days) { d in
+                ForEach(model.days) { d in
                     LineMark(x: .value("Dag", d.date, unit: .day), y: .value("Belasting", d.strain), series: .value("s", "Belasting"))
                         .foregroundStyle(Theme.zones[1].color).symbol(.circle)
                 }
-                ForEach(scores.nights.filter { $0.recovery != nil }) { n in
+                ForEach(model.nights.filter { $0.recovery != nil }) { n in
                     let r = n.recovery ?? 0
                     LineMark(x: .value("Dag", cal.startOfDay(for: n.date), unit: .day), y: .value("Herstel", Double(r) / 100 * 21), series: .value("s", "Herstel"))
                         .foregroundStyle(Theme.accent).symbol(.circle)
@@ -198,7 +278,7 @@ struct TodayView: View {
 
     private var metrics: some View {
         let fmtMin = { (m: Double) in DV.hm(m) }
-        let z13 = scores.today?.zones13, z45 = scores.today?.zones45
+        let z13 = model.today?.zones13, z45 = model.today?.zones45
         let rows: [(String, String, String)] = [
             ("HRV", night?.metrics.hrv.map { "\(Int($0.rounded())) ms" } ?? "--",
              DV.mean(pastNights.compactMap(\.metrics.hrv)).map { "\(Int($0.rounded())) ms" } ?? "–"),
@@ -212,10 +292,11 @@ struct TodayView: View {
              DV.mean(pastDays.map(\.zones45)).map { "\(Int($0.rounded())) min" } ?? "–"),
             ("Huidtemp (nacht)", night?.metrics.skinTemp.map { String(format: "%.1f °C", $0) } ?? "--",
              DV.mean(pastNights.compactMap(\.metrics.skinTemp)).map { String(format: "%.1f °C", $0) } ?? "–"),
+            ("Stappen", stepsToday.map { "\($0)" } ?? "--", stepsNormal.map { "\($0)" } ?? "–"),
             ("Gemeten", fmtMin(Double(measuredMin)), "")
         ]
         return Card(title: "Dashboard", index: 5) {
-            HStack { Spacer(); Text("VANDAAG").frame(width: 90, alignment: .trailing); Text("BASELINE").frame(width: 90, alignment: .trailing) }
+            HStack { Spacer(); Text("VANDAAG").frame(width: 90, alignment: .trailing); Text("JIJ NORMAAL").frame(width: 90, alignment: .trailing) }
                 .font(Theme.label).foregroundStyle(Theme.muted)
             ForEach(rows, id: \.0) { r in
                 HStack {

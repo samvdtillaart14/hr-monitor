@@ -205,4 +205,15 @@ final class HistoryTests: XCTestCase {
         let p = try XCTUnwrap(WhoopScores.mainSleep(flat, periods: [120..<430, 455..<570], .standard, tzOffsetMin: 60, awake: phone))
         XCTAssertEqual(p.main, 120..<430)
     }
+
+    func testDaytimeRestIsNoNight() throws {
+        // Geen slaap in de nacht, alleen 50 min stilzitten 11:03–11:53: geen nacht (geen slaap/herstel).
+        let eps = (0..<1440).map { Epoch(t: 1795305600 + Double($0) * 60, hr: 55, hrSd: 1, move: 0, skinTemp: .nan, n: 60) }
+        XCTAssertNil(WhoopScores.mainSleep(eps, periods: [603..<653], .standard, tzOffsetMin: 60))
+        // Lange verschoven slaap overdag (09:00–14:00) telt wel.
+        XCTAssertEqual(try XCTUnwrap(WhoopScores.mainSleep(eps, periods: [480..<780], .standard, tzOffsetMin: 60)).main, 480..<780)
+        // Nachtblok gaat voor een langer blok overdag; dat wordt een dutje.
+        let r = try XCTUnwrap(WhoopScores.mainSleep(eps, periods: [120..<300, 720..<960], .standard, tzOffsetMin: 60))
+        XCTAssertEqual(r.main, 120..<300); XCTAssertEqual(r.naps, [720..<960])
+    }
 }

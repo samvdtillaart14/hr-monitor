@@ -15,6 +15,11 @@ struct HistorySync {
 
     /// Mogelijke opbouw van de ack. Variant 0 = `01` + 8 bytes uit END (trim u32 + u32),
     /// variant 1 = `01` + trim u32 + 4 nullen (zoals bij de Whoop 4). Bij "mislukt" schakelt de app om.
+    /// Trim van een afgebroken burst (alleen 0xFF), of te kort: niet bevestigen.
+    static func isAbortTrim(_ trim: [UInt8]) -> Bool {
+        trim.count < 4 || trim.prefix(4).allSatisfy { $0 == 0xFF }
+    }
+
     static func ackBody(_ trim: [UInt8], variant: Int) -> [UInt8] {
         variant == 1 ? [0x01] + Array(trim.prefix(4)) + [0, 0, 0, 0] : [0x01] + trim
     }
@@ -27,7 +32,8 @@ struct HistorySync {
     /// END van een burst: trim onthouden. Geeft het aantal seconden dat we wachten voor we zelf bevestigen.
     /// Eerste burst (of als de Whoop-app eerder bevestigde): 3 s, zodat een draaiende Whoop-app voorgaat.
     mutating func burstEnded(trim: [UInt8]) -> Double {
-        pendingTrim = trim
+        // Afgebroken overdracht (bv. door de Whoop-app): END heeft trim ff…ff. Nooit bevestigen.
+        pendingTrim = Self.isAbortTrim(trim) ? nil : trim
         return (whoopAckedThisSync || acksSent == 0) ? 3 : 0.3
     }
 
