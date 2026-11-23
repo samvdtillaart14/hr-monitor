@@ -200,8 +200,13 @@ const inNight = (t, c, tz) => { const h = localHour(t, tz), a = c.nightStartHour
 export function mainSleep(eps, periods, cal = DEFAULT_CALIBRATION, tzOffsetMin = defaultTz()) {
   const c = cal.sleep;
   if (!periods.length) return null;
-  const longest = periods.reduce((a, b) => (b.endIdx - b.startIdx > a.endIdx - a.startIdx ? b : a));
   const night = (p) => { for (let i = p.startIdx; i < p.endIdx; i += 5) if (inNight(eps[i].t, c, tzOffsetMin)) return true; return inNight(eps[p.endIdx - 1].t, c, tzOffsetMin); };
+  // Voorkeur voor het langste blok in het nachtvenster; zonder nachtblok alleen een lang blok (verschoven nacht),
+  // kort stilzitten of een dutje overdag is geen nacht.
+  const nightBlocks = periods.filter(night);
+  const pool = nightBlocks.length ? nightBlocks : periods;
+  const longest = pool.reduce((a, b) => (b.endIdx - b.startIdx > a.endIdx - a.startIdx ? b : a));
+  if (!nightBlocks.length && longest.endIdx - longest.startIdx < (c.minDayMainMin ?? 180)) return null;
   // uitslaapblok buiten het nachtvenster alleen als het rustig is (HR niet duidelijk hoger dan in de hoofdslaap)
   const meanHr = (p) => { const v = []; for (let i = p.startIdx; i < p.endIdx; i++) if (Number.isFinite(eps[i].hr) && eps[i].hr > 0) v.push(eps[i].hr); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : NaN; };
   const baseHr = meanHr(longest);
@@ -262,7 +267,9 @@ export function analyzeNight(samples, cal = DEFAULT_CALIBRATION, baseline = cal.
   const eps = epochs(samples);
   const { periods, moveThr, candidate } = detectSleep(eps, cal);
   if (!periods.length) return null;
-  const { main, naps } = mainSleep(eps, periods, cal, tzOffsetMin);
+  const ms = mainSleep(eps, periods, cal, tzOffsetMin);
+  if (!ms) return null;
+  const { main, naps } = ms;
   const bs = beats(samples);
   const t0 = eps[0].t;
   const epochBeats = eps.map(() => []);

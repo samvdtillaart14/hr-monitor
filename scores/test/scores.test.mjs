@@ -189,3 +189,13 @@ test('uitslapen na 08:00 na kort wakker blijft nacht; middagdutje niet', () => {
   const n = W.mainSleep(eps, [P(120, 430), P(780, 840)], W.DEFAULT_CALIBRATION, 60);
   assert.deepEqual(n.main, P(120, 430)); assert.equal(n.naps.length, 1);
 });
+
+test('kort stilzitten overdag is geen nacht; lange verschoven slaap wel; nachtblok gaat voor', () => {
+  const eps = Array.from({ length: 1440 }, (_, i) => ({ t: 1795305600 + i * 60, hr: 55, hrSd: 1, move: 0, skinTemp: NaN, n: 60 }));
+  const P = (a, b) => ({ startIdx: a, endIdx: b });
+  assert.equal(W.mainSleep(eps, [P(603, 653)], W.DEFAULT_CALIBRATION, 60), null);
+  assert.deepEqual(W.mainSleep(eps, [P(480, 780)], W.DEFAULT_CALIBRATION, 60).main, P(480, 780));
+  const r = W.mainSleep(eps, [P(120, 300), P(720, 960)], W.DEFAULT_CALIBRATION, 60);
+  assert.deepEqual(r.main, P(120, 300));
+  assert.equal(r.naps.length, 1);
+});
