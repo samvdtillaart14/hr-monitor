@@ -94,6 +94,7 @@ struct SettingsView: View {
                      ? "De Verkenner, de opnames en de opnameknop op Live zijn zichtbaar. Lopende opnames gaan door als je dit uitzet."
                      : "Zet aan om de Verkenner, ruwe opnames en de opnameknop te tonen. Alleen nodig voor het ontcijferen van de banddata.")
             }
+            BackupSection()
             if !devMode && (rec.isRecording || raw.isRecording) {
                 Section {
                     if rec.isRecording { Button("Stop hartslagopname", role: .destructive) { rec.stop() } }

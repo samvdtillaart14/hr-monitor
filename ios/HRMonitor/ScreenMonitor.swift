@@ -185,9 +185,11 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         [.banner, .list, .sound]
     }
-    /// Tik op een melding: bijbehorend scherm openen (dagboek, weekrapport).
+    /// Tik op een melding: ochtendoverzicht, dagboek of weekrapport openen.
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        guard let raw = response.notification.request.content.userInfo["sheet"] as? String,
+        let req = response.notification.request
+        if req.identifier == "ochtend" { await MainActor.run { MorningRouter.shared.show = true }; return }
+        guard let raw = req.content.userInfo["sheet"] as? String,
               let s = AppRouter.Sheet(rawValue: raw) else { return }
         await MainActor.run { AppRouter.shared.sheet = s }
     }
