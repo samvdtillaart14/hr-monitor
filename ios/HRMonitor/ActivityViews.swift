@@ -32,7 +32,7 @@ struct ActivitiesCard: View {
                 }
                 ForEach(acts.on(day: day)) { a in
                     NavigationLink { ActivityDetailView(id: a.id) } label: {
-                        ActivityRowView(icon: a.type.icon, value: a.summary.map { String(format: "%.1f", $0.strain) } ?? "–",
+                        ActivityRowView(icon: a.type.icon, value: a.summary.map { String(format: "%.0f", $0.strain) } ?? "–",
                                         name: a.type.name, from: a.start, to: a.end, color: actBlue, auto: a.auto)
                     }
                     .contextMenu {
@@ -245,8 +245,8 @@ struct ActivityDetailView: View {
                     .buttonStyle(.borderedProminent).tint(Theme.hr).controlSize(.large)
                 }
                 HStack(alignment: .top, spacing: 28) {
-                    big(sum.map { String(format: "%.1f", $0.strain) } ?? "–", "Belasting", color: actBlue,
-                        avg: DV.mean(ps.map(\.strain)).map { String(format: "%.1f", $0) }, delta: sum.flatMap { s in DV.mean(ps.map(\.strain)).map { s.strain - $0 } })
+                    big(sum.map { String(format: "%.0f", $0.strain) } ?? "–", "Belasting", color: actBlue,
+                        avg: DV.mean(ps.map(\.strain)).map { String(format: "%.0f", $0) }, delta: sum.flatMap { s in DV.mean(ps.map(\.strain)).map { s.strain - $0 } })
                     let st = prev.compactMap(\.steps).map(Double.init)
                     big(a.steps.map { $0.formatted() } ?? "–", "Stappen", color: Theme.text,
                         avg: DV.mean(st).map { Int($0).formatted() }, delta: a.steps.flatMap { s in DV.mean(st).map { Double(s) - $0 } })
@@ -492,8 +492,8 @@ struct RouteCard: View {
         var climb = 0.0, ref = p[0].alt
         for x in p.dropFirst() { if x.alt - ref > 1 { climb += x.alt - ref; ref = x.alt } else if x.alt < ref { ref = x.alt } }
         let items: [(String, String)] = [
-            ("Afstand", String(format: "%.2f km", dist / 1000)),
-            ("Gem. snelheid", String(format: "%.1f km/h", kmh)),
+            ("Afstand", String(format: "%.1f km", dist / 1000)),
+            ("Gem. snelheid", String(format: "%.0f km/h", kmh)),
             ("Gem. tempo", pace > 0 && pace < 3600 ? "\(fmtPace(pace)) /km" : "–"),
             ("Gem. HR", DV.mean(hrs).map { "\(Int($0.rounded())) bpm" } ?? "–"),
             ("Max. HR", hrs.max().map { "\(Int($0.rounded())) bpm" } ?? "–"),

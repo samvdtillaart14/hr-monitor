@@ -51,7 +51,7 @@ struct StressDetailView: View {
             }
             .font(.caption.bold()).foregroundStyle(Theme.muted).frame(width: 170).offset(y: 100)
             VStack(spacing: 4) {
-                Text(current.map { String(format: "%.1f", $0) } ?? "--").font(Theme.number(60)).monospacedDigit()
+                Text(current.map { String(format: "%.0f", $0) } ?? "--").font(Theme.number(60)).monospacedDigit()
                 Text(current.map { Self.names[Self.level($0)].uppercased() } ?? "GEEN DATA").font(Theme.label).tracking(2)
                     .foregroundStyle(current.map { Self.colors[Self.level($0)] } ?? Theme.muted)
                 if let t = pts.last?.t { Text(DV.clock(t)).font(.caption).foregroundStyle(Theme.muted) }
