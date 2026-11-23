@@ -37,8 +37,16 @@ Band: WG50_r45, firmware 50.43.2.0, iOS 27 (21-11-2026). Bron voor de basis: ope
     - 4× float32LE @41/45/49/53: oriëntatie of beweging. In rust is de norm ≈ 1,00, bij beweging wijkt die af. Mogelijk een quaternion.
     - u16LE @69 / 10 en @71 / 10: ±29 en ±31 °C, extra temperaturen (voorlopig).
     - Huidtemperatuur u16LE @73 / 100 °C (31,4–32,0 °C gemeten).
-    - Ongeduid: @33–35, @57–61, @105–109 (optisch/kwaliteit?), @113–115.
-  - `0x1A` (R26, 88 B, ±1 per 15 s): tijd u32LE @15; u32LE @23 ≈ 157 000 (DC-niveau?); 24× i16LE @27..74 (golfvorm, vermoedelijk PPG of beweging); float32 @75. Voorlopig.
+    - **Stappenteller u16LE @61** (23-11-2026: 100 getelde stappen binnenshuis gaven +95). Cumulatief sinds de laatste herstart van de band, bij een reboot terug naar 0. Tel dus per record het verschil op en behandel een daling als reset. Loopt ±2 per seconde tijdens lopen.
+    - **Loopt-vlag u8 @63:** 1 zolang de stappenteller oploopt, anders 0.
+    - u8 @59: verandert alleen tijdens lopen (86–175) en blijft daarna staan. Vermoedelijk cadans of stapinterval, eenheid onbekend.
+    - u16LE @57: telt ±1 per seconde bij beweging, ook zonder stappen. Ging rond de pairing naar 0. Vermoedelijk actieve seconden of een activiteitstelling.
+    - @35 laag nibble: teller die elke 5 s 1 oploopt (mod 16). @33: vlaggen.
+    - u8 @106/@107: liepen na ±30 s stilzitten op van 60/55 naar 93/90 en bleven daarna staan. @108/@109 = 0x80 (ongeldig) tijdens beweging, anders 32 → 21. Vermoedelijk SpO2-schatting en kwaliteit (niet bevestigd).
+    - float32LE @113: verloopt langzaam (−1,9 tot −5,2). Ongeduid.
+    - Ongeduid: @105, @81 (0/1).
+  - `0x1A` (R26, 88 B, ±1 per 15 s): tijd u32LE @15; u32LE @23 ≈ 157 000 (DC-niveau?); 24× i16LE @27..74 (golfvorm, vermoedelijk PPG of beweging); float32 @75. Voorlopig. Kwam in de opnames van 23-11 niet voor; de band meldt feature-flag `disable_pip_r26_packets`.
+  - `0x15` (R21, 1244 B, 1 per seconde): ruwe IMU op 100 Hz. Kop t/m @27 (o.a. `64 00 64 00 03 00` = 2× 100 samples, 3 assen), dan 6 × 100 i16LE: versnelling x, y, z (±4096 per g) en gyro x, y, z. Komt ook **live** binnen als type **0x2B** met dezelfde opbouw (gezien tijdens de pairing op 23-11).
 - **0x31:** live status met tijd u32LE @11.
 - **0x30 events (op 0004/0005):** event-id u16LE @10, tijd u32LE @12. Gezien: 3, 29, 63, 110, 123.
 - **Feature-flags (via 0x74/0x76/0x78):** o.a. `enable_raw_data_w_ecg`, `cont_collection_mode`, `whoop_live_hr_in_adv`, `max_collection_backlog`.
@@ -55,6 +63,12 @@ De commando's van de Whoop-app zelf zijn vanuit onze app niet te zien: iOS toont
 - **0x03 realtime-HR:** de Whoop-app stuurt dit ook (20:17–20:22 en 07:48). Direct daarna stoppen de 0x28-pakketten; 2A37 loopt door. Waarschijnlijk zet de Whoop-app realtime uit (body 00). Onze app moet 0x03 01 dus opnieuw sturen na een Whoop-sync.
 - **'s Nachts (01:48–07:47) synchroniseerde de Whoop-app niet** (iOS liet hem slapen). Bij openen om 07:47 volgde een inhaaldownload: ~29 acks/min tot na 08:25. Tijdens zo'n download is de ruwe log ~375 MB/uur, 's nachts zonder sync ~17 MB/uur.
 - Om de inhoud van de writes van de Whoop-app te zien is een BLE-sniffer nodig (nRF52840-dongle + nRF Sniffer in Wireshark), of PacketLogger met het Bluetooth-logprofiel op een Mac.
+
+## Opnieuw pairen met de Whoop-app (23-11-2026, 20:45–20:50)
+- Firmwarelog: veel `IMU double tap detected` (tikken toont de batterij), `Battery Pack Removed`, daarna een **herstart van de band** (`Normal reset`, `sigproc has been reset due to feature flag change`). De stappenteller (@61) ging daarbij naar 0.
+- Daarna de normale verbindingsreeks van de Whoop-app: 0x91 hello → 0x8D → 0x13 (19) → 0x42 wekker → 0x75/0x76/0x78 feature-flags → 0x22 → **0x9B–0x9E (155–158, nieuw, resultaat 1)** → 0x16 → acks.
+- iOS-bonding hoort bij het toestel, niet bij één app. Het "pairen" in de Whoop-app koppelt de band aan het account en zet de configuratie (klok, wekker, flags). Pulse leest op dezelfde verbinding mee en hoeft dat niet.
+- **Let op:** als de Whoop-app een overdracht afbreekt (`Abort Historical Transmits`), heeft END trim `ff ff ff ff ff ff ff ff`. Pulse ackte die (resultaat 1). Geen schade gezien, maar zo'n trim niet bevestigen.
 
 ## Historie-sync stap voor stap (gereconstrueerd uit avond 21-11, 1119 bursts)
 1. **0x22 data-range** (app → band). Antwoord-body vanaf @13: `01`, dan u32 nieuwste-pointer, u32 oudste-niet-gesynchroniseerd, u32, u32, u32 `08`, … Voorbeeld: `01 40 03 00 00 eb 00 00 00 11 03 00 00 eb 00 00 00 08 …`. De pointers lopen per sync op (0x340 → 0x580 → 0x800 …). Eerst resultaat 2 (bezig), dan 1.
