@@ -66,6 +66,7 @@ struct HRMonitorApp: App {
     @Environment(\.scenePhase) private var phase
     private let services = AppServices.shared
     @ObservedObject private var router = AppRouter.shared
+    @State private var splash = true
     var body: some Scene {
         WindowGroup {
             TabView {
@@ -79,6 +80,7 @@ struct HRMonitorApp: App {
                     case .week: WeekReportSheet()
                     }
                 }
+                .overlay { if splash { SplashView(visible: $splash).transition(.opacity) } }
                 .environment(\.locale, DV.nl)
                 .environmentObject(services.store)
                 .environmentObject(services.acts)
