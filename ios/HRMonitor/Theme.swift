@@ -145,3 +145,15 @@ struct ZoneTime: View {
         }
     }
 }
+
+/// Klein Pulse-logo linksboven op de tabbladen.
+extension View {
+    func pulseLogo() -> some View {
+        toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Image("PulseLogo").resizable().scaledToFit().frame(height: 24)
+                    .foregroundStyle(.white).accessibilityLabel("Pulse")
+            }
+        }
+    }
+}

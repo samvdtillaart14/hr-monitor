@@ -132,6 +132,7 @@ struct ContentView: View {
             .background(Theme.bg.ignoresSafeArea())
             .scrollContentBackground(.hidden)
             .navigationTitle("Pulse")
+            .pulseLogo()
             .toolbar {
                 if devMode {
                     ToolbarItem(placement: .topBarLeading) {

@@ -165,6 +165,7 @@ struct HealthTab: View {
             }
             .background(Theme.bg.ignoresSafeArea())
             .navigationTitle("Gezondheid")
+            .pulseLogo()
             .toolbar { Button { showProfile = true } label: { Image(systemName: "person.crop.circle") } }
             .sheet(isPresented: $showProfile) { ProfileSheet(birth: $birth, male: $male, strength: $strength, steps: $steps) }
         }

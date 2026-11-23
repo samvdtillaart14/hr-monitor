@@ -58,6 +58,7 @@ struct TodayView: View {
             }
             .background(Theme.bg.ignoresSafeArea())
             .navigationTitle("Vandaag")
+            .pulseLogo()
             .refreshable { recompute() }
         }
         .onAppear(perform: recompute)
