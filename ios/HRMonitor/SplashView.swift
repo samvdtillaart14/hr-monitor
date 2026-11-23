@@ -1,31 +1,37 @@
 import SwiftUI
 
-/// Korte opstartanimatie: ring en logo tekenen zich wit op vanuit zwart, daarna weg (~1,4 s).
+/// Opstartanimatie (~1,5 s): eerst schrijft "Pulse" zich van links naar rechts,
+/// daarna tekent de hartslaglijn zich van links naar rechts; dan vervaagt alles.
 struct SplashView: View {
     @Binding var visible: Bool
-    @State private var trim: CGFloat = 0
+    @State private var word: CGFloat = 0
+    @State private var line: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             ZStack {
-                Circle().trim(from: 0, to: trim)
-                    .stroke(Color.white, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                // Logo tekent zich van links naar rechts op, gelijk met de ring.
-                Image("PulseLogo").resizable().scaledToFit().frame(width: 120)
-                    .foregroundStyle(Color.white)
-                    .mask(alignment: .leading) { Rectangle().scaleEffect(x: trim, y: 1, anchor: .leading) }
+                layer("PulseWord", progress: word)
+                layer("PulseLine", progress: line)
             }
-            .frame(width: 180, height: 180)
+            .frame(width: 200)
         }
         .onAppear {
-            if reduceMotion { trim = 1 } else { withAnimation(.easeInOut(duration: 0.9)) { trim = 1 } }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                withAnimation(.easeOut(duration: 0.3)) { visible = false }
+            if reduceMotion { word = 1; line = 1 } else {
+                withAnimation(.easeInOut(duration: 0.6)) { word = 1 }
+                withAnimation(.easeInOut(duration: 0.55).delay(0.6)) { line = 1 }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.25) {
+                withAnimation(.easeOut(duration: 0.25)) { visible = false }
             }
         }
         .allowsHitTesting(false)
+    }
+
+    private func layer(_ name: String, progress: CGFloat) -> some View {
+        Image(name).resizable().scaledToFit()
+            .foregroundStyle(Color.white)
+            .mask(alignment: .leading) { Rectangle().scaleEffect(x: progress, y: 1, anchor: .leading) }
     }
 }

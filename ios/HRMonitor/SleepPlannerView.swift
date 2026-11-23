@@ -51,15 +51,6 @@ struct TonightCard: View {
                 Capsule().fill(LinearGradient(colors: [sleepColor.opacity(0.5), sleepColor, Theme.accent.opacity(on ? 0.9 : 0.3)],
                                               startPoint: .leading, endPoint: .trailing))
                     .frame(height: 6).padding(.vertical, 4)
-                HStack {
-                    Text("\(Int(p.goal.fraction * 100))% van \(hm(p.need.total)) slaapbehoefte")
-                        .foregroundStyle(Theme.muted)
-                    Spacer()
-                    Text(on ? rule.mode.title.uppercased() : "WEKKER UIT").font(Theme.label).tracking(1.5)
-                        .foregroundStyle(on ? Theme.accent : Theme.zones[3].color)
-                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(Theme.muted)
-                }
-                .font(.footnote)
             }
         }
         .buttonStyle(.plain)

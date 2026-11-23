@@ -31,6 +31,8 @@ targets:
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
+        # Oude (iOS 18-)vormgeving van tabbalk en knoppen houden, ook met de iOS 26-SDK op macos-latest.
+        UIDesignRequiresCompatibility: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSBluetoothAlwaysUsageDescription: Pulse verbindt via Bluetooth met je hartslagband.
         NSMotionUsageDescription: Pulse gebruikt je stappen en de bewegingsherkenning van je iPhone om activiteiten (zoals hardlopen) te herkennen en te tellen.
