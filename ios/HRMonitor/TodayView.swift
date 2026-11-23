@@ -1,6 +1,7 @@
 import SwiftUI
 import WhoopScores
 import Charts
+import CoreMotion
 
 /// Dagoverzicht: slaap, herstel en belasting als ringen, gezondheid/stress, stressverloop, 7 dagen en metrieken.
 /// Alles komt uit de scores-module (ScoreModel), dezelfde bron als de detailschermen.
@@ -15,6 +16,8 @@ struct TodayView: View {
     @State private var measuredMin = 0
     @State private var stepsToday: Int?
     @State private var stepsNormal: Int?
+    @State private var stepsFromPhone = false
+    private static let pedometer = CMPedometer()
     @ObservedObject private var journal = Journal.shared
     @AppStorage(Display.todayStressTile) private var showStressTile = true
     @AppStorage(Display.todayStressChart) private var showStressChart = true
@@ -41,6 +44,7 @@ struct TodayView: View {
                         Text(isToday ? "Geen nachtdata: vannacht is geen slaap gemeten." : "Geen nachtdata voor deze dag.")
                             .font(.footnote).foregroundStyle(Theme.muted)
                     }
+                    stepsCard
                     ActivitiesCard(scores: model, day: selected)
                     if isToday {
                     Button { AppRouter.shared.sheet = .journal } label: {
@@ -125,6 +129,20 @@ struct TodayView: View {
             Calendar.current.date(byAdding: .day, value: -n, to: selected).flatMap { store.steps(day: $0) }
         }
         stepsNormal = past.isEmpty ? nil : past.reduce(0, +) / past.count
+        stepsFromPhone = false
+        if stepsToday == nil {
+            // Band gaf (nog) geen stappen: val terug op de iPhone-stappenteller.
+            let start = Calendar.current.startOfDay(for: selected)
+            let end = min(Date(), Calendar.current.date(byAdding: .day, value: 1, to: start)!)
+            let day = selected
+            Task {
+                let n = await ActivityStore.steps(Self.pedometer, start.addingTimeInterval(1), end)
+                await MainActor.run {
+                    guard Calendar.current.isDate(day, inSameDayAs: selected), stepsToday == nil, let n else { return }
+                    stepsToday = n; stepsFromPhone = true
+                }
+            }
+        }
         stress = StressDetailView.buckets(s, rhr: night?.metrics.rhr ?? 60, sleep: night.map { ($0.r.onset, $0.r.wake) })
     }
 
@@ -270,6 +288,25 @@ struct TodayView: View {
                 Label("Belasting (0–21)", systemImage: "circle.fill").foregroundStyle(Theme.zones[1].color)
                 Label("Herstel (%)", systemImage: "circle.fill").foregroundStyle(Theme.accent)
             }.font(.caption)
+        }
+    }
+
+    // MARK: stappen
+
+    private var stepsCard: some View {
+        Card(title: "Stappen") {
+            HStack(alignment: .firstTextBaseline) {
+                Image(systemName: "figure.walk").foregroundStyle(Theme.accent)
+                Text(stepsToday.map { $0.formatted(.number.locale(Locale(identifier: "nl_NL"))) } ?? "--")
+                    .font(Theme.number(32)).monospacedDigit()
+                Spacer()
+                if let n = stepsNormal {
+                    Text("normaal \(n.formatted(.number.locale(Locale(identifier: "nl_NL"))))").font(.subheadline).foregroundStyle(Theme.muted)
+                }
+            }
+            if stepsFromPhone {
+                Text("Geteld door je iPhone; de band levert ze na de volgende synchronisatie.").font(.caption).foregroundStyle(Theme.muted)
+            }
         }
     }
 
