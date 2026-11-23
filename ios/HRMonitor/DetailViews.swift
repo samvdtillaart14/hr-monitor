@@ -179,6 +179,7 @@ struct SleepDetailView: View {
                 BigRing(value: n.performance.map { $0 / 100 }, text: n.performance.map { "\(Int($0.rounded()))%" } ?? "--",
                         label: "Slaap\nprestatie", color: DV.sleep)
                 contributors(n)
+                SleepHabitsCard(n: n, prev: prev)
                 lastNight(n)
                 if showStages { stages(n) }
                 Collapsible(title: "Details", open: $showDetails) {
