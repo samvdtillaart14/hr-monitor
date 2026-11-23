@@ -4,6 +4,7 @@ name: Tests
 # Zie docs/TESTPLAN.md voor wat elke test dekt.
 on:
   push:
+    branches: [main]   # andere branches draaien via de pull request (scheelt dubbele Mac-runs)
     paths: ['scores/**', 'ios/**', 'testdata/**', '.github/workflows/tests.yml']
   pull_request:
     paths: ['scores/**', 'ios/**', 'testdata/**', '.github/workflows/tests.yml']
@@ -22,7 +23,7 @@ jobs:
 
   swift-scores:
     name: Swift WhoopScores (pariteit met JS, randgevallen)
-    runs-on: macos-15
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - run: swift test
@@ -30,7 +31,7 @@ jobs:
 
   app-logic:
     name: Swift app-logica (parser, sync, opslag, ScoreModel, export)
-    runs-on: macos-15
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - name: App-bestanden naar het testpakket kopiëren

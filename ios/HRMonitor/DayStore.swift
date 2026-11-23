@@ -56,7 +56,21 @@ final class DayStore: ObservableObject {
     /// Laadt de laatste `keepDays` dagen van schijf.
     func load() async {
         let now = Date()
-        let keys = (0..<Self.keepDays).map { Self.key(now, minusDays: $0) }
+        await load(keys: (0..<Self.keepDays).map { Self.key(now, minusDays: $0) })
+    }
+
+    /// Dagen die bij het terugbladeren in het geheugen blijven (niet opgeruimd).
+    private var pinned: Set<String> = []
+
+    /// Oudere dagen (en de nacht ervoor) inlezen voor terugbladeren: 7 dagen tot en met `end`.
+    func ensureLoaded(end: Date) async {
+        let keys = (0..<9).map { Self.key(end, minusDays: $0) }
+        pinned = Set(keys)
+        let missing = keys.filter { byDay[$0] == nil }
+        if !missing.isEmpty { await load(keys: missing) }
+    }
+
+    private func load(keys: [String]) async {
         let loaded: [String: [UInt32: Sample]] = await Task.detached(priority: .utility) {
             var out: [String: [UInt32: Sample]] = [:]
             for k in keys {
@@ -178,7 +192,7 @@ final class DayStore: ObservableObject {
     /// Dagen ouder dan `keepDays` uit het geheugen halen (de app kan wekenlang op de achtergrond blijven draaien).
     private func pruneMemory() {
         let oldest = Self.key(Date(), minusDays: Self.keepDays - 1)
-        for k in byDay.keys where k < oldest { byDay[k] = nil; sortedCache[k] = nil }
+        for k in byDay.keys where k < oldest && !pinned.contains(k) { byDay[k] = nil; sortedCache[k] = nil }
     }
 
     private func sorted(_ k: String) -> [Sample] {

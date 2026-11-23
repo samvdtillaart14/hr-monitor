@@ -103,7 +103,6 @@ struct ContentView: View {
     @EnvironmentObject var ble: BLEManager
     @EnvironmentObject var rec: Recorder
     @EnvironmentObject var whoop: WhoopParser
-    @State private var showDevices = false
     @AppStorage(SettingsView.devKey) private var devMode = false
     @AppStorage(Display.liveMinMax) private var showMinMax = true
     @AppStorage(Display.liveRR) private var showRR = true
@@ -146,7 +145,6 @@ struct ContentView: View {
                     NavigationLink { SettingsView() } label: { Image(systemName: "gearshape") }
                 }
             }
-            .sheet(isPresented: $showDevices) { DeviceSheet(isPresented: $showDevices) }
         }
     }
 
@@ -155,37 +153,17 @@ struct ContentView: View {
         return "\(a) / \(Int(b.rounded())) / \(c)"
     }
 
-    private var statusBar: some View {
-        HStack {
-            Circle().fill(statusColor).frame(width: 10, height: 10)
-                .shadow(color: statusColor, radius: ble.state == .connected ? 6 : 0)
-            Text(statusText).font(.subheadline)
-            Spacer()
-            if ble.state == .connected || ble.state == .connecting {
-                Button("Verbreek", role: .destructive) { ble.disconnect() }
-            } else {
-                Button("Zoek band") { showDevices = true; ble.scan() }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(ble.state == .off || ble.state == .unauthorized)
-            }
-        }
-    }
-
-    private var statusText: String {
-        switch ble.state {
-        case .off: return "Bluetooth staat uit"
-        case .unauthorized: return "Geen Bluetooth-toestemming (Instellingen)"
-        case .idle: return "Niet verbonden"
-        case .scanning: return "Zoeken…"
-        case .connecting: return "Wachten op \(ble.deviceName ?? "band")…"
-        case .connected: return "Verbonden: \(ble.deviceName ?? "band")"
-        }
-    }
-    private var statusColor: Color {
-        switch ble.state {
-        case .connected: return .green
-        case .connecting, .scanning: return .orange
-        default: return .gray
+    /// Alleen als er geen verbinding is: korte verwijzing naar Instellingen (verbinden/verbreken staat daar).
+    @ViewBuilder private var statusBar: some View {
+        if ble.state != .connected {
+            NavigationLink { SettingsView() } label: {
+                HStack {
+                    Circle().fill(ble.state == .connecting || ble.state == .scanning ? Color.orange : Color.gray).frame(width: 10, height: 10)
+                    Text(ble.state == .connecting ? "Wachten op de band…" : "Niet verbonden · verbinden in Instellingen").font(.subheadline)
+                    Spacer()
+                    Image(systemName: "chevron.right").foregroundStyle(Theme.muted)
+                }
+            }.buttonStyle(.plain)
         }
     }
 

@@ -21,6 +21,7 @@ struct SettingsView: View {
 
     var body: some View {
         List {
+            BandConnectionSection()
             Section {
                 NavigationLink { UpdateView() } label: { Label("Update", systemImage: "arrow.down.circle") }
             }

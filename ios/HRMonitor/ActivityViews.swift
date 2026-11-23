@@ -17,6 +17,7 @@ private func fmtDur(_ s: TimeInterval) -> String {
 struct ActivitiesCard: View {
     @EnvironmentObject var acts: ActivityStore
     @ObservedObject var scores: ScoreModel
+    var day: Date = Date()
     @State private var adding = false
     @State private var editing: Activity?
 
@@ -29,7 +30,7 @@ struct ActivitiesCard: View {
                                         from: n.onset, to: n.wake, color: DV.sleep)
                     }
                 }
-                ForEach(acts.on(day: Date())) { a in
+                ForEach(acts.on(day: day)) { a in
                     NavigationLink { ActivityDetailView(id: a.id) } label: {
                         ActivityRowView(icon: a.type.icon, value: a.summary.map { String(format: "%.1f", $0.strain) } ?? "–",
                                         name: a.type.name, from: a.start, to: a.end, color: actBlue, auto: a.auto)
@@ -39,6 +40,7 @@ struct ActivitiesCard: View {
                         Button(role: .destructive) { acts.delete(a.id) } label: { Label("Verwijder", systemImage: "trash") }
                     }
                 }
+                if Calendar.current.isDateInToday(day) {
                 Button { adding = true } label: {
                     Label(acts.ongoing == nil ? "Activiteit toevoegen" : "Activiteit loopt…", systemImage: "plus")
                         .font(.subheadline.weight(.semibold)).tracking(1)
@@ -46,6 +48,7 @@ struct ActivitiesCard: View {
                         .background(Theme.cardHi, in: RoundedRectangle(cornerRadius: 12))
                 }
                 .disabled(acts.ongoing != nil)
+                }
                 // De schakelaar staat in Instellingen; hier alleen een melding als de GPS loopt.
                 if acts.autoSession != nil {
                     Label("GPS loopt: activiteit gedetecteerd", systemImage: "location.fill")
