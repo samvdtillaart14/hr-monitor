@@ -17,6 +17,10 @@ struct Night: Identifiable {
     var metrics = NightMetrics()
     /// minuten dat het telefoonscherm aan stond tussen inslapen en wakker worden
     var phoneMin = 0
+    /// minuten van scherm uit tot inslapen (nil = geen telefoon gebruikt vlak voor het slapen)
+    var latencyMin: Int?
+    /// slaapschuld over de laatste 7 nachten (min)
+    var weekDebtMin = 0.0
 
     var onset: Date { Date(timeIntervalSince1970: r.onset) }
     var wake: Date { Date(timeIntervalSince1970: r.wake) }
@@ -132,6 +136,8 @@ final class ScoreModel: ObservableObject {
             n.efficiency = r.efficiency
             let windows = nights.map { (onset: $0.r.onset, wake: $0.r.wake) } + [(onset: r.onset, wake: r.wake)]
             n.consistency = fin(WhoopScores.sleepConsistency(windows, tzOffsetMin: tz))
+            n.latencyMin = SleepHabits.latencyMin(onset: r.onset, awake: awake)
+            n.weekDebtMin = SleepHabits.weekDebtMin((nights + [n]).map { (asleepMin: Double($0.r.asleepMin), needMin: $0.needMin) })
             n.performance = fin(WhoopScores.sleepPerformance(asleepMin: Double(r.asleepMin), needMin: n.needMin,
                                                              efficiency: r.efficiency, consistency: n.consistency, c))
 
