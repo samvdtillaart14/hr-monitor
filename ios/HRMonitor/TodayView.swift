@@ -13,6 +13,9 @@ struct TodayView: View {
     @State private var lastCompute = Date.distantPast
     @State private var stress: [StressDetailView.Pt] = []
     @State private var measuredMin = 0
+    @ObservedObject private var journal = Journal.shared
+    @AppStorage(Display.todayStressTile) private var showStressTile = true
+    @AppStorage(Display.todayStressChart) private var showStressChart = true
 
     private var night: Night? { scores.lastNight }
     private var pastNights: [Night] { scores.nights.filter { !Calendar.current.isDateInToday($0.date) } }
@@ -29,12 +32,23 @@ struct TodayView: View {
                             .font(.footnote).foregroundStyle(Theme.muted)
                     }
                     ActivitiesCard(scores: scores)
+                    Button { AppRouter.shared.sheet = .journal } label: {
+                        Card(title: "Dagboek") {
+                            HStack {
+                                let n = journal.entries[Journal.key()]?.count
+                                Text(n.map { $0 == 0 ? "Vandaag: niets bijzonders" : "Vandaag: \($0) aangetikt" } ?? "Tik aan wat vandaag gold")
+                                    .font(.subheadline).foregroundStyle(Theme.text)
+                                Spacer()
+                                Image(systemName: "chevron.right").foregroundStyle(Theme.muted)
+                            }
+                        }
+                    }.buttonStyle(.plain)
                     TonightCard()
                     HStack(spacing: Theme.gap) {
                         NavigationLink { HealthMonitorView(model: scores) } label: { healthTile }
-                        NavigationLink { StressDetailView(model: scores) } label: { stressTile }
+                        if showStressTile { NavigationLink { StressDetailView(model: scores) } label: { stressTile } }
                     }.buttonStyle(.plain)
-                    stressChart
+                    if showStressChart { stressChart }
                     weekChart
                     metrics
                     Text("Eigen berekeningen op basis van je banddata; geen officiële Whoop-scores. Scores worden beter naarmate er meer dagen (en nachten) zijn gemeten.")
@@ -64,7 +78,7 @@ struct TodayView: View {
 
     private func recompute() {
         lastCompute = Date()
-        scores.refresh(store: store)
+        scores.refresh(store: store) { InsightNotifications.checkIllness(scores.lastNight) }
         updateStress()
     }
 

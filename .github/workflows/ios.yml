@@ -35,6 +35,11 @@ jobs:
         run: |
           mkdir -p Payload
           cp -R build/Build/Products/Release-iphoneos/HRMonitor.app Payload/
+          # Ad-hoc ondertekenen met de app-groep, zodat AltStore de groep voor app en widget registreert.
+          for x in Payload/HRMonitor.app/PlugIns/*.appex; do
+            [ -d "$x" ] && codesign -f -s - --entitlements Shared/AppGroup.entitlements "$x"
+          done
+          codesign -f -s - --entitlements Shared/AppGroup.entitlements Payload/HRMonitor.app
           zip -qry HRMonitor.ipa Payload
 
       - uses: actions/upload-artifact@v4

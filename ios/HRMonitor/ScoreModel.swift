@@ -157,6 +157,8 @@ final class ScoreModel: ObservableObject {
             let enoughHistory = personalBaseline || history.filter { $0.hrv != nil }.count >= c.recovery.minHistory
             n.recovery = n.metrics.hrv == nil || !enoughHistory ? nil : WhoopScores.recovery(n.metrics, history: history, c)
             n.recoveryNeedsNights = enoughHistory ? 0 : c.recovery.minHistory - history.filter { $0.hrv != nil }.count
+            n.metrics.recovery = n.recovery.map(Double.init)
+            n.metrics.asleepMin = Double(r.asleepMin)
             history.append(n.metrics)
             nights.append(n)
         }
@@ -180,6 +182,9 @@ final class NightArchive {
     func metrics(before key: String, limit: Int) -> [NightMetrics] {
         byDay.keys.filter { $0 < key }.sorted().suffix(limit).compactMap { byDay[$0] }
     }
+
+    /// Alle bewaarde nachten (jjjj-mm-dd → waarden).
+    var all: [String: NightMetrics] { byDay }
 
     func recentRhr(_ n: Int) -> [Double] {
         byDay.keys.sorted().suffix(n).compactMap { byDay[$0]?.rhr }

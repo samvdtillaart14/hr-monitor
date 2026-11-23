@@ -168,6 +168,7 @@ struct SleepDetailView: View {
     @ObservedObject var model: ScoreModel
 
     @AppStorage("ui.sleepDetails") private var showDetails = false
+    @AppStorage(Display.sleepStages) private var showStages = true
     @AppStorage("ui.sleepTrends") private var showTrends = false
     private var n: Night? { model.lastNight ?? model.nights.last }
     private var prev: [Night] { Array(model.nights.dropLast()) }
@@ -179,7 +180,7 @@ struct SleepDetailView: View {
                         label: "Slaap\nprestatie", color: DV.sleep)
                 contributors(n)
                 lastNight(n)
-                stages(n)
+                if showStages { stages(n) }
                 Collapsible(title: "Details", open: $showDetails) {
                     needed(n)
                     consistency(n)

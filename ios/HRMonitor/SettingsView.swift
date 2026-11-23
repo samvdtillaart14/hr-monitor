@@ -75,6 +75,8 @@ struct SettingsView: View {
             } header: { Text("Bandgegevens") } footer: {
                 Text("De app bewaart de data van de band automatisch, steeds de laatste \(BandLog.keepDays) dagen. Delen maakt zip-bestanden van max. 25 MB, klein genoeg om naar Claude te sturen.")
             }
+            InsightSettingsSection()
+            DisplaySettingsSection()
             Section {
                 Toggle("GPS automatisch aan", isOn: $acts.autoGps).tint(Theme.accent)
             } header: { Text("Activiteiten") } footer: {

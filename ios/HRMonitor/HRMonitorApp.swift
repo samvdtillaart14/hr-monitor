@@ -1,6 +1,8 @@
 import SwiftUI
 import Charts
 import UserNotifications
+import Combine
+import WidgetKit
 
 /// Bluetooth, dagopslag, scores en activiteiten bestaan vanaf de start van de app, ook als iOS de app
 /// op de achtergrond opnieuw start voor de band (dan verschijnt er geen scherm en loopt onAppear niet).
@@ -13,18 +15,37 @@ final class AppServices {
     let scores = ScoreModel()
     let screen = ScreenMonitor()
     private(set) lazy var alarm = SleepAlarm(ble: ble, store: store, scores: scores)
+    private var widgetSub: AnyCancellable?
     private init() {
         let alarm = self.alarm
         ble.store = store
         // Bij elke hartslag ook de schermstatus lezen (hooguit 1× per 2 s) en de slimme wekker bijwerken.
         store.onLive = { [weak acts, weak screen, weak alarm] hr in
-            MainActor.assumeIsolated { acts?.live(hr: hr); screen?.poll(); alarm?.tick() }
+            MainActor.assumeIsolated { acts?.live(hr: hr); screen?.poll(); alarm?.tick(); InsightNotifications.checkWeekly() }
         }
         scores.awakeIntervals = { [weak screen] in screen?.wakeIntervals() ?? [] }
         screen.onMorning = { MorningBrief.send(services: AppServices.shared) }
         ble.onAlarmResponse = { [weak alarm] cmd, res, body in MainActor.assumeIsolated { alarm?.bandResponse(cmd: cmd, result: res, body: body) } }
         ble.onWhoopReady = { [weak alarm] in MainActor.assumeIsolated { alarm?.bandResend() } }
         alarm.rearm()
+        InsightNotifications.scheduleJournal()
+        // Widget bijwerken zodra er nieuwe nachtscores zijn.
+        widgetSub = scores.$nights.dropFirst().sink { [weak self] _ in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.updateWidget() } }
+        }
+    }
+
+    func updateWidget() {
+        let n = scores.lastNight
+        let p = alarm.plan()
+        var s = WidgetSnapshot()
+        s.recovery = n?.recovery
+        s.sleepPerf = n?.performance.map { Int($0.rounded()) }
+        s.asleepMin = n?.r.asleepMin
+        s.bedtime = p.bedtime
+        s.wake = p.wake
+        s.save()
+        WidgetCenter.shared.reloadAllTimelines()
     }
 }
 
@@ -44,6 +65,7 @@ struct HRMonitorApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @Environment(\.scenePhase) private var phase
     private let services = AppServices.shared
+    @ObservedObject private var router = AppRouter.shared
     var body: some Scene {
         WindowGroup {
             TabView {
@@ -51,6 +73,12 @@ struct HRMonitorApp: App {
                 ContentView().tabItem { Label("Live", systemImage: "heart.fill") }
                 HealthTab().tabItem { Label("Gezondheid", systemImage: "heart.text.square.fill") }
             }
+                .sheet(item: $router.sheet) { s in
+                    switch s {
+                    case .journal: JournalView()
+                    case .week: WeekReportSheet()
+                    }
+                }
                 .environment(\.locale, DV.nl)
                 .environmentObject(services.store)
                 .environmentObject(services.acts)
@@ -75,6 +103,10 @@ struct ContentView: View {
     @EnvironmentObject var whoop: WhoopParser
     @State private var showDevices = false
     @AppStorage(SettingsView.devKey) private var devMode = false
+    @AppStorage(Display.liveMinMax) private var showMinMax = true
+    @AppStorage(Display.liveRR) private var showRR = true
+    @AppStorage(Display.liveHRV) private var showHRV = true
+    @AppStorage(Display.liveSkin) private var showSkin = true
 
     var body: some View {
         NavigationStack {
@@ -84,10 +116,10 @@ struct ContentView: View {
                     HeartRing(bpm: ble.bpm).padding(.vertical, 12)
                     hrTile
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: Theme.gap), GridItem(.flexible())], spacing: Theme.gap) {
-                        Tile(title: "Min / gem / max", value: mmText, unit: "", small: true, index: 1)
-                        Tile(title: "RR-interval", value: ble.lastRR.map { "\(Int($0))" } ?? "--", unit: "ms", index: 2)
-                        Tile(title: "HRV (RMSSD)", value: ble.rmssd.map { "\(Int($0))" } ?? "--", unit: "ms", index: 3)
-                        Tile(title: "Huidtemp", value: whoop.lastRecord?.skinTemp.map { String(format: "%.1f", $0) } ?? "--", unit: "°C", index: 4)
+                        if showMinMax { Tile(title: "Min / gem / max", value: mmText, unit: "", small: true, index: 1) }
+                        if showRR { Tile(title: "RR-interval", value: ble.lastRR.map { "\(Int($0))" } ?? "--", unit: "ms", index: 2) }
+                        if showHRV { Tile(title: "HRV (RMSSD)", value: ble.rmssd.map { "\(Int($0))" } ?? "--", unit: "ms", index: 3) }
+                        if showSkin { Tile(title: "Huidtemp", value: whoop.lastRecord?.skinTemp.map { String(format: "%.1f", $0) } ?? "--", unit: "°C", index: 4) }
                         Tile(title: "Batterij", value: ble.battery.map(String.init) ?? "--", unit: "%", index: 5)
                         Tile(title: "Zone", value: ble.bpm.map { Theme.zone($0).name } ?? "--", unit: "", small: true, index: 6)
                     }

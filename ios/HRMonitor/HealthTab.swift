@@ -112,6 +112,8 @@ struct HealthTab: View {
     @State private var showProfile = false
     @State private var phoneSteps: Double?
     @State private var stepsLoaded = false
+    @AppStorage(Display.healthAge) private var showAge = true
+    @AppStorage(Display.healthPace) private var showPace = true
 
     private var tips: [Improvement] {
         Improvements.build(ImprovementData.input(model: model, acts: acts, age: age, male: male,
@@ -139,8 +141,17 @@ struct HealthTab: View {
                             Button("Profiel invullen") { showProfile = true }.buttonStyle(.borderedProminent)
                         }
                     }
-                    AgeOrb(bio: hasData ? age.map { $0 + offset } : nil, offset: offset, size: 250)
-                    paceCard
+                    if showAge { AgeOrb(bio: hasData ? age.map { $0 + offset } : nil, offset: offset, size: 250) }
+                    if showPace { paceCard }
+                    NavigationLink { WeekReportView() } label: {
+                        Card(title: "Weekrapport") {
+                            HStack {
+                                Text("Slaap, herstel en trends van deze week, met één advies").font(.subheadline).foregroundStyle(Theme.text)
+                                Spacer()
+                                Image(systemName: "chevron.right").foregroundStyle(Theme.muted)
+                            }
+                        }
+                    }.buttonStyle(.plain)
                     let t = tips
                     NavigationLink { ImprovementsView(tips: t) } label: { ImprovementsCard(tips: t, loading: !stepsLoaded) }
                         .buttonStyle(.plain)
@@ -245,6 +256,7 @@ struct HealthspanView: View {
     let offset: Double
     var hasData = true
     @State private var open: String? = nil
+    @AppStorage(Display.healthWeekAge) private var showWeekAge = true
 
     private var hist: [AgeHistory.Week] { AgeHistory.load() }
 
@@ -252,7 +264,7 @@ struct HealthspanView: View {
         ScrollView {
             VStack(spacing: Theme.gap) {
                 header
-                trendCard
+                if showWeekAge { trendCard }
                 ForEach(["Slaap", "Belasting", "Fitheid"], id: \.self) { g in
                     HStack {
                         Text(g).font(.title2.bold())

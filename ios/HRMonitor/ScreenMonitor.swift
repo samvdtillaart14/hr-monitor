@@ -143,6 +143,7 @@ enum MorningBrief {
         services.store.flush()
         services.scores.refresh(store: services.store) {
             post(text(services.scores.lastNight))
+            InsightNotifications.checkIllness(services.scores.lastNight)
             if task != .invalid { app.endBackgroundTask(task); task = .invalid }
         }
     }
@@ -183,5 +184,11 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationDelegate()
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         [.banner, .list, .sound]
+    }
+    /// Tik op een melding: bijbehorend scherm openen (dagboek, weekrapport).
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        guard let raw = response.notification.request.content.userInfo["sheet"] as? String,
+              let s = AppRouter.Sheet(rawValue: raw) else { return }
+        await MainActor.run { AppRouter.shared.sheet = s }
     }
 }
