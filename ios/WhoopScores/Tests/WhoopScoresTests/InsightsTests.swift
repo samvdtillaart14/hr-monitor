@@ -3,7 +3,15 @@ import XCTest
 
 final class InsightsTests: XCTestCase {
     private func hist() -> [NightMetrics] {
-        (0..<10).map { i in NightMetrics(hrv: 30 + Double(i % 3), rhr: 55 + Double(i % 2), resp: 14 + 0.1 * Double(i % 3), skinTemp: 33.5 + 0.05 * Double(i % 2)) }
+        (0..<10).map { (i: Int) -> NightMetrics in
+            let a: Double = Double(i % 3)
+            let b: Double = Double(i % 2)
+            let hrv: Double = 30 + a
+            let rhr: Double = 55 + b
+            let resp: Double = 14 + 0.1 * a
+            let skin: Double = 33.5 + 0.05 * b
+            return NightMetrics(hrv: hrv, rhr: rhr, resp: resp, skinTemp: skin)
+        }
     }
 
     func testIllnessNeedsTwoSignals() {
