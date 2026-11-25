@@ -117,6 +117,10 @@ struct HealthTab: View {
     @AppStorage(BandMetricsCard.spo2Key) private var showSpo2 = true
     @AppStorage(BandMetricsCard.skinKey) private var showSkin = true
     @AppStorage(BandMetricsCard.respKey) private var showResp = true
+    @AppStorage(HrrCard.key) private var showHrr = true
+    @AppStorage(Vo2Card.key) private var showVo2 = true
+    @AppStorage(SignalsCard.key) private var showSignals = true
+    @AppStorage(InactivityCard.key) private var showInactivity = true
 
     private var tips: [Improvement] {
         Improvements.build(ImprovementData.input(model: model, acts: acts, age: age, male: male,
@@ -149,6 +153,10 @@ struct HealthTab: View {
                     if showSpo2 || showSkin || showResp {
                         BandMetricsCard(spo2: showSpo2, skin: showSkin, resp: showResp, revision: model.nights.count)
                     }
+                    if showInactivity { InactivityCard(nights: model.nights, acts: acts.items) }
+                    if showSignals { SignalsCard(revision: model.nights.count) }
+                    if showVo2 { Vo2Card(revision: model.nights.count) }
+                    if showHrr { HrrCard(acts: acts.items.filter { $0.hrr1 != nil }.sorted { $0.start < $1.start }) }
                     NavigationLink { WeekReportView() } label: {
                         Card(title: "Weekrapport") {
                             HStack {
@@ -544,5 +552,179 @@ struct BandMetricsCard: View {
             }
         }
         .id(revision)
+    }
+}
+
+/// Herstel na inspanning: hoeveel je hartslag zakt in de 1e en 2e minuut na een activiteit.
+struct HrrCard: View {
+    static let key = "band.showHrr"
+    let acts: [Activity]
+
+    var body: some View {
+        Card(title: "Herstel na inspanning") {
+            if let last = acts.last, let one = last.hrr1 {
+                let prior = acts.dropLast().suffix(20).compactMap(\.hrr1)
+                let normal = prior.count >= 3 ? Double(prior.reduce(0, +)) / Double(prior.count) : nil
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("−\(one)").font(Theme.number(34)).monospacedDigit().foregroundStyle(one >= 18 ? Theme.accent : one >= 12 ? Theme.text : Theme.hr)
+                        Text("bpm na 1 min").font(.subheadline).foregroundStyle(Theme.muted)
+                        Spacer()
+                        if let two = last.hrr2 { Text("−\(two) na 2 min").font(.subheadline).foregroundStyle(Theme.text) }
+                    }
+                    Text("\(last.type.name), \(last.effectiveEnd.formatted(.dateTime.locale(DV.nl).weekday(.abbreviated).day().month(.abbreviated)))"
+                         + (normal.map { " · normaal −\(Int($0.rounded()))" } ?? ""))
+                        .font(.caption).foregroundStyle(Theme.muted)
+                    Text("Hoe sneller je hartslag zakt, hoe fitter je hart. Meer dan 18 bpm in de eerste minuut is goed, minder dan 12 is laag.")
+                        .font(.caption).foregroundStyle(Theme.muted)
+                }
+            } else {
+                Text("Verschijnt na een activiteit waarbij de band ook de 2 minuten erna meet. Blijf even verbonden na het stoppen.")
+                    .font(.subheadline).foregroundStyle(Theme.muted)
+            }
+        }
+    }
+}
+
+/// VO2max-schatting (Uth 2004): 15,3 × HRmax / HRrust. HRrust = mediaan van de rust-HR van je laatste 14 nachten.
+struct Vo2Card: View {
+    static let key = "band.showVo2"
+    var revision = 0
+
+    private static func median(_ v: [Double]) -> Double? {
+        guard v.count >= 3 else { return nil }
+        let s = v.sorted(); return s[s.count / 2]
+    }
+
+    var body: some View {
+        let all = NightArchive.shared.all.sorted { $0.key < $1.key }
+        let rhr = all.compactMap(\.value.rhr)
+        let maxHr = UserProfile.maxHr
+        let now = Self.median(Array(rhr.suffix(14))).map { 15.3 * maxHr / $0 }
+        // ±4 weken eerder, als er toen al genoeg nachten waren
+        let earlier = rhr.count >= 42 ? Self.median(Array(rhr.dropLast(28).suffix(14))).map { 15.3 * maxHr / $0 } : nil
+        return Card(title: "VO₂max (geschat)") {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(now.map { "\(Int($0.rounded()))" } ?? "--").font(Theme.number(34)).monospacedDigit().foregroundStyle(Theme.text)
+                    Text("ml/kg/min").font(.subheadline).foregroundStyle(Theme.muted)
+                    Spacer()
+                    if let now, let earlier {
+                        let d = Int((now - earlier).rounded())
+                        Text(d == 0 ? "gelijk aan 4 weken terug" : "\(d > 0 ? "+" : "")\(d) t.o.v. 4 weken terug")
+                            .font(.caption).foregroundStyle(d >= 0 ? Theme.accent : Theme.hr)
+                    }
+                }
+                Text(now == nil ? "Verschijnt na 3 gemeten nachten."
+                     : "Uit je rust-HR (mediaan laatste 14 nachten) en max-HR \(Int(maxHr)) (Uth: 15,3 × max/rust). Onzekerheid ca. ±5. Garmin rekent met hardloopsnelheid tegenover hartslag; verschillen van een paar punten zijn normaal. Vul je echte max-HR in bij je profiel voor een betere schatting.")
+                    .font(.caption).foregroundStyle(Theme.muted)
+            }
+        }
+        .id(revision)
+    }
+}
+
+/// Lichaamssignalen van afgelopen nacht t.o.v. je basislijn; dezelfde regels als de ziekte-waarschuwing.
+struct SignalsCard: View {
+    static let key = "band.showSignals"
+    var revision = 0
+
+    private static let names: [String: String] = ["rhr": "Rust-HR", "hrv": "HRV", "skin": "Huidtemperatuur", "resp": "Ademfrequentie", "spo2": "SpO2 (voorlopig)"]
+    private static func fmt(_ d: Insights.Deviation) -> String {
+        switch d.metric {
+        case "rhr": return String(format: "%.0f bpm (normaal %.0f)", d.value, d.baseline)
+        case "hrv": return String(format: "%.0f ms (normaal %.0f)", d.value, d.baseline)
+        case "skin": return String(format: "%+.1f °C", d.delta).replacingOccurrences(of: ".", with: ",")
+        case "resp": return String(format: "%.1f/min (normaal %.1f)", d.value, d.baseline).replacingOccurrences(of: ".", with: ",")
+        default: return String(format: "%.0f%% (normaal %.0f%%)", d.value, d.baseline)
+        }
+    }
+
+    var body: some View {
+        let all = NightArchive.shared.all.sorted { $0.key < $1.key }
+        let sig: [Insights.Signal] = all.last.map { last in
+            Insights.signals(last.value, history: NightArchive.shared.metrics(before: last.key, limit: 30))
+        } ?? []
+        let off = sig.filter(\.deviates).count
+        return Card(title: "Lichaamssignalen") {
+            VStack(alignment: .leading, spacing: 8) {
+                if sig.isEmpty {
+                    Text("Verschijnt na 6 gemeten nachten: dan is je eigen normaal bekend.").font(.subheadline).foregroundStyle(Theme.muted)
+                } else {
+                    StatusPill(text: off == 0 ? "alles binnen je normaal" : off == 1 ? "1 signaal wijkt af" : "\(off) signalen wijken af",
+                               ok: off < 2)
+                    ForEach(sig, id: \.deviation.metric) { s in
+                        HStack {
+                            Image(systemName: s.deviates ? "exclamationmark.circle.fill" : "checkmark.circle")
+                                .foregroundStyle(s.deviates ? Theme.hr : Theme.accent)
+                            Text(Self.names[s.deviation.metric] ?? s.deviation.metric).font(.subheadline).foregroundStyle(Theme.text)
+                            Spacer()
+                            Text(Self.fmt(s.deviation)).font(.caption).monospacedDigit().foregroundStyle(s.deviates ? Theme.hr : Theme.muted)
+                        }
+                    }
+                    Text("Waarschuwing als 2 signalen tegelijk afwijken, of 1 signaal twee nachten op rij. Geen medisch advies.")
+                        .font(.caption).foregroundStyle(Theme.muted)
+                }
+            }
+        }
+        .id(revision)
+    }
+}
+
+/// Inactiviteit: uren stilzitten per dag (minuten zonder stap volgens de band), slaap en activiteiten tellen niet mee.
+struct InactivityCard: View {
+    static let key = "band.showInactivity"
+    @EnvironmentObject var store: DayStore
+    let nights: [Night]
+    let acts: [Activity]
+    @State private var days: [(date: Date, inactive: Int, measured: Int)] = []
+
+    private static func h(_ m: Int) -> String { "\(m / 60):" + String(format: "%02d", m % 60) }
+
+    var body: some View {
+        let today = days.last
+        let prior = days.dropLast().filter { $0.measured >= 360 }
+        let normal = prior.isEmpty ? nil : prior.map(\.inactive).reduce(0, +) / prior.count
+        Card(title: "Inactiviteit") {
+            VStack(alignment: .leading, spacing: 8) {
+                if let today, today.measured > 0 {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(Self.h(today.inactive)).font(Theme.number(34)).monospacedDigit().foregroundStyle(Theme.text)
+                        Text("uur stil vandaag").font(.subheadline).foregroundStyle(Theme.muted)
+                        Spacer()
+                        if let normal { Text("normaal \(Self.h(normal))").font(.subheadline).foregroundStyle(Theme.muted) }
+                    }
+                    HStack(alignment: .bottom, spacing: 6) {
+                        ForEach(days, id: \.date) { d in
+                            VStack(spacing: 4) {
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(d.date == today.date ? Theme.accent : Theme.cardHi)
+                                    .frame(height: max(2, CGFloat(d.inactive) / 14))
+                                Text(d.date.formatted(.dateTime.locale(DV.nl).weekday(.narrow))).font(.caption2).foregroundStyle(Theme.muted)
+                            }.frame(maxWidth: .infinity)
+                        }
+                    }.frame(height: 80, alignment: .bottom)
+                    Text("Van \(Self.h(today.measured)) gemeten wakkere tijd. Een minuut telt als stil als de band geen stap telt.")
+                        .font(.caption).foregroundStyle(Theme.muted)
+                } else {
+                    Text("Verschijnt zodra de band stappen doorgeeft (historie-sync).").font(.subheadline).foregroundStyle(Theme.muted)
+                }
+            }
+        }
+        .task(id: "\(nights.count)-\(acts.count)-\(store.revision / 100)") { await load() }
+    }
+
+    private func load() async {
+        let cal = Calendar.current, today = cal.startOfDay(for: Date())
+        let excl = nights.map { (start: $0.r.onset, end: $0.r.wake) } + nights.flatMap { n in n.r.naps.map { (start: $0.onset, end: $0.onset + Double($0.minutes) * 60) } }
+            + acts.map { (start: $0.start.timeIntervalSince1970, end: $0.effectiveEnd.timeIntervalSince1970) }
+        let input = (0..<7).reversed().map { k -> (Date, [DayStore.Sample]) in
+            let d = cal.date(byAdding: .day, value: -k, to: today)!
+            return (d, store.samples(day: d))
+        }
+        let out = await Task.detached(priority: .utility) {
+            input.map { d, s in let r = DayStore.inactivity(s, exclude: excl); return (date: d, inactive: r.inactive, measured: r.measured) }
+        }.value
+        days = out.filter { $0.measured > 0 }
     }
 }

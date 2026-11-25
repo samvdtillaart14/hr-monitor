@@ -12,6 +12,10 @@ struct SettingsView: View {
     @AppStorage(BandMetricsCard.spo2Key) private var showSpo2 = true
     @AppStorage(BandMetricsCard.skinKey) private var showSkin = true
     @AppStorage(BandMetricsCard.respKey) private var showResp = true
+    @AppStorage(HrrCard.key) private var showHrr = true
+    @AppStorage(Vo2Card.key) private var showVo2 = true
+    @AppStorage(SignalsCard.key) private var showSignals = true
+    @AppStorage(InactivityCard.key) private var showInactivity = true
     @EnvironmentObject var rec: Recorder
     @EnvironmentObject var raw: RawLogger
     @EnvironmentObject var ble: BLEManager
@@ -93,6 +97,10 @@ struct SettingsView: View {
                 Toggle("Zuurstof (SpO2)", isOn: $showSpo2).tint(Theme.accent)
                 Toggle("Huidtemperatuur", isOn: $showSkin).tint(Theme.accent)
                 Toggle("Ademfrequentie", isOn: $showResp).tint(Theme.accent)
+                Toggle("Herstel na inspanning", isOn: $showHrr).tint(Theme.accent)
+                Toggle("VO₂max (geschat)", isOn: $showVo2).tint(Theme.accent)
+                Toggle("Lichaamssignalen (ziekte)", isOn: $showSignals).tint(Theme.accent)
+                Toggle("Inactiviteit", isOn: $showInactivity).tint(Theme.accent)
             } header: { Text("Band-functies op Gezondheid") } footer: {
                 Text("SpO2 is een voorlopige uitlezing van de band (nog niet bevestigd). Huidtemperatuur toont de afwijking van je eigen normaal.")
             }

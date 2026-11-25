@@ -76,4 +76,19 @@ final class ActivitiesTests: XCTestCase {
         // Mifflin-St Jeor, man 75 kg, 180 cm, 30 jaar: 1730 kcal/dag
         XCTAssertEqual(WhoopScores.restingKcalPerMin(.standard) * 1440, 1730, accuracy: 1e-6)
     }
+
+    func testHeartRateRecovery() {
+        // 150 bpm tot het einde, dan lineair −0,5 bpm/s tot 120 s erna: daling 30 na 1 min, 60 na 2 min.
+        let end = 1_000_000.0
+        let s = (0..<300).map { i -> Sample in
+            let t = end - 120 + Double(i)
+            return Sample(t: t, hr: t < end ? 150 : 150 - 0.5 * (t - end))
+        }
+        let r = WhoopScores.heartRateRecovery(s, end: end)
+        XCTAssertEqual(r.one ?? 0, 30, accuracy: 1)
+        XCTAssertEqual(r.two ?? 0, 60, accuracy: 1)
+        // Geen data na het einde of te lage hartslag: geen waarde.
+        XCTAssertNil(WhoopScores.heartRateRecovery(s.filter { $0.t < end }, end: end).one)
+        XCTAssertNil(WhoopScores.heartRateRecovery(s.map { Sample(t: $0.t, hr: 80) }, end: end).one)
+    }
 }

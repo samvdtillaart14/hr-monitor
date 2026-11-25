@@ -37,6 +37,8 @@ struct Activity: Codable, Identifiable, Equatable {
     var gps: Bool?
     /// afstand uit de GPS-route (m)
     var distanceM: Double?
+    /// herstel na inspanning: hartslagdaling 1 en 2 min na het einde (bpm)
+    var hrr1: Int?, hrr2: Int?
 
     var effectiveEnd: Date { end ?? Date() }
     var duration: TimeInterval { effectiveEnd.timeIntervalSince(start) }
@@ -159,11 +161,14 @@ final class ActivityStore: ObservableObject {
         let known = items.map { (start: $0.start.timeIntervalSince1970 - 120, end: $0.effectiveEnd.timeIntervalSince1970 + 120) }
         let exclude = sleep + known + dismissed.map { (start: $0.lowerBound, end: $0.upperBound) }
         let toSummarize = items.filter { !$0.isOngoing }.map { (id: $0.id, s: $0.start.timeIntervalSince1970, e: $0.effectiveEnd.timeIntervalSince1970) }
+        // Herstel na inspanning: alleen als het einde minstens 2,5 min geleden is en nog niet berekend.
+        let needHrr = items.filter { !$0.isOngoing && $0.hrr1 == nil && $0.effectiveEnd < Date().addingTimeInterval(-150) }
+            .map { (id: $0.id, e: $0.effectiveEnd.timeIntervalSince1970) }
         let ongoing = items.filter(\.isOngoing).map { (id: $0.id, s: $0.start.timeIntervalSince1970, e: Date().timeIntervalSince1970) }
         let c = UserProfile.calibration()
         let detect = !UserDefaults.standard.bool(forKey: Self.autoDetectOffKey)
         Task {
-            let (found, sums) = await Task.detached(priority: .utility) { () -> ([(DetectedActivity, ActivitySummary)], [UUID: ActivitySummary]) in
+            let (found, sums, hrrs) = await Task.detached(priority: .utility) { () -> ([(DetectedActivity, ActivitySummary)], [UUID: ActivitySummary], [UUID: (Int?, Int?)]) in
                 let raw = rawStore.map(ScoreModel.convert)
                 let found = (detect ? WhoopScores.detectActivities(raw, c, exclude: exclude) : []).map {
                     ($0, WhoopScores.activitySummary(raw, start: $0.start, end: $0.end, c))
@@ -173,8 +178,14 @@ final class ActivityStore: ObservableObject {
                     let s = WhoopScores.activitySummary(raw, start: x.s, end: x.e, c)
                     if s.measuredSec > 0 { sums[x.id] = s }
                 }
-                return (found, sums)
+                var hrrs: [UUID: (Int?, Int?)] = [:]
+                for x in needHrr {
+                    let r = WhoopScores.heartRateRecovery(raw, end: x.e)
+                    if r.one != nil { hrrs[x.id] = (r.one, r.two) }
+                }
+                return (found, sums, hrrs)
             }.value
+            for i in self.items.indices { if let h = hrrs[self.items[i].id] { self.items[i].hrr1 = h.0; self.items[i].hrr2 = h.1 } }
             for i in self.items.indices {
                 // Alleen bijwerken als er nu minstens zoveel data is als eerder (oude dagen zijn niet meer geladen).
                 if let s = sums[self.items[i].id], s.measuredSec >= (self.items[i].summary?.measuredSec ?? 0) {
