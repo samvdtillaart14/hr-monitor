@@ -1,6 +1,7 @@
 name: HRMonitor
 options:
   bundleIdPrefix: nl.samvdtillaart
+  developmentLanguage: nl
   deploymentTarget:
     iOS: "17.0"
 packages:

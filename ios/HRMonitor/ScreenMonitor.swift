@@ -176,7 +176,7 @@ enum MorningBrief {
 
     static func post(_ t: (title: String, body: String)) {
         let c = UNMutableNotificationContent()
-        c.title = t.title; c.body = t.body; c.sound = .default
+        c.title = L(t.title); c.body = L(t.body); c.sound = .default
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "ochtend", content: c, trigger: nil))
     }
 }

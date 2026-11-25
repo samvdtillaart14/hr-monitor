@@ -43,7 +43,7 @@ struct StressDetailView: View {
                 .stroke(AngularGradient(colors: [Self.colors[0], DV.good, Theme.zones[3].color, DV.poor], center: .center, startAngle: .degrees(0), endAngle: .degrees(270)),
                         style: StrokeStyle(lineWidth: 12, lineCap: .round))
                 .rotationEffect(.degrees(135))
-            Capsule().fill(.white).frame(width: 5, height: 26).offset(y: -112)
+            Capsule().fill(Theme.text).frame(width: 5, height: 26).offset(y: -112)
                 .rotationEffect(.degrees(-135 + 270 * v / 3))
             // Schaal: 0 links onder, 3 rechts onder.
             HStack {

@@ -41,7 +41,7 @@ struct ExplorerView: View {
                     LabeledContent("Live-pakket (tijd band)", value: t.formatted(date: .omitted, time: .standard))
                 }
                 ForEach(whoop.typeCounts.keys.sorted(), id: \.self) { k in
-                    LabeledContent(String(format: "Type 0x%02X", k), value: "\(whoop.typeCounts[k] ?? 0)")
+                    LabeledContent(String(format: L("Type 0x%02X"), k), value: "\(whoop.typeCounts[k] ?? 0)")
                 }
                 if let r = whoop.lastResponse { LabeledContent("Laatste antwoord", value: r) }
                 if let hr = whoop.liveHR {

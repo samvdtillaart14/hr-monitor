@@ -168,7 +168,7 @@ struct WeekReportView: View {
         ScrollView {
             VStack(spacing: Theme.gap) {
                 Card(title: "Advies voor komende week") { Text(adv.text).font(.body) }
-                Card(title: "Afgelopen 7 dagen · \(a.nights) nachten") {
+                Card(title: String(format: L("Afgelopen 7 dagen · %d nachten"), a.nights)) {
                     row("Herstel", a.recovery, b.recovery, "%.0f%%", higherIsBetter: true)
                     row("Slaap", a.sleepMin, b.sleepMin, nil, higherIsBetter: true)
                     row("Slaapprestatie", a.sleepPerf, b.sleepPerf, "%.0f%%", higherIsBetter: true)
@@ -229,7 +229,7 @@ enum MonthReport {
     }
 
     static func name(_ d: Date) -> String {
-        let f = DateFormatter(); f.locale = Locale(identifier: "nl_NL"); f.dateFormat = "LLLL"
+        let f = DateFormatter(); f.locale = DV.nl; f.dateFormat = "LLLL"
         return f.string(from: d)
     }
 
@@ -261,7 +261,7 @@ struct MonthReportView: View {
         let a = MonthReport.summary(m0), b = MonthReport.summary(m1)
         ScrollView {
             VStack(spacing: Theme.gap) {
-                Card(title: "\(MonthReport.name(m0).capitalized) · \(a.nights) nachten") {
+                Card(title: String(format: L("%@ · %d nachten"), MonthReport.name(m0).capitalized, a.nights)) {
                     row("Herstel", a.week.recovery, b.week.recovery, "%.0f%%", up: true)
                     row("Slaap", a.week.sleepMin, b.week.sleepMin, nil, up: true)
                     row("Slaapprestatie", a.week.sleepPerf, b.week.sleepPerf, "%.0f%%", up: true)
@@ -321,7 +321,7 @@ struct MonthReportSheet: View {
 enum InsightNotifications {
     static func post(_ id: String, _ title: String, _ body: String, sheet: AppRouter.Sheet? = nil) {
         let c = UNMutableNotificationContent()
-        c.title = title; c.body = body; c.sound = .default
+        c.title = L(title); c.body = L(body); c.sound = .default
         if let sheet { c.userInfo = ["sheet": sheet.rawValue] }
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: c, trigger: nil))
     }
@@ -383,7 +383,7 @@ enum InsightNotifications {
         add("rust-HR", a.week.rhr, b.week.rhr, "%.0f", unit: " bpm")
         add("stappen", a.steps, b.steps, "%.0f")
         let month = MonthReport.name(m0)
-        post("maand", "Je maandrapport \(month)", parts.joined(separator: ", ").capitalizedFirst + ". Tik voor alles, vergeleken met \(MonthReport.name(MonthReport.monthStart(2, now: now))).", sheet: .month)
+        post("maand", String(format: L("Je maandrapport %@"), month), parts.joined(separator: ", ").capitalizedFirst + ". Tik voor alles, vergeleken met \(MonthReport.name(MonthReport.monthStart(2, now: now))).", sheet: .month)
     }
 
     /// Na de ochtendberekening: één melding als een waarde duidelijk afwijkt van je eigen normaal
@@ -414,11 +414,11 @@ enum InsightNotifications {
     static func text(_ d: [Insights.Deviation]) -> String {
         d.map { x in
             switch x.metric {
-            case "rhr": return String(format: "rust-HR +%.0f bpm", x.delta)
-            case "hrv": return String(format: "HRV %.0f%% lager", 100 * -x.delta / max(1, x.baseline))
-            case "skin": return String(format: "huidtemp +%.1f °C", x.delta)
-            case "spo2": return String(format: "SpO2 %.0f%% lager", -x.delta)
-            default: return String(format: "ademhaling +%.1f/min", x.delta)
+            case "rhr": return String(format: L("rust-HR +%.0f bpm"), x.delta)
+            case "hrv": return String(format: L("HRV %.0f%% lager"), 100 * -x.delta / max(1, x.baseline))
+            case "skin": return String(format: L("huidtemp +%.1f °C"), x.delta)
+            case "spo2": return String(format: L("SpO2 %.0f%% lager"), -x.delta)
+            default: return String(format: L("ademhaling +%.1f/min"), x.delta)
             }
         }.joined(separator: ", ").capitalizedFirst + "."
     }

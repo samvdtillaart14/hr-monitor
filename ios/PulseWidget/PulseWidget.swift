@@ -1,5 +1,6 @@
 import WidgetKit
 import SwiftUI
+import UIKit
 
 struct Entry: TimelineEntry {
     let date: Date
@@ -28,7 +29,7 @@ private func recColor(_ r: Int?) -> Color {
 private func hex(_ v: UInt32) -> Color {
     Color(red: Double((v >> 16) & 0xFF) / 255, green: Double((v >> 8) & 0xFF) / 255, blue: Double(v & 0xFF) / 255)
 }
-private let sleepC = hex(0x8FA8C8), strainC = hex(0x3B82F6), lineC = Color.white.opacity(0.08)
+private let sleepC = hex(0x8FA8C8), strainC = hex(0x3B82F6), lineC = Color.primary.opacity(0.1)
 
 /// Zelfde ring als op Vandaag: grijze baan, gekleurde boog, getal in het midden, label eronder.
 struct WidgetRing: View {
@@ -41,10 +42,10 @@ struct WidgetRing: View {
                     .stroke(color, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                 Text(text).font(.system(size: 20, weight: .heavy)).monospacedDigit().minimumScaleFactor(0.6).lineLimit(1).padding(6)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
             }
             .frame(width: 78, height: 78)
-            Text(label.uppercased()).font(.system(size: 10, weight: .semibold)).tracking(1.5).foregroundStyle(.white)
+            Text(L(label).uppercased()).font(.system(size: 10, weight: .semibold)).tracking(1.5).foregroundStyle(.primary)
                 .lineLimit(1).minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity)
@@ -66,9 +67,9 @@ struct PulseWidgetView: View {
                 .gaugeStyle(.accessoryCircularCapacity)
         case .accessoryRectangular:
             VStack(alignment: .leading, spacing: 1) {
-                Text("Herstel \(s?.recovery.map { "\($0)%" } ?? "--")").font(.headline)
-                Text("Slaap \(hm(s?.asleepMin))").font(.caption)
-                Text("Bed \(clock(s?.bedtime)) · wekker \(clock(s?.wake))").font(.caption)
+                Text(String(format: L("Herstel %@"), s?.recovery.map { "\($0)%" } ?? "--")).font(.headline)
+                Text(String(format: L("Slaap %@"), hm(s?.asleepMin))).font(.caption)
+                Text(String(format: L("Bed %@ · wekker %@"), clock(s?.bedtime), clock(s?.wake))).font(.caption)
             }
         case .systemMedium:
             HStack(spacing: 4) {
@@ -80,12 +81,12 @@ struct PulseWidgetView: View {
                            text: s?.strain.map { String(format: "%.0f", $0) } ?? "--", color: strainC)
             }
         case .accessoryInline:
-            Text("Herstel \(s?.recovery.map { "\($0)%" } ?? "--") · bed \(clock(s?.bedtime))")
+            Text(String(format: L("Herstel %@ · bed %@"), s?.recovery.map { "\($0)%" } ?? "--", clock(s?.bedtime)))
         default:
             VStack(alignment: .leading, spacing: 6) {
-                Text("HERSTEL").font(.caption2.bold()).foregroundStyle(.secondary)
+                Text(L("Herstel").uppercased()).font(.caption2.bold()).foregroundStyle(.secondary)
                 Text(s?.recovery.map { "\($0)%" } ?? "--").font(.system(size: 34, weight: .bold, design: .rounded)).foregroundStyle(recColor(s?.recovery))
-                Text("Slaap \(hm(s?.asleepMin))\(s?.sleepPerf.map { " · \($0)%" } ?? "")").font(.caption)
+                Text(String(format: L("Slaap %@"), hm(s?.asleepMin) + (s?.sleepPerf.map { " · \($0)%" } ?? ""))).font(.caption)
                 Label(clock(s?.bedtime), systemImage: "moon.zzz.fill").font(.caption)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -97,7 +98,7 @@ struct PulseWidgetView: View {
 struct PulseWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "PulseWidget", provider: Provider()) { e in
-            PulseWidgetView(entry: e).containerBackground(.black, for: .widget)
+            PulseWidgetView(entry: e).containerBackground(Color(UIColor.systemBackground), for: .widget)
         }
         .configurationDisplayName("Pulse")
         .description("Slaap, herstel en belasting zoals op Vandaag.")

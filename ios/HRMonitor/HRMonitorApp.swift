@@ -109,6 +109,7 @@ struct HRMonitorApp: App {
     private let services = AppServices.shared
     @ObservedObject private var router = AppRouter.shared
     @State private var splash = true
+    @AppStorage(Display.appearance) private var appearance = "dark"
     var body: some Scene {
         WindowGroup {
             TabView {
@@ -135,7 +136,7 @@ struct HRMonitorApp: App {
                 .environmentObject(services.ble.raw)
                 .environmentObject(services.ble.whoop)
                 .environmentObject(services.screen)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(Display.scheme(appearance))
                 .tint(Theme.accent)
                 .morningOverview()
         }

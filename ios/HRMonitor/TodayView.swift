@@ -372,7 +372,7 @@ struct ScoreRing: View {
                 Text(text).font(Theme.number(24)).monospacedDigit().minimumScaleFactor(0.6).lineLimit(1).padding(8)
             }
             .frame(width: 100, height: 100)
-            Text(label.uppercased()).font(Theme.label).tracking(2)
+            Text(L(label).uppercased()).font(Theme.label).tracking(2)
         }
         .frame(maxWidth: .infinity)
         .onAppear { withAnimation(Theme.ringAnim.delay(0.1)) { shown = true } }

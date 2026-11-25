@@ -1,4 +1,13 @@
 import Foundation
+import SwiftUI
+
+/// Vertaalde tekst: de Nederlandse tekst is de sleutel; in het Engels komt de vertaling uit en.lproj/Localizable.strings.
+func L(_ s: String) -> String { NSLocalizedString(s, comment: "") }
+
+extension Text {
+    /// Tekst uit een variabele: ook vertalen (letterlijke teksten in Text("…") vertaalt SwiftUI zelf).
+    init(_ s: String) { self.init(verbatim: L(s)) }
+}
 
 /// Gegevens voor de widget, gedeeld via de app-groep (app schrijft, widget leest).
 struct WidgetSnapshot: Codable {
