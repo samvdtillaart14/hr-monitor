@@ -129,4 +129,45 @@ final class RandgevallenTests: XCTestCase {
             XCTAssertTrue(v >= 0 && v <= cal.sleep.debtCapMin)
         }
     }
+
+    // MARK: datagaten en handmatige slaaptijden (25-11-2026)
+
+    func testDataGapInNightDoesNotSplitSleep() throws {
+        let full = try XCTUnwrap(WhoopScores.analyzeNight(night, cal, tzOffsetMin: 0))
+        // Een uur zonder metingen midden in de slaap (app gepauzeerd): zelfde nacht, gat telt niet als wakker.
+        let mid = (full.onset + full.wake) / 2
+        let gapped = night.filter { $0.t < mid - 1800 || $0.t >= mid + 1800 }
+        let r = try XCTUnwrap(WhoopScores.analyzeNight(gapped, cal, tzOffsetMin: 0))
+        XCTAssertEqual(r.onset, full.onset, accuracy: 300)
+        XCTAssertEqual(r.wake, full.wake, accuracy: 300)
+        XCTAssertGreaterThanOrEqual(r.asleepMin, full.asleepMin - 10)
+    }
+
+    func testManualSleepWindowOverridesDetection() throws {
+        let full = try XCTUnwrap(WhoopScores.analyzeNight(night, cal, tzOffsetMin: 0))
+        // Begin een uur vóór de eerste meting (niet gesynct): telt als slaap, eind zoals opgegeven.
+        let start = night[0].t - 3600, end = full.wake - 600
+        let r = try XCTUnwrap(WhoopScores.analyzeNight(night, cal, tzOffsetMin: 0, manual: start..<end))
+        XCTAssertEqual(r.onset, start, accuracy: 60)
+        XCTAssertEqual(r.wake, end, accuracy: 60)
+        XCTAssertEqual(r.inBedMin, Int(((end - start) / 60).rounded()), accuracy: 2)
+        XCTAssertGreaterThanOrEqual(r.asleepMin, 60)
+        // Telefoon 5 min aan midden in de nacht: wakker binnen de slaap, nacht blijft heel.
+        let mid = (start + end) / 2
+        let p = try XCTUnwrap(WhoopScores.analyzeNight(night, cal, tzOffsetMin: 0, awake: [mid..<(mid + 300)], manual: start..<end))
+        XCTAssertEqual(p.onset, start, accuracy: 60)
+        XCTAssertEqual(p.wake, end, accuracy: 60)
+        XCTAssertGreaterThanOrEqual(p.awakeMin, 5)
+    }
+
+    func testPhoneAfterToiletKeepsNightWhole() throws {
+        // 23:00–07:00 slaap met om 03:00 wc + 5 min telefoon (15 min wakker): één nacht.
+        let eps = flatEpochs(day - 3600, 1440)   // 23:00 lokaal (UTC+1) = 22:00 UTC
+        let phone = [(eps[240].t)..<(eps[245].t)]
+        let d = WhoopScores.detectSleep(eps, cal, awake: phone)
+        let r = try XCTUnwrap(WhoopScores.mainSleep(eps, periods: d.periods.filter { $0.lowerBound < 480 }.map { $0.clamped(to: 0..<480) },
+                                                    cal, tzOffsetMin: 60, awake: phone))
+        XCTAssertEqual(r.main.lowerBound, 0)
+        XCTAssertGreaterThanOrEqual(r.main.upperBound, 470)
+    }
 }

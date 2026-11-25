@@ -20,6 +20,7 @@ struct ActivitiesCard: View {
     var day: Date = Date()
     @State private var adding = false
     @State private var editing: Activity?
+    @State private var editingSleep: Night?
 
     var body: some View {
         Card(title: "Activiteiten", index: 1) {
@@ -28,6 +29,9 @@ struct ActivitiesCard: View {
                     NavigationLink { SleepDetailView(model: scores) } label: {
                         ActivityRowView(icon: "moon.fill", value: DV.hm(Double(n.r.asleepMin)), name: "Slaap",
                                         from: n.onset, to: n.wake, color: DV.sleep)
+                    }
+                    .contextMenu {
+                        Button { editingSleep = n } label: { Label("Slaaptijden aanpassen", systemImage: "pencil") }
                     }
                 }
                 ForEach(acts.on(day: day)) { a in
@@ -59,6 +63,62 @@ struct ActivitiesCard: View {
         }
         .sheet(isPresented: $adding) { ActivityEditSheet(existing: nil) }
         .sheet(item: $editing) { ActivityEditSheet(existing: $0) }
+        .sheet(item: $editingSleep) { SleepEditSheet(night: $0, scores: scores) }
+    }
+}
+
+/// Begin en eind van de nacht zelf instellen. Wakker zijn ertussen (wc, telefoon) blijft wakker binnen de slaap;
+/// minuten zonder metingen tellen als slaap. Alle scores van die nacht worden opnieuw berekend.
+struct SleepEditSheet: View {
+    let night: Night
+    @ObservedObject var scores: ScoreModel
+    @EnvironmentObject var store: DayStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var start = Date()
+    @State private var end = Date()
+
+    /// Zelfde venster als de nachtberekening: 18:00 de avond ervoor tot 14:00 die dag.
+    private var range: ClosedRange<Date> {
+        let cal = Calendar.current
+        let prev = cal.date(byAdding: .day, value: -1, to: night.date) ?? night.date
+        let lo = cal.date(bySettingHour: 18, minute: 0, second: 0, of: prev) ?? prev
+        let hi = min(Date(), cal.date(byAdding: .hour, value: 14, to: night.date) ?? night.date)
+        return lo...max(lo, hi)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    DatePicker("In slaap", selection: $start, in: range)
+                    DatePicker("Wakker", selection: $end, in: start...range.upperBound)
+                } footer: {
+                    Text("Wakker worden tussendoor (wc, even op je telefoon) telt als wakker binnen de slaap. Tijd zonder metingen van de band telt als slaap.")
+                }
+                if night.manual {
+                    Section {
+                        Button("Terug naar automatisch", role: .destructive) { save(nil) }
+                    }
+                }
+            }
+            .navigationTitle("Slaap aanpassen").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Annuleer") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Bewaar") { save(start.timeIntervalSince1970..<end.timeIntervalSince1970) }
+                        .disabled(end.timeIntervalSince(start) < 600)
+                }
+            }
+            .onAppear { start = night.onset; end = night.wake }
+        }
+        .presentationDetents([.medium])
+    }
+
+    private func save(_ w: Range<Double>?) {
+        SleepEdits.set(night.date, w)
+        let day = Calendar.current.isDateInToday(night.date) ? nil : night.date
+        scores.refresh(store: store, end: day)
+        dismiss()
     }
 }
 

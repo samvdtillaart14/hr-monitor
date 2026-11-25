@@ -182,6 +182,7 @@ struct SleepDetailView: View {
     @AppStorage("ui.sleepDetails") private var showDetails = false
     @AppStorage(Display.sleepStages) private var showStages = true
     @AppStorage("ui.sleepTrends") private var showTrends = false
+    @State private var editingSleep: Night?
     private var n: Night? { model.lastNight ?? model.nights.last }
     private var prev: [Night] { Array(model.nights.dropLast()) }
 
@@ -190,6 +191,13 @@ struct SleepDetailView: View {
             if let n {
                 BigRing(value: n.performance.map { $0 / 100 }, text: n.performance.map { "\(Int($0.rounded()))%" } ?? "--",
                         label: "Slaap\nprestatie", color: DV.sleep)
+                Button { editingSleep = n } label: {
+                    Label(n.manual ? "Slaaptijden zelf ingesteld · aanpassen" : "Slaaptijden aanpassen", systemImage: "pencil")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity).padding(.vertical, 10)
+                        .background(Theme.cardHi, in: RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
                 contributors(n)
                 SleepHabitsCard(n: n, prev: prev)
                 lastNight(n)
@@ -208,6 +216,7 @@ struct SleepDetailView: View {
                     .foregroundStyle(Theme.muted).padding(.top, 40)
             }
         }
+        .sheet(item: $editingSleep) { SleepEditSheet(night: $0, scores: model) }
     }
 
     private func contributors(_ n: Night) -> some View {

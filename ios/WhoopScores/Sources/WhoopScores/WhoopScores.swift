@@ -172,16 +172,23 @@ public enum WhoopScores {
         let p5 = M.percentile(eps.map { $0.hr }, 0.05)
         let rhr = max(cal.profile.restingHr, p5.isFinite ? p5 : 0)
         let forcedAwake = ScreenActivity.awakeMask(eps, awake)
-        let cand = eps.indices.map { i in
+        var cand = eps.indices.map { i in
             !forcedAwake[i] && moveS[i] < moveThr && (!eps[i].hr.isFinite || eps[i].hr < rhr + c.hrAboveRest) && eps[i].n > 0
         }
+        // Een gat zonder metingen is geen wakker zijn: alleen minuten mét data tellen voor maxGapMin,
+        // zolang het datagat zelf niet langer is dan noDataBridgeMin.
+        let bridge = c.noDataBridgeMin ?? 120
         var runs: [Range<Int>] = []
         var i = 0
         while i < cand.count {
             if !cand[i] { i += 1; continue }
             var j = i; while j < cand.count && cand[j] { j += 1 }
-            if let last = runs.last, i - last.upperBound <= c.maxGapMin { runs[runs.count - 1] = last.lowerBound..<j }
-            else { runs.append(i..<j) }
+            if let last = runs.last {
+                let gap = eps[last.upperBound..<i]
+                let known = gap.filter { $0.n > 0 }.count, unknown = gap.count - known
+                if known <= c.maxGapMin && unknown <= bridge { runs[runs.count - 1] = last.lowerBound..<j }
+                else { runs.append(i..<j) }
+            } else { runs.append(i..<j) }
             i = j + 1
         }
         // los staartje aan het eind van een blok (na >= 5 min wakker) weghalen
@@ -195,6 +202,8 @@ public enum WhoopScores {
                 if g > lo && e - s < c.edgeRunMin && s - g >= 5 { end = g } else { end = e; break }
             }
             runs[r] = lo..<end
+            // overbrugde minuten zonder data binnen het blok tellen als slaap (geen bewijs van wakker zijn)
+            for k in runs[r] where eps[k].n == 0 && !forcedAwake[k] { cand[k] = true }
         }
         return SleepDetection(periods: runs.filter { $0.count >= c.minPeriodMin }, moveThr: moveThr, candidate: cand)
     }
@@ -238,6 +247,8 @@ public enum WhoopScores {
             let t0 = eps[a].t, t1 = eps[min(b, eps.count - 1)].t
             return !awake.contains { $0.lowerBound < t1 && $0.upperBound > t0 }
         }
+        // Tussentijd telt alleen in minuten mét metingen (een datagat is geen wakker zijn).
+        func gapMin(_ a: Int, _ b: Int) -> Int { a < b ? eps[a..<b].filter { $0.n > 0 }.count : 0 }
         var main = longest
         var parts = [longest]
         if night(longest) {
@@ -247,10 +258,10 @@ public enum WhoopScores {
                 for p in periods where !parts.contains(p) {
                     let inside = night(p)
                     let g = inside ? c.nightMergeGapMin : c.nightExtendGapMin   // aansluitend blok buiten de nacht: alleen bij korte onderbreking
-                    if p.upperBound <= main.lowerBound && main.lowerBound - p.upperBound <= g
+                    if p.upperBound <= main.lowerBound && gapMin(p.upperBound, main.lowerBound) <= g
                         && (inside || quietExtension(p, gapFrom: p.upperBound, to: main.lowerBound)) {
                         main = p.lowerBound..<main.upperBound; parts.append(p); grew = true
-                    } else if p.lowerBound >= main.upperBound && p.lowerBound - main.upperBound <= g
+                    } else if p.lowerBound >= main.upperBound && gapMin(main.upperBound, p.lowerBound) <= g
                                 && (inside || quietExtension(p, gapFrom: main.upperBound, to: p.lowerBound)) {
                         main = main.lowerBound..<p.upperBound; parts.append(p); grew = true
                     }
@@ -288,12 +299,33 @@ public enum WhoopScores {
     /// `awake`: periodes waarin je zeker wakker was (telefoonscherm aan); zie ScreenActivity.wakeIntervals.
     public static func analyzeNight(_ samples: [Sample], _ cal: Calibration = .standard, baseline: Calibration.Baseline? = nil,
                                     tzOffsetMin: Double = Double(TimeZone.current.secondsFromGMT()) / 60,
-                                    awake: [Range<Double>] = []) -> NightResult? {
+                                    awake: [Range<Double>] = [], manual: Range<Double>? = nil) -> NightResult? {
         let baseline = baseline ?? cal.recovery.baseline
-        let eps = epochs(samples)
+        var eps = epochs(samples)
         guard !eps.isEmpty else { return nil }
-        let det = detectSleep(eps, cal, awake: awake)
-        guard let ms = mainSleep(eps, periods: det.periods, cal, tzOffsetMin: tzOffsetMin, awake: awake) else { return nil }
+        // Handmatige slaaptijden: epochs aanvullen tot het opgegeven begin/eind (zonder data = slaap).
+        if let m = manual, m.upperBound - m.lowerBound >= 600 {
+            let empty = { (t: Double) in Epoch(t: t, hr: .nan, hrSd: .nan, move: 0, skinTemp: .nan, n: 0) }
+            var pre: [Epoch] = []
+            var t = eps[0].t - 60
+            while t >= m.lowerBound - 60 { pre.append(empty(t)); t -= 60 }
+            eps = pre.reversed() + eps
+            t = eps[eps.count - 1].t + 60
+            while t < m.upperBound { eps.append(empty(t)); t += 60 }
+        }
+        var det = detectSleep(eps, cal, awake: awake)
+        let ms: (main: Range<Int>, naps: [Range<Int>])
+        if let m = manual, m.upperBound - m.lowerBound >= 600 {
+            let lo = eps.firstIndex { $0.t + 60 > m.lowerBound } ?? 0
+            let hi = (eps.lastIndex { $0.t < m.upperBound } ?? eps.count - 1) + 1
+            guard lo < hi else { return nil }
+            let forced = ScreenActivity.awakeMask(eps, awake)
+            for k in lo..<hi where eps[k].n == 0 && !forced[k] { det.candidate[k] = true }
+            ms = (lo..<hi, det.periods.filter { $0.upperBound <= lo || $0.lowerBound >= hi })
+        } else {
+            guard let auto = mainSleep(eps, periods: det.periods, cal, tzOffsetMin: tzOffsetMin, awake: awake) else { return nil }
+            ms = auto
+        }
         let main = ms.main
         let bs = beats(samples)
         let t0 = eps[0].t

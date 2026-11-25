@@ -56,6 +56,9 @@ public struct Calibration: Codable, Equatable, Sendable {
         public var nightStartHour: Double = 22, nightEndHour: Double = 8, nightMergeGapMin: Int = 240
         /// Een blok buiten dat venster hoort toch bij de nacht als het er binnen zoveel minuten op aansluit (uitslapen).
         public var nightExtendGapMin: Int = 60
+        /// Minuten zonder metingen (band niet verbonden, app gepauzeerd) binnen een slaapblok tellen niet als wakker:
+        /// een gat zonder data tot zoveel minuten wordt overbrugd. nil = 120 min (optioneel: oude kalibraties).
+        public var noDataBridgeMin: Int? = nil
         /// …en alleen als de gemiddelde HR in dat blok hooguit zoveel bpm boven die van de hoofdslaap ligt.
         public var extendMaxHrRise: Double? = nil   // nil = 4 bpm (optioneel: oude kalibraties)
         /// Slaap die niet in het nachtvenster valt telt alleen als nacht als hij minstens zo lang duurt (late/verschoven nacht).
