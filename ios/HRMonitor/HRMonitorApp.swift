@@ -16,6 +16,7 @@ final class AppServices {
     let screen = ScreenMonitor()
     private(set) lazy var alarm = SleepAlarm(ble: ble, store: store, scores: scores)
     private var widgetSub: AnyCancellable?
+    private var widgetDaySub: AnyCancellable?
     private init() {
         let alarm = self.alarm
         ble.store = store
@@ -32,6 +33,10 @@ final class AppServices {
         InsightNotifications.scheduleJournal()
         // Widget bijwerken zodra er nieuwe nachtscores zijn.
         widgetSub = scores.$nights.dropFirst().sink { [weak self] _ in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.updateWidget() } }
+        }
+        // Belasting loopt over de dag op: hooguit elk kwartier de widget bijwerken (iOS beperkt het aantal verversingen).
+        widgetDaySub = scores.$days.dropFirst().throttle(for: .seconds(900), scheduler: RunLoop.main, latest: true).sink { [weak self] _ in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.updateWidget() } }
         }
     }
@@ -62,6 +67,7 @@ final class AppServices {
         s.recovery = n?.recovery
         s.sleepPerf = n?.performance.map { Int($0.rounded()) }
         s.asleepMin = n?.r.asleepMin
+        s.strain = scores.today?.strain
         s.bedtime = p.bedtime
         s.wake = p.wake
         s.save()

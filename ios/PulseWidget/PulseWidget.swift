@@ -8,7 +8,7 @@ struct Entry: TimelineEntry {
 
 struct Provider: TimelineProvider {
     func placeholder(in context: Context) -> Entry {
-        Entry(date: Date(), snap: WidgetSnapshot(recovery: 72, sleepPerf: 85, asleepMin: 452, bedtime: Date(), wake: Date()))
+        Entry(date: Date(), snap: WidgetSnapshot(recovery: 72, sleepPerf: 85, asleepMin: 452, strain: 9, bedtime: Date(), wake: Date()))
     }
     func getSnapshot(in context: Context, completion: @escaping (Entry) -> Void) {
         completion(context.isPreview ? placeholder(in: context) : Entry(date: Date(), snap: WidgetSnapshot.load()))
@@ -25,6 +25,32 @@ private func recColor(_ r: Int?) -> Color {
     guard let r else { return .gray }
     return r >= 67 ? accent : r >= 34 ? Color(red: 1, green: 0.8, blue: 0.2) : Color(red: 1, green: 0.3, blue: 0.37)
 }
+private func hex(_ v: UInt32) -> Color {
+    Color(red: Double((v >> 16) & 0xFF) / 255, green: Double((v >> 8) & 0xFF) / 255, blue: Double(v & 0xFF) / 255)
+}
+private let sleepC = hex(0x8FA8C8), strainC = hex(0x3B82F6), lineC = Color.white.opacity(0.08)
+
+/// Zelfde ring als op Vandaag: grijze baan, gekleurde boog, getal in het midden, label eronder.
+struct WidgetRing: View {
+    let label: String, value: Double?, text: String, color: Color
+    var body: some View {
+        VStack(spacing: 6) {
+            ZStack {
+                Circle().stroke(lineC, lineWidth: 7)
+                Circle().trim(from: 0, to: min(1, max(0, value ?? 0)))
+                    .stroke(color, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Text(text).font(.system(size: 20, weight: .heavy)).monospacedDigit().minimumScaleFactor(0.6).lineLimit(1).padding(6)
+                    .foregroundStyle(.white)
+            }
+            .frame(width: 78, height: 78)
+            Text(label.uppercased()).font(.system(size: 10, weight: .semibold)).tracking(1.5).foregroundStyle(.white)
+                .lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
 private func clock(_ d: Date?) -> String { d?.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)) ?? "--:--" }
 private func hm(_ m: Int?) -> String { m.map { "\($0 / 60):" + String(format: "%02d", $0 % 60) } ?? "--" }
 
@@ -43,6 +69,15 @@ struct PulseWidgetView: View {
                 Text("Herstel \(s?.recovery.map { "\($0)%" } ?? "--")").font(.headline)
                 Text("Slaap \(hm(s?.asleepMin))").font(.caption)
                 Text("Bed \(clock(s?.bedtime)) · wekker \(clock(s?.wake))").font(.caption)
+            }
+        case .systemMedium:
+            HStack(spacing: 4) {
+                WidgetRing(label: "Slaap", value: s?.sleepPerf.map { Double($0) / 100 },
+                           text: s?.sleepPerf.map { "\($0)%" } ?? "--", color: sleepC)
+                WidgetRing(label: "Herstel", value: s?.recovery.map { Double($0) / 100 },
+                           text: s?.recovery.map { "\($0)%" } ?? "--", color: recColor(s?.recovery))
+                WidgetRing(label: "Belasting", value: s?.strain.map { $0 / 21 },
+                           text: s?.strain.map { String(format: "%.0f", $0) } ?? "--", color: strainC)
             }
         case .accessoryInline:
             Text("Herstel \(s?.recovery.map { "\($0)%" } ?? "--") · bed \(clock(s?.bedtime))")
@@ -65,7 +100,7 @@ struct PulseWidget: Widget {
             PulseWidgetView(entry: e).containerBackground(.black, for: .widget)
         }
         .configurationDisplayName("Pulse")
-        .description("Herstel, slaap en bedtijd.")
-        .supportedFamilies([.systemSmall, .accessoryCircular, .accessoryRectangular, .accessoryInline])
+        .description("Slaap, herstel en belasting zoals op Vandaag.")
+        .supportedFamilies([.systemMedium, .systemSmall, .accessoryCircular, .accessoryRectangular, .accessoryInline])
     }
 }
