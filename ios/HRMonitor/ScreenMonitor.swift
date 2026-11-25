@@ -144,6 +144,7 @@ enum MorningBrief {
         services.scores.refresh(store: services.store) {
             post(text(services.scores.lastNight))
             InsightNotifications.checkIllness(services.scores.lastNight)
+            InsightNotifications.morningJournal()
             if task != .invalid { app.endBackgroundTask(task); task = .invalid }
         }
     }
