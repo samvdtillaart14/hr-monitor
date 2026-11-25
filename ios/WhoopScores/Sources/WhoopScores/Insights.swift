@@ -66,6 +66,7 @@ public enum Insights {
     public struct WeekSummary: Equatable, Sendable {
         public var nights = 0
         public var recovery: Double?, sleepMin: Double?, sleepPerf: Double?, hrv: Double?, rhr: Double?, consistency: Double?
+        public init() {}
     }
 
     public static func summary(_ ns: [NightMetrics]) -> WeekSummary {

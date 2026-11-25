@@ -108,7 +108,7 @@ struct TodayView: View {
     private func recompute() {
         lastCompute = Date()
         if isToday {
-            scores.refresh(store: store) { InsightNotifications.checkIllness(scores.lastNight) }
+            scores.refresh(store: store) { InsightNotifications.checkIllness(scores.lastNight); InsightNotifications.checkAbnormal(scores.lastNight) }
             updateStress()
         } else {
             let day = selected

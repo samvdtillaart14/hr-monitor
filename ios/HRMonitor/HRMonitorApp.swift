@@ -22,7 +22,7 @@ final class AppServices {
         ble.store = store
         // Bij elke hartslag ook de schermstatus lezen (hooguit 1× per 2 s) en de slimme wekker bijwerken.
         store.onLive = { [weak acts, weak screen, weak alarm] hr in
-            MainActor.assumeIsolated { acts?.live(hr: hr); screen?.poll(); alarm?.tick(); InsightNotifications.checkWeekly() }
+            MainActor.assumeIsolated { acts?.live(hr: hr); screen?.poll(); alarm?.tick(); InsightNotifications.checkWeekly(); InsightNotifications.checkMonthly() }
         }
         scores.awakeIntervals = { [weak screen] in screen?.wakeIntervals() ?? [] }
         screen.onMorning = { MorningBrief.send(services: AppServices.shared) }
@@ -104,6 +104,7 @@ struct HRMonitorApp: App {
                     switch s {
                     case .journal: JournalView().presentationDetents([.large]).interactiveDismissDisabled(false)
                     case .week: WeekReportSheet()
+                    case .month: MonthReportSheet()
                     }
                 }
                 .overlay { if splash { SplashView(visible: $splash).transition(.opacity) } }
