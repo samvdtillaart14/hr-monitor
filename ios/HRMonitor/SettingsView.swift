@@ -6,6 +6,7 @@ import SwiftUI
 struct SettingsView: View {
     static let devKey = "settings.devMode"
     @AppStorage(SettingsView.devKey) private var devMode = false
+    @AppStorage(Recorder.alwaysOffKey) private var alwaysOff = false
     @EnvironmentObject var rec: Recorder
     @EnvironmentObject var raw: RawLogger
     @EnvironmentObject var ble: BLEManager
@@ -84,6 +85,14 @@ struct SettingsView: View {
                 Text("Zet de GPS vanzelf aan bij verhoogde hartslag of als je iPhone hardlopen/fietsen ziet. Kies bij locatie \"Altijd\".")
             }
             Section {
+                Toggle("Altijd alles opnemen", isOn: Binding(get: { !alwaysOff }, set: { on in
+                    alwaysOff = !on
+                    if !on { rec.stop(); raw.stop() }
+                })).tint(Theme.accent)
+            } footer: {
+                Text("Hartslag en alle banddata gaan de hele dag naar Opnames, per dag in een eigen map. Kost ca. 10–50 MB per dag.")
+            }
+            Section {
                 Toggle("Ontwikkelaarsopties", isOn: $devMode).tint(Theme.accent)
                 if devMode {
                     NavigationLink { ExplorerView() } label: { Label("Verkenner (BLE-data en commando's)", systemImage: "antenna.radiowaves.left.and.right") }
@@ -95,10 +104,10 @@ struct SettingsView: View {
                      : "Zet aan om de Verkenner, ruwe opnames en de opnameknop te tonen. Alleen nodig voor het ontcijferen van de banddata.")
             }
             BackupSection()
-            if !devMode && (rec.isRecording || raw.isRecording) {
+            if !devMode && alwaysOff && (rec.isRecording || raw.isRecording) {
                 Section {
-                    if rec.isRecording { Button("Stop hartslagopname", role: .destructive) { rec.stop() } }
-                    if raw.isRecording { Button("Stop ruwe opname", role: .destructive) { raw.stop() } }
+                    if rec.isRecording { Button("Stop hartslagopname", role: .destructive) { alwaysOff = true; rec.stop() } }
+                    if raw.isRecording { Button("Stop ruwe opname", role: .destructive) { alwaysOff = true; raw.stop() } }
                 } footer: { Text("Er loopt nog een opname op de achtergrond.") }
             }
         }

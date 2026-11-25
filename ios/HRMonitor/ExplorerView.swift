@@ -18,7 +18,7 @@ struct ExplorerView: View {
         List {
             Section {
                 Button {
-                    raw.isRecording ? raw.stop() : raw.start()
+                    if raw.isRecording { Recorder.alwaysOn = false; raw.stop() } else { raw.start() }
                 } label: {
                     Label(raw.isRecording ? "Stop ruwe opname (\(raw.rows) regels)" : "Start ruwe opname",
                           systemImage: raw.isRecording ? "stop.circle.fill" : "record.circle")

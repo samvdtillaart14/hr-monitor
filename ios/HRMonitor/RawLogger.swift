@@ -34,7 +34,7 @@ final class RawLogger: ObservableObject {
 
     func start() {
         let url = Recorder.folder.appendingPathComponent(Recorder.fileName(.raw))
-        guard openPart(url) else { return }
+        guard openPart(url) else { failed = true; return }
         rows = 0
         isRecording = true
         UserDefaults.standard.set(url.lastPathComponent, forKey: Self.activeKey)
@@ -74,6 +74,10 @@ final class RawLogger: ObservableObject {
         let short = { (u: String) in u.count > 8 ? String(u.prefix(8)) : u }
         lines.append(Line(text: "\(t.suffix(13)) \(kind) \(short(service))/\(short(char)) [\(data.count)] \(hex) \(note)"))
         if lines.count > 400 { lines.removeFirst(lines.count - 400) }
+        if Recorder.alwaysOn && !failed && (!isRecording || !Recorder.isToday(url)) {
+            if isRecording { stop() }
+            start()
+        }
         if isRecording {
             let line = Data("\(t);\(kind);\(service);\(char);\(data.count);\(hex);\(note)\n".utf8)
             if fileBytes + line.count > FileSplitter.partLimit { rotate() }
@@ -82,7 +86,9 @@ final class RawLogger: ObservableObject {
                 fileBytes += line.count
                 rows += 1
                 if rows % 200 == 0 { UserDefaults.standard.set(rows, forKey: Self.rowsKey) }
-            } else { stop() }
+            } else { stop(); failed = true }
         }
     }
+    /// Schrijven mislukt (opslag vol): niet bij elk pakket opnieuw proberen.
+    private var failed = false
 }

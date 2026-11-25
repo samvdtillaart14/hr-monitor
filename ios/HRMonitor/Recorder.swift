@@ -46,6 +46,17 @@ final class Recorder: ObservableObject {
     static var folderOverride: URL?
 
     private static let activeKey = "recorder.activeFile"
+    /// Altijd alles opnemen (hartslag-CSV en ruwe BLE-data), elke dag een nieuw bestand. Standaard aan.
+    static let alwaysOffKey = "recorder.alwaysOff"
+    static var alwaysOn: Bool {
+        get { !UserDefaults.standard.bool(forKey: alwaysOffKey) }
+        set { UserDefaults.standard.set(!newValue, forKey: alwaysOffKey) }
+    }
+    /// Vandaag als dd-MM, zoals in de bestandsnamen.
+    nonisolated(unsafe) private static let dayF: DateFormatter = { let f = DateFormatter(); f.dateFormat = "dd-MM"; return f }()
+    static func today() -> String { dayF.string(from: Date()) }
+    /// Hoort het bestand bij vandaag? (Na middernacht begint een altijd-aan-opname een nieuw bestand.)
+    static func isToday(_ url: URL?) -> Bool { url?.lastPathComponent.contains("_\(today())_") ?? false }
     private static let rowsKey = "recorder.rows"
 
     /// Hervat een lopende opname als iOS de app op de achtergrond heeft afgesloten en opnieuw gestart.
@@ -90,6 +101,10 @@ final class Recorder: ObservableObject {
     }
 
     func append(time: Date, bpm: Int, rr: [Double], battery: Int?) {
+        if Self.alwaysOn && error == nil && (!isRecording || !Self.isToday(currentURL)) {
+            if isRecording { stop() }
+            start()
+        }
         guard isRecording, let handle else { return }
         let rrs = rr.map { String(Int($0.rounded())) }.joined(separator: " ")
         let line = "\(iso.string(from: time));\(bpm);\(rrs);\(battery.map(String.init) ?? "")\n"
