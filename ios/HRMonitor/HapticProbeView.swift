@@ -55,8 +55,20 @@ struct HapticProbeView: View {
         for b in 4...11 {
             add(0x42, alarm8 { $0[b] = 0x01; $0[12] = 1; $0[13] = 1 }, "Wekker 8, onbekende byte \(b) = 01")
         }
-        // RUN (68) in de 5.0-vorm: wekker 8 meteen laten afgaan.
-        add(0x44, { [0x04, 0x08] }, "RUN: wekker 8 nu laten afgaan (5.0-vorm)")
+        // Delen van het wekkerpakket: ingekort of zonder tijdstip.
+        let buzzTail: [UInt8] = [0, 0, 0x2F, 0x98, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, 0x01, 0x00]
+        let soon = { le32(UInt32(Date().addingTimeInterval(2).timeIntervalSince1970)) }
+        add(0x42, { [0x04, 0x08] }, "SET deel: alleen 04 08 (geen tijd, geen staart)")
+        add(0x42, { [0x04, 0x08] + soon() }, "SET deel: 04 08 + tijd, zonder staart")
+        add(0x42, { [0x04, 0x08] + soon() + Array(buzzTail.prefix(4)) }, "SET deel: tijd + eerste 4 staartbytes")
+        add(0x42, { [0x04, 0x08] + buzzTail }, "SET deel: 04 08 + staart, zonder tijd")
+        add(0x42, { [0x04, 0x08] + Array(buzzTail.suffix(3)) }, "SET deel: 04 08 + laatste 3 staartbytes (01 01 00)")
+        add(0x42, { [0x04, 0x08, 0, 0, 0, 0] + buzzTail }, "SET deel: tijd 0 (= meteen?) + staart")
+        // RUN (68): wekker 8 meteen laten afgaan, kale vorm en met delen van de staart.
+        add(0x44, { [0x04, 0x08] }, "RUN: 04 08")
+        add(0x44, { [0x04, 0x08] + Array(buzzTail.suffix(3)) }, "RUN: 04 08 + 01 01 00")
+        add(0x44, { [0x04, 0x08] + buzzTail }, "RUN: 04 08 + volledige staart")
+        add(0x44, { [0x04, 0x08] + soon() + buzzTail }, "RUN: volledig wekkerpakket")
         return c
     }()
 
