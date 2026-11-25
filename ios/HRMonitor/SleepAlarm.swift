@@ -319,6 +319,16 @@ final class SleepAlarm: ObservableObject {
         }
     }
 
+    /// Meerdere korte trillingen na elkaar (elk via wekker 8), `gap` seconden uit elkaar.
+    func buzz(times: Int, gap: Double = 3) {
+        Task { @MainActor in
+            for i in 0..<times {
+                if i > 0 { try? await Task.sleep(nanoseconds: UInt64(gap * 1e9)) }
+                buzz()
+            }
+        }
+    }
+
     func bandResend() {
         bandSentFor = nil
         if armed != nil { sendBandIfNeeded() }

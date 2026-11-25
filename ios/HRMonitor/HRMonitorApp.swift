@@ -17,6 +17,10 @@ final class AppServices {
     private(set) lazy var alarm = SleepAlarm(ble: ble, store: store, scores: scores)
     private var widgetSub: AnyCancellable?
     private var widgetDaySub: AnyCancellable?
+    private var batterySub: AnyCancellable?
+    /// Band 3× laten trillen bij 5% batterij (standaard aan); opgeslagen als "uit".
+    static let battery5BuzzOffKey = "band.battery5BuzzOff"
+    private static let battery5SentKey = "band.battery5Sent"
     private init() {
         let alarm = self.alarm
         ble.store = store
@@ -30,6 +34,18 @@ final class AppServices {
         ble.onWhoopReady = { [weak alarm] in MainActor.assumeIsolated { alarm?.bandResend() } }
         ble.whoop.onDoubleTap = { [weak self] in MainActor.assumeIsolated { self?.bandTapped() } }
         alarm.rearm()
+        // Bij 5% batterij 3× trillen, één keer per ontlading (opnieuw na opladen tot ≥ 20%).
+        batterySub = ble.$battery.compactMap { $0 }.removeDuplicates().sink { [weak alarm] pct in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    let d = UserDefaults.standard
+                    if pct >= 20 { d.set(false, forKey: Self.battery5SentKey); return }
+                    guard pct <= 5, pct > 0, !d.bool(forKey: Self.battery5SentKey), !d.bool(forKey: Self.battery5BuzzOffKey) else { return }
+                    d.set(true, forKey: Self.battery5SentKey)
+                    alarm?.buzz(times: 3)
+                }
+            }
+        }
         InsightNotifications.scheduleJournal()
         // Widget bijwerken zodra er nieuwe nachtscores zijn.
         widgetSub = scores.$nights.dropFirst().sink { [weak self] _ in
