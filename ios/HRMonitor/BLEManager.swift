@@ -36,7 +36,35 @@ final class BLEManager: NSObject, ObservableObject {
     @Published var contact: String = "-"
     @Published var lastRR: Double?
     @Published var rmssd: Double?
-    @Published var battery: Int? { didSet { if let battery { Self.checkLowBattery(battery) } } }
+    @Published var battery: Int? {
+        didSet {
+            guard let battery else { return }
+            if let old = oldValue, battery > old { lastBatteryRise = Date() }   // stijgt = aan de lader
+            Self.checkLowBattery(battery)
+        }
+    }
+
+    // MARK: band zit niet goed
+
+    /// Melding "Band zit niet goed" (standaard aan); opgeslagen als "uit".
+    static let fitOffKey = "band.fitAlertOff"
+    private var lastBatteryRise = Date.distantPast
+    private var lastValidHr = Date()
+    private var fitAlertSent = false
+    /// Verbonden maar al 10 min geen geldige hartslag (band los, af of slecht contact): één melding,
+    /// opnieuw pas na een geldige hartslag. Niet als de batterij net steeg (opladen).
+    private func checkFit(hr: Int, now: Date) {
+        if hr > 0 { lastValidHr = now; fitAlertSent = false; return }
+        guard !fitAlertSent, now.timeIntervalSince(lastValidHr) > 600,
+              now.timeIntervalSince(lastBatteryRise) > 1800,
+              !UserDefaults.standard.bool(forKey: Self.fitOffKey) else { return }
+        fitAlertSent = true
+        let c = UNMutableNotificationContent()
+        c.title = "Band zit niet goed"
+        c.body = "Al 10 minuten geen hartslag. Schuif de band iets hoger en wat strakker om je pols."
+        c.sound = .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "pasvorm", content: c, trigger: nil))
+    }
 
     /// Melding "Band bijna leeg" (standaard aan); opgeslagen als "uit".
     static let lowBatteryOffKey = "band.lowBatteryOff"
@@ -261,6 +289,7 @@ final class BLEManager: NSObject, ObservableObject {
         else { contact = hr > 0 ? "goed (hartslag ontvangen)" : "geen hartslag" }
 
         let now = Date()
+        checkFit(hr: hr, now: now)
         if sessionStart == nil { sessionStart = now }
         if hr > 0 {
             bpm = hr
@@ -319,6 +348,7 @@ extension BLEManager: CBCentralManagerDelegate {
 
     func centralManager(_ c: CBCentralManager, didConnect p: CBPeripheral) {
         state = .connected
+        lastValidHr = Date()   // telt pas 10 min vanaf verbinden
         deviceName = p.name
         if sessionStart == nil { sessionStart = Date() }
         chars = []; charRefs = [:]
