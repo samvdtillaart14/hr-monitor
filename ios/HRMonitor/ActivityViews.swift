@@ -319,6 +319,7 @@ struct ActivityDetailView: View {
                     Text(fmtDur(a.duration)).font(.subheadline.weight(.bold)).monospacedDigit()
                 }
                 if let sum { zones(sum) }
+                if !a.isOngoing { hrr(a) }
                 stats(a, sum, ps)
                 Text(note(a)).font(.caption).foregroundStyle(Theme.muted)
             }
@@ -387,6 +388,24 @@ struct ActivityDetailView: View {
                 .opacity(frac > 0 ? 1 : 0.45)
                 .padding(14)
                 .background(Theme.cardHi.opacity(0.6), in: RoundedRectangle(cornerRadius: 14))
+            }
+        }
+    }
+
+    /// Herstel na inspanning: hoeveel de hartslag 1 en 2 minuten na het einde daalde.
+    @ViewBuilder private func hrr(_ a: Activity) -> some View {
+        if let h1 = a.hrr1 {
+            HStack {
+                Text("HERSTEL NA INSPANNING").font(Theme.label).tracking(1.5).foregroundStyle(Theme.muted)
+                Spacer()
+                Text("−\(h1) bpm na 1 min" + (a.hrr2.map { " · −\($0) na 2 min" } ?? ""))
+                    .font(.subheadline.weight(.bold)).monospacedDigit()
+            }
+        } else if a.effectiveEnd > Date().addingTimeInterval(-600) {
+            HStack {
+                Text("HERSTEL NA INSPANNING").font(Theme.label).tracking(1.5).foregroundStyle(Theme.muted)
+                Spacer()
+                Text("wordt gemeten (2 min na stoppen)").font(.caption).foregroundStyle(Theme.muted)
             }
         }
     }
@@ -609,5 +628,18 @@ struct RouteCard: View {
 
     private func fmtPace(_ sec: Double) -> String {
         let t = Int(sec.rounded()); return "\(t / 60):\(String(format: "%02d", t % 60))"
+    }
+}
+
+/// Pop-up na een activiteit: dezelfde weergave als het detailscherm, met een Klaar-knop.
+struct ActivitySummarySheet: View {
+    let id: UUID
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        NavigationStack {
+            ActivityDetailView(id: id)
+                .toolbar { ToolbarItem(placement: .topBarLeading) { Button("Klaar") { dismiss() } } }
+        }
+        .presentationDetents([.large])
     }
 }

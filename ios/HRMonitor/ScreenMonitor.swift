@@ -191,6 +191,10 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let req = response.notification.request
         if req.identifier == "ochtend" { await MainActor.run { MorningRouter.shared.show = true }; return }
+        if let s = req.content.userInfo["activity"] as? String, let id = UUID(uuidString: s) {
+            await MainActor.run { AppRouter.shared.activity = .init(id: id) }
+            return
+        }
         guard let raw = req.content.userInfo["sheet"] as? String,
               let s = AppRouter.Sheet(rawValue: raw) else { return }
         await MainActor.run { AppRouter.shared.sheet = s }
