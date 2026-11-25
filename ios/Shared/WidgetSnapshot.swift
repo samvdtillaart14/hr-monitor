@@ -5,6 +5,8 @@ struct WidgetSnapshot: Codable {
     var recovery: Int?
     var sleepPerf: Int?
     var asleepMin: Int?
+    /// belasting van vandaag (0–21)
+    var strain: Double?
     var bedtime: Date?
     var wake: Date?
     var updated = Date()
