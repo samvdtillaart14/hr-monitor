@@ -46,7 +46,9 @@ final class AppServices {
             let w = alarm.schedule.nextWake(after: now.addingTimeInterval(-60))
             if w.rule.enabled && w.date <= now { return }
         }
+        if now.timeIntervalSince(alarm.lastBuzz) < 15 { return }
         guard let r = acts.toggleFromBand(store: store) else { return }
+        if r.started { alarm.buzz() }
         InsightNotifications.post("band-tik", r.started ? "\(r.activity.type.name) gestart" : "\(r.activity.type.name) gestopt",
                                   r.started ? "Tik nog een keer op je band om te stoppen. Soort wijzigen kan op Vandaag."
                                             : "Opgeslagen op Vandaag.")

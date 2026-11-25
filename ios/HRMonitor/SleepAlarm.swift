@@ -306,6 +306,19 @@ final class SleepAlarm: ObservableObject {
     }
 
     /// Na (her)verbinden opnieuw versturen: de band kan een herstart of een Whoop-sync gehad hebben.
+    /// Laatste bevestigingstrilling (dubbeltikken vlak daarna tellen niet als nieuwe tik).
+    private(set) var lastBuzz = Date.distantPast
+    private var awaitingBuzz = false
+    /// Eén korte trilling via een aparte wekker (nr. 8) over 2 s; de echte wekkers (1–7) blijven ongemoeid.
+    func buzz() {
+        guard ble.state == .connected else { return }
+        let u = UInt32(Date().addingTimeInterval(2).timeIntervalSince1970)
+        if send(SleepPlanner.BandAlarm.set, SleepPlanner.BandAlarm.buzzBody(unix: u)) == nil {
+            lastBuzz = Date(); awaitingBuzz = true
+            log("Bevestigingstrilling (wekker 8, 1× 1 s)")
+        }
+    }
+
     func bandResend() {
         bandSentFor = nil
         if armed != nil { sendBandIfNeeded() }
@@ -317,6 +330,9 @@ final class SleepAlarm: ObservableObject {
         if ours { bandAnswered += 1; if result == 1 { bandOk += 1 } }
         log("← \(Self.name(cmd)) \(Self.resultText(result)) [\(hex(body))]" + (ours ? "" : " (niet van ons, bv. Whoop-app)"))
         switch cmd {
+        case SleepPlanner.BandAlarm.set where awaitingBuzz && Date().timeIntervalSince(lastBuzz) < 10:
+            // Antwoord op de bevestigingstrilling: niets aan de echte wekker veranderen.
+            awaitingBuzz = false
         case SleepPlanner.BandAlarm.set:
             guard let p = pendingSet else {
                 // Antwoord op een extra wekker.
