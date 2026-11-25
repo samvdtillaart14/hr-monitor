@@ -10,6 +10,7 @@ struct SettingsView: View {
     @AppStorage(ActivityStore.autoDetectOffKey) private var autoDetectOff = false
     @AppStorage(ActivityStore.summaryOffKey) private var summaryOff = false
     @AppStorage(BLEManager.lowBatteryOffKey) private var lowBatteryOff = false
+    @AppStorage(BLEManager.fitOffKey) private var fitOff = false
     @AppStorage(AppServices.tapActivityKey) private var tapActivity = true
     @AppStorage(BandMetricsCard.spo2Key) private var showSpo2 = true
     @AppStorage(BandMetricsCard.skinKey) private var showSkin = true
@@ -111,6 +112,7 @@ struct SettingsView: View {
                 Toggle("Dubbeltik op band start/stopt activiteit", isOn: $tapActivity).tint(Theme.accent)
                 Toggle("Samenvatting na activiteit", isOn: Binding(get: { !summaryOff }, set: { summaryOff = !$0 })).tint(Theme.accent)
                 Toggle("Melding bij bandbatterij 10%", isOn: Binding(get: { !lowBatteryOff }, set: { lowBatteryOff = !$0 })).tint(Theme.accent)
+                Toggle("Melding als de band niet goed zit", isOn: Binding(get: { !fitOff }, set: { fitOff = !$0 })).tint(Theme.accent)
             } header: { Text("Activiteiten") } footer: {
                 Text("Dubbeltik op de band (behalve in de minuut dat je wekker afgaat) start een activiteit van dezelfde soort als de vorige; nog een dubbeltik stopt hem.")
             }
