@@ -161,10 +161,11 @@ final class ActivityStore: ObservableObject {
         let toSummarize = items.filter { !$0.isOngoing }.map { (id: $0.id, s: $0.start.timeIntervalSince1970, e: $0.effectiveEnd.timeIntervalSince1970) }
         let ongoing = items.filter(\.isOngoing).map { (id: $0.id, s: $0.start.timeIntervalSince1970, e: Date().timeIntervalSince1970) }
         let c = UserProfile.calibration()
+        let detect = !UserDefaults.standard.bool(forKey: Self.autoDetectOffKey)
         Task {
             let (found, sums) = await Task.detached(priority: .utility) { () -> ([(DetectedActivity, ActivitySummary)], [UUID: ActivitySummary]) in
                 let raw = rawStore.map(ScoreModel.convert)
-                let found = WhoopScores.detectActivities(raw, c, exclude: exclude).map {
+                let found = (detect ? WhoopScores.detectActivities(raw, c, exclude: exclude) : []).map {
                     ($0, WhoopScores.activitySummary(raw, start: $0.start, end: $0.end, c))
                 }
                 var sums: [UUID: ActivitySummary] = [:]
@@ -227,6 +228,22 @@ final class ActivityStore: ObservableObject {
     // MARK: automatisch GPS tijdens een activiteit
 
     static let autoGpsKey = "activity.autoGps"
+    /// Activiteiten automatisch herkennen op hartslag (standaard aan); opgeslagen als "uit".
+    static let autoDetectOffKey = "activity.autoDetectOff"
+
+    /// Dubbeltik op de band: loopt er een activiteit, dan stoppen; anders een nieuwe starten
+    /// (soort: dezelfde als de vorige handmatige, anders hardlopen). Geeft de gestarte/gestopte activiteit terug.
+    @discardableResult
+    func toggleFromBand(store: DayStore) -> (started: Bool, activity: Activity)? {
+        if let o = ongoing {
+            stop(o.id, store: store)
+            return items.first { $0.id == o.id }.map { (false, $0) }
+        }
+        let type = items.filter { !$0.auto }.max { $0.start < $1.start }?.type ?? .running
+        let a = Activity(type: type, start: Date(), end: nil)
+        add(a, store: store)
+        return (true, a)
+    }
     private static let pendingKey = "activity.autoRoutes"
     private static let autoSessionKey = "activity.autoSession"
     /// controleert elke 30 s of een automatische opname moet stoppen (ook zonder hartslag of bewegingsmelding)

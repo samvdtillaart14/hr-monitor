@@ -59,6 +59,17 @@ final class WhoopParser: ObservableObject {
     var onRecord: ((Record) -> Void)?
     /// Live HR en RR-intervallen (ms) uit het realtime-pakket 0x28.
     var onLive: ((Int, [Int]) -> Void)?
+    /// Dubbeltik op de band: firmwarelog "IMU double tap detected", of een 0x30-event met een id uit `tapEventIds`.
+    var onDoubleTap: (() -> Void)?
+    /// 0x30-event-ids die een dubbeltik betekenen (nog onbekend; instelbaar via UserDefaults "band.tapEventIds").
+    var tapEventIds: Set<Int> { Set((UserDefaults.standard.array(forKey: "band.tapEventIds") as? [Int]) ?? []) }
+    private var lastTap = Date.distantPast
+    private func doubleTap() {
+        // log en event kunnen allebei komen: één tik binnen 3 s telt één keer
+        guard Date().timeIntervalSince(lastTap) > 3 else { return }
+        lastTap = Date()
+        onDoubleTap?()
+    }
     /// Einde van een historie-burst (0x31 sub 2): de 8 bytes trim (u32 trim + u32, @21) voor de ack (cmd 23).
     var onHistoryEnd: (([UInt8]) -> Void)?
     /// Antwoord op een commando (0x24): cmd, resultaat (0 fout, 1 ok, 2 bezig, 3 niet ondersteund).
@@ -191,8 +202,15 @@ final class WhoopParser: ObservableObject {
             let txt = String(decoding: b[21..<(b.count - 4)].filter { $0 >= 0x20 && $0 < 0x7F || $0 == 0x0A }, as: UTF8.self)
             for line in txt.split(separator: "\n") where !line.trimmingCharacters(in: .whitespaces).isEmpty {
                 logLines.append(String(line))
+                if line.lowercased().contains("double tap") { doubleTap() }
             }
             if logLines.count > 50 { logLines.removeFirst(logLines.count - 50) }
+        case 0x30 where b.count >= 16:
+            // Event: id u16LE @10, tijd u32LE @12. Zichtbaar in de Verkenner om de dubbeltik-id te vinden.
+            let id = u16(b, 10)
+            logLines.append("event \(id) @ \(u32(b, 12))")
+            if logLines.count > 50 { logLines.removeFirst(logLines.count - 50) }
+            if tapEventIds.contains(id) { doubleTap() }
         case 0x24 where b.count >= 13:
             let res = ["mislukt", "ok", "bezig", "niet ondersteund"]
             lastResponse = "cmd \(b[10]) → " + (Int(b[12]) < res.count ? res[Int(b[12])] : "code \(b[12])")
