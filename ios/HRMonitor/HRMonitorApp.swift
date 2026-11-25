@@ -180,7 +180,7 @@ struct ContentView: View {
     private var recordSection: some View {
         VStack(spacing: 8) {
             Button {
-                rec.isRecording ? rec.stop() : rec.start()
+                if rec.isRecording { Recorder.alwaysOn = false; rec.stop() } else { rec.start() }
             } label: {
                 Label(rec.isRecording ? "Stop opname" : "Start opname",
                       systemImage: rec.isRecording ? "stop.circle.fill" : "record.circle")
@@ -238,8 +238,11 @@ struct DeviceSheet: View {
     }
 }
 
+/// Opnames in mappen per dag (bv. "25 nov"), daarbinnen deel 1, deel 2, … op tijd.
 struct FilesView: View {
     @EnvironmentObject var rec: Recorder
+    /// nil = overzicht met dagmappen; anders de opnames van die dag (dd-MM).
+    var day: String? = nil
     @State private var busy: String?
     @State private var share: ShareItems?
     @State private var failure: String?
@@ -264,6 +267,42 @@ struct FilesView: View {
         return order.map { Recording(stem: $0, parts: map[$0]!.sorted { FileSplitter.partNumber($0) < FileSplitter.partNumber($1) }) }
     }
 
+    /// Dag (dd-MM) en tijd (uu:mm) uit de bestandsnaam, bv. WHOOP-HISTORIE_25-11_21u14-03 of WHOOP-HISTORIE_25-11.
+    static func dayAndTime(_ stem: String) -> (day: String, time: String?)? {
+        let parts = stem.split(separator: "_").map(String.init)
+        guard let i = parts.firstIndex(where: { $0.count == 5 && $0.dropFirst(2).first == "-" && $0.replacingOccurrences(of: "-", with: "").allSatisfy(\.isNumber) })
+        else { return nil }
+        var time: String?
+        if i + 1 < parts.count, let u = parts[i + 1].firstIndex(of: "u") {
+            let p = parts[i + 1]
+            time = p[..<u] + ":" + p[p.index(after: u)...].prefix(2)
+        }
+        return (parts[i], time)
+    }
+
+    /// "25-11" → "25 nov"; dagen sorteren nieuwste eerst (jaargrens: een maand ná nu is vorig jaar).
+    static func dayTitle(_ d: String) -> String {
+        let m = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"]
+        let p = d.split(separator: "-").compactMap { Int($0) }
+        guard p.count == 2, (1...12).contains(p[1]) else { return d }
+        return "\(p[0]) \(m[p[1] - 1])"
+    }
+    static func daySortKey(_ d: String) -> Int {
+        let p = d.split(separator: "-").compactMap { Int($0) }
+        guard p.count == 2 else { return 0 }
+        let now = Calendar.current.dateComponents([.month, .year], from: Date())
+        let year = (now.year ?? 2026) - (p[1] > (now.month ?? 12) ? 1 : 0)
+        return year * 10000 + p[1] * 100 + p[0]
+    }
+
+    private var byDay: [(day: String, recs: [Recording])] {
+        var map: [String: [Recording]] = [:]
+        for r in recordings { map[Self.dayAndTime(r.stem)?.day ?? "overig", default: []].append(r) }
+        return map.keys.sorted { Self.daySortKey($0) > Self.daySortKey($1) }.map { k in
+            (k, map[k]!.sorted { (Self.dayAndTime($0.stem)?.time ?? "") < (Self.dayAndTime($1.stem)?.time ?? "") })
+        }
+    }
+
     private func isActive(_ r: Recording) -> Bool {
         let raw = UserDefaults.standard.string(forKey: RawLogger.activeKey)
         return r.parts.contains { (rec.isRecording && $0 == rec.currentURL) || $0.lastPathComponent == raw }
@@ -271,13 +310,40 @@ struct FilesView: View {
 
     var body: some View {
         List {
-            ForEach(recordings) { r in
+            if let day {
+                dayList(byDay.first { $0.day == day }?.recs ?? [])
+            } else {
+                ForEach(byDay, id: \.day) { d in
+                    NavigationLink { FilesView(day: d.day) } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "folder.fill").foregroundStyle(Theme.accent).frame(width: 24)
+                            Text(d.day == "overig" ? "Overig" : Self.dayTitle(d.day)).font(.headline).foregroundStyle(Theme.text)
+                            Spacer()
+                            Text("\(d.recs.count) \(d.recs.count == 1 ? "deel" : "delen") · " + ByteCountFormatter.string(fromByteCount: Int64(d.recs.reduce(0) { $0 + $1.size }), countStyle: .file))
+                                .font(.caption).foregroundStyle(Theme.muted)
+                        }
+                    }
+                }
+            }
+        }
+        .overlay { if rec.files.isEmpty { Text("Nog geen opnames").foregroundStyle(.secondary) } }
+        .navigationTitle(day.map { $0 == "overig" ? "Overig" : Self.dayTitle($0) } ?? "Opnames")
+        .onAppear { rec.refresh(); if day == nil { rec.splitLargeFiles() } }
+        .sheet(item: $share) { ShareSheet(items: $0.urls) }
+        .alert("Zippen mislukt", isPresented: .init(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
+            Button("OK") {}
+        } message: { Text(failure ?? "") }
+    }
+
+    @ViewBuilder private func dayList(_ recs: [Recording]) -> some View {
+            ForEach(Array(recs.enumerated()), id: \.element.id) { idx, r in
                 let kind = r.parts.first.flatMap(Recorder.Kind.of)
+                let time = Self.dayAndTime(r.stem)?.time
                 let row = HStack(spacing: 12) {
                     Image(systemName: kind?.icon ?? "doc.text").foregroundStyle(Theme.accent).frame(width: 24)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(kind?.title ?? "Bestand").font(.headline).foregroundStyle(Theme.text)
-                        Text(r.stem).font(.caption.monospaced()).foregroundStyle(Theme.muted)
+                        Text("Deel \(idx + 1)" + (time.map { " · \($0)" } ?? " · hele dag")).font(.headline).foregroundStyle(Theme.text)
+                        Text(kind?.title ?? r.stem).font(.caption).foregroundStyle(Theme.muted)
                     }
                     Spacer()
                     if busy == r.stem { ProgressView() } else {
@@ -304,14 +370,6 @@ struct FilesView: View {
                     }
                 }
             }
-        }
-        .overlay { if rec.files.isEmpty { Text("Nog geen opnames").foregroundStyle(.secondary) } }
-        .navigationTitle("Opnames")
-        .onAppear { rec.refresh(); rec.splitLargeFiles() }
-        .sheet(item: $share) { ShareSheet(items: $0.urls) }
-        .alert("Zippen mislukt", isPresented: .init(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
-            Button("OK") {}
-        } message: { Text(failure ?? "") }
     }
 
     /// Zipt alle delen op de achtergrond (max. 25 MB per zip) en opent het deelmenu met alle zips tegelijk.

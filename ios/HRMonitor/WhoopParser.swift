@@ -70,7 +70,10 @@ final class WhoopParser: ObservableObject {
     @Published private(set) var bursts = 0
     private var seen = Set<UInt32>()
     private var file: FileHandle?
+    /// Dag (dd-MM) van het open historiebestand: alle records van één dag komen in één bestand.
+    private var fileDay: String?
     private var writeFailed = false
+    private let dayFmt: DateFormatter = { let f = DateFormatter(); f.dateFormat = "dd-MM"; return f }()
     private let iso = ISO8601DateFormatter()
 
     static func crc16Modbus(_ b: ArraySlice<UInt8>) -> UInt16 {
@@ -207,13 +210,19 @@ final class WhoopParser: ObservableObject {
         lastAccel = (i16(28), i16(228), i16(428))
     }
 
-    /// Historische records worden direct naar whoop_historie_<datum>.csv geschreven.
+    /// Historische records gaan naar één bestand per dag van de meting: WHOOP-HISTORIE_<dd-MM>.csv.
+    /// Een nieuwe synchronisatie op dezelfde dag vult dat bestand aan in plaats van een nieuw (klein) bestand te maken.
     private func write(_ r: Record) {
+        let day = dayFmt.string(from: Date(timeIntervalSince1970: TimeInterval(r.time)))
+        if file != nil && fileDay != day { try? file?.close(); file = nil }
         if file == nil {
             if writeFailed { return }
-            let url = Recorder.folder.appendingPathComponent(Recorder.fileName(.whoopHistory))
-            guard FileManager.default.createFile(atPath: url.path, contents: Data("tijd;hr_bpm;huidtemp_c;rr_ms;q0;q1;q2;q3;temp2_c;temp3_c\n".utf8)) else { writeFailed = true; return }
+            let url = Recorder.folder.appendingPathComponent("\(Recorder.Kind.whoopHistory.rawValue)_\(day).csv")
+            if !FileManager.default.fileExists(atPath: url.path) {
+                guard FileManager.default.createFile(atPath: url.path, contents: Data("tijd;hr_bpm;huidtemp_c;rr_ms;q0;q1;q2;q3;temp2_c;temp3_c\n".utf8)) else { writeFailed = true; return }
+            }
             file = FileHandle.appending(to: url)
+            fileDay = day
         }
         let t = iso.string(from: Date(timeIntervalSince1970: TimeInterval(r.time)))
         let temp = r.skinTemp.map { String(format: "%.2f", $0).replacingOccurrences(of: ".", with: ",") } ?? ""
@@ -226,7 +235,7 @@ final class WhoopParser: ObservableObject {
     }
 
     func reset() {
-        try? file?.close(); file = nil; writeFailed = false
+        try? file?.close(); file = nil; fileDay = nil; writeFailed = false
         seen = []; records = 0; frames = 0; badFrames = 0; typeCounts = [:]; lastRecord = nil
     }
 }
