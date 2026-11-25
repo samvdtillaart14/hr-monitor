@@ -94,6 +94,14 @@ final class ScoreModel: ObservableObject {
                 let conv = input.map { ($0.0, $0.1.map(Self.convert), $0.2.map(Self.convert)) }
                 return Self.compute(conv, fixedCal, prior: prior, personalBaseline: personal, awake: awake, manual: manual)
             }.value
+            // Vermoedelijke SpO2 per nacht: mediaan van de bandwaarden tussen inslapen en wakker worden.
+            var n = n
+            for i in n.indices {
+                let lo = UInt32(n[i].r.onset), hi = UInt32(n[i].r.wake)
+                let v = input.first { Calendar.current.isDate($0.0, inSameDayAs: n[i].date) }?.1
+                    .filter { $0.t >= lo && $0.t <= hi }.compactMap(\.spo2).sorted() ?? []
+                if v.count >= 30 { n[i].metrics.spo2 = Double(v[v.count / 2]) }
+            }
             self.nights = n; self.days = dl; self.anchor = endDay; self.busy = false
             if self.rerun { self.rerun = false; self.refresh(store: store, end: self.requestedEnd) }
             else { let w = self.waiters; self.waiters = []; w.forEach { $0() } }

@@ -20,6 +20,8 @@ final class WhoopParser: ObservableObject {
         var temp2: Double = 0, temp3: Double = 0
         /// Stappenteller (u16LE @61), cumulatief sinds de laatste herstart van de band.
         var steps: Int?
+        /// Vermoedelijk SpO2-schatting in % (u8 @106; 0x80 = ongeldig). Nog niet bevestigd.
+        var spo2: Int?
     }
 
     @Published private(set) var frames = 0
@@ -169,6 +171,7 @@ final class WhoopParser: ObservableObject {
             rec.temp2 = Double(u16(b, 69)) / 10
             rec.temp3 = Double(u16(b, 71)) / 10
             rec.steps = u16(b, 61)
+            if (70...100).contains(Int(b[106])) { rec.spo2 = Int(b[106]) }
             lastRecord = rec
             if seen.count > 200_000 { seen.removeAll() }   // geheugen begrenzen; DayStore ontdubbelt ook
             if seen.insert(t).inserted {
