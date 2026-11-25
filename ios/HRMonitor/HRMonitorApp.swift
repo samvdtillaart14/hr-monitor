@@ -36,13 +36,15 @@ final class AppServices {
         }
     }
 
-    /// Dubbeltik op de band. Rond een wekker (40 min ervoor tot 20 min erna) is de tik voor de wekker;
+    /// Dubbeltik op de band. In de eerste minuut nadat de wekker afgaat is de tik voor de wekker;
     /// anders start of stopt hij een activiteit, met een melding als bevestiging.
     func bandTapped(now: Date = Date()) {
         guard UserDefaults.standard.object(forKey: Self.tapActivityKey) as? Bool ?? true else { return }
+        // Alleen de eerste minuut nadat de wekker afgaat is een dubbeltik voor de wekker.
+        if now.timeIntervalSince(alarm.lastFired) >= 0 && now.timeIntervalSince(alarm.lastFired) < 60 { return }
         if alarm.schedule.enabled {
-            let w = alarm.schedule.nextWake(after: now.addingTimeInterval(-20 * 60))
-            if w.rule.enabled && w.date.timeIntervalSince(now) < 40 * 60 { return }
+            let w = alarm.schedule.nextWake(after: now.addingTimeInterval(-60))
+            if w.rule.enabled && w.date <= now { return }
         }
         guard let r = acts.toggleFromBand(store: store) else { return }
         InsightNotifications.post("band-tik", r.started ? "\(r.activity.type.name) gestart" : "\(r.activity.type.name) gestopt",

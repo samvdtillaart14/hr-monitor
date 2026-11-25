@@ -212,9 +212,12 @@ final class SleepAlarm: ObservableObject {
     }
 
     /// Slim doel gehaald: de band nu laten trillen.
+    /// Moment dat slim wekken de band liet trillen (gaat ~5 s later af).
+    private(set) var lastFired = Date.distantPast
     private func fire() {
         guard var a = armed else { return }
         a.fired = true; armed = a; saveArmed()
+        lastFired = Date().addingTimeInterval(5)
         // RUN (cmd 68) werkt niet op de 5.0: de wekker op de band over 5 s zetten.
         if ble.state == .connected, sendSet(Date().addingTimeInterval(5), variant: variant) == nil {
             bandStatus = "Doel gehaald: band gevraagd nu te trillen (\(Self.clock(Date(), seconds: true)))."
