@@ -51,7 +51,7 @@ struct TodayView: View {
                         Card(title: "Dagboek") {
                             HStack {
                                 let n = journal.entries[Journal.key()]?.count
-                                Text(n.map { $0 == 0 ? "Vandaag: niets bijzonders" : "Vandaag: \($0) aangetikt" } ?? "Tik aan wat vandaag gold")
+                                Text(n.map { $0 == 0 ? "\(Journal.dayWord().capitalized): niets bijzonders" : "\(Journal.dayWord().capitalized): \($0) aangetikt" } ?? "Tik aan wat \(Journal.dayWord()) gold")
                                     .font(.subheadline).foregroundStyle(Theme.text)
                                 Spacer()
                                 Image(systemName: "chevron.right").foregroundStyle(Theme.muted)

@@ -5,11 +5,10 @@ import WhoopScores
 // MARK: instellingen
 
 enum InsightSettings {
-    static let journalKey = "insights.journal", journalHourKey = "insights.journalHour"
+    static let journalKey = "insights.journal"
     static let weeklyKey = "insights.weekly", illnessKey = "insights.illness"
     static let lastWeeklyKey = "insights.lastWeekly", lastIllnessKey = "insights.lastIllness"
     static func on(_ k: String) -> Bool { UserDefaults.standard.object(forKey: k) as? Bool ?? true }
-    static var journalHour: Double { UserDefaults.standard.object(forKey: journalHourKey) as? Double ?? 21.5 }
 }
 
 /// Opent een scherm na een tik op een melding.
@@ -41,8 +40,12 @@ final class Journal: ObservableObject {
         }
     }
 
-    /// Dag van het dagboek: vóór 05:00 hoort nog bij de avond ervoor.
-    nonisolated static func key(_ d: Date = Date()) -> String { DayStore.dayFmt.string(from: d.addingTimeInterval(-5 * 3600)) }
+    /// Dag van het dagboek. Je vult 's ochtends in over gisteren: vóór 14:00 hoort bij de dag ervoor.
+    nonisolated static func key(_ d: Date = Date()) -> String { DayStore.dayFmt.string(from: d.addingTimeInterval(-14 * 3600)) }
+    /// "gisteren" of "vandaag", voor teksten.
+    nonisolated static func dayWord(_ d: Date = Date()) -> String {
+        key(d) == DayStore.dayFmt.string(from: d) ? "vandaag" : "gisteren"
+    }
 
     func toggle(_ tag: String, day: String = Journal.key()) {
         var s = entries[day] ?? []
@@ -94,7 +97,7 @@ struct JournalView: View {
                         }.disabled(newTag.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 } header: { Text("Vandaag") } footer: {
-                    Text("Tik aan wat vandaag gold. Niets aangetikt telt ook: dat is je vergelijking.")
+                    Text("Tik aan wat \(Journal.dayWord()) gold. Niets aangetikt telt ook: dat is je vergelijking.")
                 }
                 Section {
                     let e = j.effects()
@@ -109,7 +112,7 @@ struct JournalView: View {
             }
             .scrollContentBackground(.hidden)
             .background(Theme.bg.ignoresSafeArea())
-            .navigationTitle("Dagboek")
+            .navigationTitle(Journal.dayWord() == "gisteren" ? "Hoe was gisteren?" : "Dagboek")
             .toolbar { Button("Klaar") { j.markEmpty(day: day); dismiss() } }
         }
     }
@@ -215,17 +218,16 @@ enum InsightNotifications {
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: c, trigger: nil))
     }
 
-    /// Dagelijkse dagboekherinnering (vaste tijd, ook als de app niet draait).
+    /// De dagboekherinnering komt 's ochtends met de ochtendmelding (zie `morningJournal`);
+    /// een oude vaste avondherinnering wordt hier opgeruimd.
     static func scheduleJournal() {
-        let center = UNUserNotificationCenter.current()
-        center.removePendingNotificationRequests(withIdentifiers: ["dagboek"])
-        guard InsightSettings.on(InsightSettings.journalKey) else { return }
-        let h = InsightSettings.journalHour
-        var dc = DateComponents(); dc.hour = Int(h); dc.minute = Int((h - Double(Int(h))) * 60)
-        let c = UNMutableNotificationContent()
-        c.title = "Dagboek"; c.body = "Hoe was je dag? Tik aan wat gold (alcohol, laat eten, sport…)."
-        c.userInfo = ["sheet": AppRouter.Sheet.journal.rawValue]
-        center.add(UNNotificationRequest(identifier: "dagboek", content: c, trigger: UNCalendarNotificationTrigger(dateMatching: dc, repeats: true)))
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["dagboek"])
+    }
+
+    /// 's Ochtends, samen met de ochtendmelding: vraag naar gisteren als dat nog niet is ingevuld.
+    static func morningJournal() {
+        guard InsightSettings.on(InsightSettings.journalKey), Journal.shared.entries[Journal.key()] == nil else { return }
+        post("dagboek", "Dagboek", "Hoe was gisteren? Tik aan wat gold (alcohol, laat eten, sport…).", sheet: .journal)
     }
 
     /// Weekrapport op zondag vanaf 19:00, één keer per week (loopt mee op de hartslag, dus ook op de achtergrond).
@@ -274,14 +276,12 @@ private extension String {
 
 struct InsightSettingsSection: View {
     @AppStorage(InsightSettings.journalKey) private var journal = true
-    @AppStorage(InsightSettings.journalHourKey) private var hour = 21.5
     @AppStorage(InsightSettings.weeklyKey) private var weekly = true
     @AppStorage(InsightSettings.illnessKey) private var illness = true
 
     var body: some View {
         Section {
-            Toggle("Dagboekherinnering", isOn: $journal)
-            if journal { Stepper("Om \(SettingsView.clock(hour))", value: $hour, in: 17...23.5, step: 0.5) }
+            Toggle("Dagboekherinnering ('s ochtends)", isOn: $journal)
             Toggle("Weekrapport (zondag 19:00)", isOn: $weekly)
             Toggle("Ziekte-waarschuwing", isOn: $illness)
         } header: { Text("Inzichten") } footer: {
@@ -289,6 +289,5 @@ struct InsightSettingsSection: View {
         }
         .tint(Theme.accent)
         .onChange(of: journal) { _, _ in InsightNotifications.scheduleJournal() }
-        .onChange(of: hour) { _, _ in InsightNotifications.scheduleJournal() }
     }
 }
