@@ -305,7 +305,7 @@ struct SleepDetailView: View {
                         ZStack(alignment: .leading) {
                             Capsule().fill(Theme.line)
                             if let lo = typ.min(), let hi = typ.max(), typ.count >= 2 {
-                                Rectangle().fill(Color.white.opacity(0.14))
+                                Rectangle().fill(Theme.faint(0.14))
                                     .frame(width: max(3, g.size.width * (hi - lo))).offset(x: g.size.width * lo)
                             }
                             Capsule().fill(r.2).frame(width: max(6, g.size.width * frac))
@@ -395,7 +395,7 @@ struct SleepDetailView: View {
     private func timeline(_ n: Night, _ on: @escaping (Stage) -> Bool) -> some View {
         Canvas { ctx, size in
             let N = max(1, n.r.stages.count), w = size.width / CGFloat(N)
-            ctx.fill(Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 4), with: .color(.white.opacity(0.06)))
+            ctx.fill(Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 4), with: .color(Theme.faint(0.06)))
             for (k, s) in n.r.stages.enumerated() where on(s) {
                 ctx.fill(Path(CGRect(x: CGFloat(k) * w, y: 0, width: w + 0.5, height: size.height)), with: .foreground)
             }

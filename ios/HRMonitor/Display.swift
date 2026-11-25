@@ -2,6 +2,9 @@ import SwiftUI
 
 /// Welke onderdelen zichtbaar zijn (Instellingen › Weergave). Standaard alles aan.
 enum Display {
+    /// Weergave: "system", "light" of "dark" (standaard donker, zoals altijd).
+    static let appearance = "ui.appearance"
+    static func scheme(_ v: String) -> ColorScheme? { v == "light" ? .light : v == "system" ? nil : .dark }
     static let liveMinMax = "ui.show.live.minmax"
     static let liveSkin = "ui.show.live.skin"
     static let todayStressTile = "ui.show.today.stressTile"
@@ -23,7 +26,14 @@ struct DisplaySettingsSection: View {
     @AppStorage(Display.healthPace) private var pace = true
     @AppStorage(Display.healthWeekAge) private var weekAge = true
 
+    @AppStorage(Display.appearance) private var appearance = "dark"
+
     var body: some View {
+        Section {
+            Picker("Weergave", selection: $appearance) {
+                Text("Systeem").tag("system"); Text("Licht").tag("light"); Text("Donker").tag("dark")
+            }
+        } header: { Text("Weergave") }
         Section {
             Toggle("Live: min / gem / max", isOn: $liveMinMax)
             Toggle("Live: huidtemperatuur", isOn: $liveSkin)

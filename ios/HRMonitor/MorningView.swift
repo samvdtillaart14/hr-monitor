@@ -53,7 +53,6 @@ struct MorningView: View {
             .padding()
         }
         .background(Theme.bg.ignoresSafeArea())
-        .preferredColorScheme(.dark)
         .onAppear { if scores.lastNight == nil { scores.refresh(store: store) } }
     }
 

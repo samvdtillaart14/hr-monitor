@@ -1,5 +1,6 @@
 import WidgetKit
 import SwiftUI
+import UIKit
 
 struct Entry: TimelineEntry {
     let date: Date
@@ -28,7 +29,7 @@ private func recColor(_ r: Int?) -> Color {
 private func hex(_ v: UInt32) -> Color {
     Color(red: Double((v >> 16) & 0xFF) / 255, green: Double((v >> 8) & 0xFF) / 255, blue: Double(v & 0xFF) / 255)
 }
-private let sleepC = hex(0x8FA8C8), strainC = hex(0x3B82F6), lineC = Color.white.opacity(0.08)
+private let sleepC = hex(0x8FA8C8), strainC = hex(0x3B82F6), lineC = Color.primary.opacity(0.1)
 
 /// Zelfde ring als op Vandaag: grijze baan, gekleurde boog, getal in het midden, label eronder.
 struct WidgetRing: View {
@@ -41,10 +42,10 @@ struct WidgetRing: View {
                     .stroke(color, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                 Text(text).font(.system(size: 20, weight: .heavy)).monospacedDigit().minimumScaleFactor(0.6).lineLimit(1).padding(6)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
             }
             .frame(width: 78, height: 78)
-            Text(label.uppercased()).font(.system(size: 10, weight: .semibold)).tracking(1.5).foregroundStyle(.white)
+            Text(label.uppercased()).font(.system(size: 10, weight: .semibold)).tracking(1.5).foregroundStyle(.primary)
                 .lineLimit(1).minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity)
@@ -97,7 +98,7 @@ struct PulseWidgetView: View {
 struct PulseWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "PulseWidget", provider: Provider()) { e in
-            PulseWidgetView(entry: e).containerBackground(.black, for: .widget)
+            PulseWidgetView(entry: e).containerBackground(Color(UIColor.systemBackground), for: .widget)
         }
         .configurationDisplayName("Pulse")
         .description("Slaap, herstel en belasting zoals op Vandaag.")

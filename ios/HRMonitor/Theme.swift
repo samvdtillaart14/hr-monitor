@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import WhoopScores
 
 /// Centrale stijl (donker, sportief). Waarden volgen het webdashboard; pas ze hier aan en alles volgt.
@@ -6,15 +7,24 @@ enum Theme {
     static func hex(_ v: UInt32, _ a: Double = 1) -> Color {
         Color(red: Double(v >> 16 & 0xFF) / 255, green: Double(v >> 8 & 0xFF) / 255, blue: Double(v & 0xFF) / 255, opacity: a)
     }
-    // Tokens uit docs/DESIGN.md (webdashboard).
-    static let bg = hex(0x050607)
-    static let card = hex(0x14171B, 0.72)
-    static let cardHi = hex(0x1E2228)
-    static let line = Color.white.opacity(0.08)
-    static let text = hex(0xF2F4F6)
-    static let muted = hex(0x8A939E)
-    static let accent = hex(0x00F19F)
-    static let hr = hex(0xFF4D5E)
+    /// Kleur die meegaat met licht/donker.
+    static func dyn(_ light: UInt32, _ dark: UInt32, la: Double = 1, da: Double = 1) -> Color {
+        func ui(_ v: UInt32, _ a: Double) -> UIColor {
+            UIColor(red: CGFloat(v >> 16 & 0xFF) / 255, green: CGFloat(v >> 8 & 0xFF) / 255, blue: CGFloat(v & 0xFF) / 255, alpha: a)
+        }
+        return Color(UIColor { $0.userInterfaceStyle == .dark ? ui(dark, da) : ui(light, la) })
+    }
+    // Tokens uit docs/DESIGN.md (webdashboard); lichte varianten voor de lichte modus.
+    static let bg = dyn(0xF2F3F5, 0x050607)
+    static let card = dyn(0xFFFFFF, 0x14171B, la: 0.9, da: 0.72)
+    static let cardHi = dyn(0xE6E8EC, 0x1E2228)
+    static let line = dyn(0x000000, 0xFFFFFF, la: 0.08, da: 0.08)
+    static let text = dyn(0x111418, 0xF2F4F6)
+    static let muted = dyn(0x5F6873, 0x8A939E)
+    static let accent = dyn(0x00A86B, 0x00F19F)
+    static let hr = dyn(0xE5354A, 0xFF4D5E)
+    /// Voor subtiele vlakken (was wit met lage dekking).
+    static func faint(_ a: Double) -> Color { dyn(0x000000, 0xFFFFFF, la: a, da: a) }
     static let radius: CGFloat = 20
     static let gap: CGFloat = 14
     static let spring = Animation.easeOut(duration: 0.6)

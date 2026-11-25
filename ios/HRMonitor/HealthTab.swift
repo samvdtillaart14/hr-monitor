@@ -252,11 +252,11 @@ struct PaceScale: View {
                 ZStack(alignment: .leading) {
                     HStack(spacing: 0) {
                         ForEach(0..<41, id: \.self) { i in
-                            Capsule().fill(Color.white.opacity(i % 10 == 0 ? 0.6 : 0.25)).frame(width: 2, height: i % 10 == 0 ? 30 : 22)
+                            Capsule().fill(Theme.faint(i % 10 == 0 ? 0.6 : 0.25)).frame(width: 2, height: i % 10 == 0 ? 30 : 22)
                             if i < 40 { Spacer(minLength: 0) }
                         }
                     }
-                    if let pace { Capsule().fill(.white).frame(width: 4, height: 38).offset(x: g.size.width * (pace + 1) / 4 - 2) }
+                    if let pace { Capsule().fill(Theme.text).frame(width: 4, height: 38).offset(x: g.size.width * (pace + 1) / 4 - 2) }
                 }
             }.frame(height: 38)
             HStack { Text("−1,0×"); Spacer(); Text("1,0×"); Spacer(); Text("3,0×") }.font(.caption).foregroundStyle(Theme.muted)
