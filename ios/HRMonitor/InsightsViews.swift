@@ -112,7 +112,7 @@ struct JournalView: View {
             }
             .scrollContentBackground(.hidden)
             .background(Theme.bg.ignoresSafeArea())
-            .navigationTitle("Dagboek")
+            .navigationTitle(Journal.dayWord() == "gisteren" ? "Hoe was gisteren?" : "Dagboek")
             .toolbar { Button("Klaar") { j.markEmpty(day: day); dismiss() } }
         }
     }

@@ -96,7 +96,7 @@ struct HRMonitorApp: App {
             }
                 .sheet(item: $router.sheet) { s in
                     switch s {
-                    case .journal: JournalView()
+                    case .journal: JournalView().presentationDetents([.large]).interactiveDismissDisabled(false)
                     case .week: WeekReportSheet()
                     }
                 }
