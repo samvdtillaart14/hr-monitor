@@ -196,6 +196,15 @@ public enum SleepPlanner {
             }
         }
 
+        /// Korte trilling als bevestiging: een eigen wekker (nummer 8, de echte wekkers gebruiken 1–7) over een paar
+        /// seconden, met de staart van de 5.0-wekker maar 1 herhaling en 1 s duur (vermoedelijk @13 herhalingen, @14 duur).
+        public static let buzzAlarmId: UInt8 = 8
+        public static func buzzBody(unix: UInt32) -> [UInt8] {
+            var tail = whoop5Tail
+            tail[12] = 0x01; tail[13] = 0x01
+            return [0x04, buzzAlarmId] + le32(unix) + tail
+        }
+
         /// Unix-tijd uit een GET-antwoord: eerste plausibele u32 (2020–2100) in de body.
         public static func parseGet(_ body: [UInt8]) -> UInt32? {
             guard body.count >= 4 else { return nil }
