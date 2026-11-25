@@ -53,6 +53,20 @@ extension WhoopScores {
         }
     }
 
+    /// Herstel na inspanning: hartslagdaling 1 en 2 minuten na het einde (bpm).
+    /// Eind-HR = hoogste 15-s-gemiddelde in de laatste minuut; daarna 15-s-gemiddelden rond +60 en +120 s.
+    /// nil als er rond die momenten geen metingen zijn of de eind-HR te laag is (geen echte inspanning).
+    public static func heartRateRecovery(_ samples: [Sample], end: Double, minPeakHr: Double = 100) -> (one: Int?, two: Int?) {
+        func mean(_ a: Double, _ b: Double) -> Double? {
+            let v = samples.filter { $0.t >= a && $0.t < b && $0.hr > 0 }.map(\.hr)
+            return v.count >= 5 ? v.reduce(0, +) / Double(v.count) : nil
+        }
+        let peak = stride(from: end - 60, to: end - 14, by: 5).compactMap { mean($0, $0 + 15) }.max()
+        guard let peak, peak >= minPeakHr else { return (nil, nil) }
+        let d = { (t: Double) -> Int? in mean(end + t - 7.5, end + t + 7.5).map { Int((peak - $0).rounded()) } }
+        return (d(60), d(120))
+    }
+
     /// Statistieken van een activiteit uit de samples (hoeven niet gefilterd te zijn).
     public static func activitySummary(_ samples: [Sample], start: Double, end: Double, _ cal: Calibration = .standard) -> ActivitySummary {
         let s = samples.filter { $0.t >= start && $0.t <= end && $0.hr > 0 }.sorted { $0.t < $1.t }

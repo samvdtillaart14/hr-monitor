@@ -140,4 +140,17 @@ final class DayStoreTests: XCTestCase {
         XCTAssertEqual(r.byDay[DayStore.dayKey(t)]?[t + 1]?.steps, 13)
         XCTAssertEqual(DayStore.steps(r.samples(day: Date(timeIntervalSince1970: TimeInterval(t)))), 3)
     }
+
+    func testInactivity() {
+        // 10 min: eerste 4 min elke seconde een stap, daarna stil; minuut 6–7 uitgesloten (activiteit).
+        let t0: UInt32 = 1_795_305_600
+        var steps = 0
+        let s = (0..<600).map { i -> DayStore.Sample in
+            if i < 240 { steps += 1 }
+            return DayStore.Sample(t: t0 + UInt32(i), hr: 60, steps: steps)
+        }
+        let r = DayStore.inactivity(s, exclude: [(Double(t0 + 360), Double(t0 + 480))])
+        XCTAssertEqual(r.measured, 8)
+        XCTAssertEqual(r.inactive, 4)
+    }
 }

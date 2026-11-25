@@ -264,6 +264,7 @@ enum InsightNotifications {
             case "rhr": return String(format: "rust-HR +%.0f bpm", x.delta)
             case "hrv": return String(format: "HRV %.0f%% lager", 100 * -x.delta / max(1, x.baseline))
             case "skin": return String(format: "huidtemp +%.1f °C", x.delta)
+            case "spo2": return String(format: "SpO2 %.0f%% lager", -x.delta)
             default: return String(format: "ademhaling +%.1f/min", x.delta)
             }
         }.joined(separator: ", ").capitalizedFirst + "."
@@ -285,7 +286,7 @@ struct InsightSettingsSection: View {
             Toggle("Weekrapport (zondag 19:00)", isOn: $weekly)
             Toggle("Ziekte-waarschuwing", isOn: $illness)
         } header: { Text("Inzichten") } footer: {
-            Text("De ziekte-waarschuwing komt 's ochtends als minstens twee van rust-HR, HRV, huidtemperatuur en ademhaling tegelijk duidelijk afwijken van je eigen basislijn (na 5 gemeten nachten). Geen medisch advies.")
+            Text("De ziekte-waarschuwing komt 's ochtends als minstens twee van rust-HR, HRV, huidtemperatuur, ademhaling en SpO2 tegelijk duidelijk afwijken van je eigen basislijn, of één ervan twee nachten op rij (na 5 gemeten nachten). Geen medisch advies.")
         }
         .tint(Theme.accent)
         .onChange(of: journal) { _, _ in InsightNotifications.scheduleJournal() }

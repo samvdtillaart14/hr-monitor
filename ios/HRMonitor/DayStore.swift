@@ -222,6 +222,26 @@ final class DayStore: ObservableObject {
         return total
     }
 
+    /// Inactiviteit: minuten zonder één stap, alleen minuten waarin de stappenteller van de band is gemeten,
+    /// buiten de opgegeven perioden (slaap, activiteiten). Geeft (inactief, gemeten) in minuten.
+    nonisolated static func inactivity(_ samples: [Sample], exclude: [(start: Double, end: Double)]) -> (inactive: Int, measured: Int) {
+        var minutes: [UInt32: (min: Int, max: Int, stepped: Bool)] = [:]
+        var prev: Int?
+        for s in samples {
+            guard let v = s.steps else { continue }
+            let t = Double(s.t)
+            if exclude.contains(where: { t >= $0.start && t < $0.end }) { prev = v; continue }
+            let m = s.t / 60
+            let stepped = prev.map { v > $0 } ?? false
+            prev = v
+            var e = minutes[m] ?? (v, v, false)
+            e.stepped = e.stepped || stepped
+            minutes[m] = e
+        }
+        let inactive = minutes.values.filter { !$0.stepped }.count
+        return (inactive, minutes.count)
+    }
+
     /// Stappen van een dag, of nil als er die dag geen stappenteller is gemeten.
     func steps(day: Date) -> Int? {
         let s = samples(day: day)

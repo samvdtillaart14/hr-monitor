@@ -22,6 +22,20 @@ final class InsightsTests: XCTestCase {
         XCTAssertEqual(Set(w?.map(\.metric) ?? []), ["rhr", "hrv", "skin"])
     }
 
+    func testIllnessOneSignalTwoNights() {
+        var h = hist()
+        let sick = NightMetrics(hrv: 31, rhr: 55, resp: 14.1, skinTemp: 34.3)
+        XCTAssertNil(Insights.illnessWarning(sick, history: h))                    // eerste nacht: alleen huidtemp
+        h.append(sick)
+        XCTAssertEqual(Insights.illnessWarning(sick, history: h)?.map(\.metric), ["skin"])   // tweede nacht op rij
+    }
+
+    func testSpo2Drop() {
+        let h = hist().map { m -> NightMetrics in var x = m; x.spo2 = 96 + Double(Int(m.rhr ?? 0) % 2); return x }
+        var n = NightMetrics(hrv: 22, rhr: 55, resp: 14.1, skinTemp: 33.5); n.spo2 = 91
+        XCTAssertEqual(Set(Insights.illnessWarning(n, history: h)?.map(\.metric) ?? []), ["hrv", "spo2"])
+    }
+
     func testIllnessNeedsHistory() {
         XCTAssertNil(Insights.illnessWarning(NightMetrics(hrv: 10, rhr: 80, skinTemp: 36), history: Array(hist().prefix(4))))
     }
