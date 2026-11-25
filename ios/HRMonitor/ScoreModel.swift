@@ -15,6 +15,8 @@ struct Night: Identifiable {
     /// > 0: zoveel nachten extra nodig voordat herstel eerlijk te berekenen is
     var recoveryNeedsNights = 0
     var metrics = NightMetrics()
+    /// slaaptijden door jou aangepast (niet automatisch herkend)
+    var manual = false
     /// minuten dat het telefoonscherm aan stond tussen inslapen en wakker worden
     var phoneMin = 0
     /// minuten van scherm uit tot inslapen (nil = geen telefoon gebruikt vlak voor het slapen)
@@ -86,10 +88,11 @@ final class ScoreModel: ObservableObject {
         let prior = NightArchive.shared.metrics(before: firstKey, limit: fixedCal.recovery.windowDays)
         let awake = awakeIntervals()
         let personal = UserProfile.hasPersonalBaseline
+        let manual = SleepEdits.all
         Task {
             let (n, dl) = await Task.detached(priority: .utility) { () -> ([Night], [DayLoad]) in
                 let conv = input.map { ($0.0, $0.1.map(Self.convert), $0.2.map(Self.convert)) }
-                return Self.compute(conv, fixedCal, prior: prior, personalBaseline: personal, awake: awake)
+                return Self.compute(conv, fixedCal, prior: prior, personalBaseline: personal, awake: awake, manual: manual)
             }.value
             self.nights = n; self.days = dl; self.anchor = endDay; self.busy = false
             if self.rerun { self.rerun = false; self.refresh(store: store, end: self.requestedEnd) }
@@ -109,7 +112,8 @@ final class ScoreModel: ObservableObject {
     ///   en met minder dan `minHistory` eerdere nachten is er geen eerlijke basislijn: dan geen herstelscore.
     /// - awake: periodes dat het telefoonscherm aan stond; die minuten zijn nooit slaap.
     nonisolated static func compute(_ input: [(Date, [Sample], [Sample])], _ c: Calibration, prior: [NightMetrics] = [],
-                                    personalBaseline: Bool = false, awake: [Range<Double>] = []) -> ([Night], [DayLoad]) {
+                                    personalBaseline: Bool = false, awake: [Range<Double>] = [],
+                                    manual: [String: Range<Double>] = [:]) -> ([Night], [DayLoad]) {
         var nights: [Night] = [], days: [DayLoad] = [], history: [NightMetrics] = prior
         var prevStrain = 0.0
         let tz = Double(TimeZone.current.secondsFromGMT()) / 60
@@ -129,8 +133,11 @@ final class ScoreModel: ObservableObject {
             defer { days.append(dl); prevStrain = st.strain }
 
             let base = WhoopScores.baseline(from: history, c)
-            guard nightS.count > 1800, let r = WhoopScores.analyzeNight(nightS, c, baseline: base, awake: awake) else { continue }
+            let edit = manual[DayStore.dayFmt.string(from: date)]
+            guard nightS.count > (edit == nil ? 1800 : 60),
+                  let r = WhoopScores.analyzeNight(nightS, c, baseline: base, awake: awake, manual: edit) else { continue }
             var n = Night(date: date, r: r)
+            n.manual = edit != nil
             n.phoneMin = Int((awake.reduce(0.0) { $0 + max(0, min($1.upperBound, r.wake) - max($1.lowerBound, r.onset)) } / 60).rounded())
             // Slaapbehoefte: gezond minimum + belasting van gisteren + slaaptekort (scores-module)
             if let p = nights.last, date.timeIntervalSince(p.date) < 2 * 86400 {
@@ -209,5 +216,21 @@ final class NightArchive {
         let keys = byDay.keys.sorted()
         if keys.count > 90 { for k in keys.prefix(keys.count - 90) { byDay[k] = nil } }
         if let d = try? JSONEncoder().encode(byDay) { try? d.write(to: Self.url, options: .atomic) }
+    }
+}
+
+/// Handmatig aangepaste slaaptijden per ochtend (jjjj-mm-dd → begin/eind, Unix-seconden).
+/// Opgeslagen op de telefoon (UserDefaults), niet in de repo.
+enum SleepEdits {
+    private static let key = "sleep.manualWindows"
+    static var all: [String: Range<Double>] {
+        let raw = UserDefaults.standard.dictionary(forKey: key) as? [String: [Double]] ?? [:]
+        return raw.compactMapValues { $0.count == 2 && $0[0] < $0[1] ? $0[0]..<$0[1] : nil }
+    }
+    static func get(_ day: Date) -> Range<Double>? { all[DayStore.dayFmt.string(from: day)] }
+    static func set(_ day: Date, _ window: Range<Double>?) {
+        var raw = UserDefaults.standard.dictionary(forKey: key) as? [String: [Double]] ?? [:]
+        raw[DayStore.dayFmt.string(from: day)] = window.map { [$0.lowerBound, $0.upperBound] }
+        UserDefaults.standard.set(raw, forKey: key)
     }
 }
