@@ -7,6 +7,8 @@ struct SettingsView: View {
     static let devKey = "settings.devMode"
     @AppStorage(SettingsView.devKey) private var devMode = false
     @AppStorage(Recorder.alwaysOffKey) private var alwaysOff = false
+    @AppStorage(ActivityStore.autoDetectOffKey) private var autoDetectOff = false
+    @AppStorage(AppServices.tapActivityKey) private var tapActivity = true
     @EnvironmentObject var rec: Recorder
     @EnvironmentObject var raw: RawLogger
     @EnvironmentObject var ble: BLEManager
@@ -83,6 +85,12 @@ struct SettingsView: View {
                 Toggle("GPS automatisch aan", isOn: $acts.autoGps).tint(Theme.accent)
             } header: { Text("Activiteiten") } footer: {
                 Text("Zet de GPS vanzelf aan bij verhoogde hartslag of als je iPhone hardlopen/fietsen ziet. Kies bij locatie \"Altijd\".")
+            }
+            Section {
+                Toggle("Activiteiten automatisch herkennen", isOn: Binding(get: { !autoDetectOff }, set: { autoDetectOff = !$0 })).tint(Theme.accent)
+                Toggle("Dubbeltik op band start/stopt activiteit", isOn: $tapActivity).tint(Theme.accent)
+            } header: { Text("Activiteiten") } footer: {
+                Text("Dubbeltik op de band (niet rond je wekker) start een activiteit van dezelfde soort als de vorige; nog een dubbeltik stopt hem.")
             }
             Section {
                 Toggle("Altijd alles opnemen", isOn: Binding(get: { !alwaysOff }, set: { on in

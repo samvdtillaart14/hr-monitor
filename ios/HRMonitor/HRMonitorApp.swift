@@ -27,6 +27,7 @@ final class AppServices {
         screen.onMorning = { MorningBrief.send(services: AppServices.shared) }
         ble.onAlarmResponse = { [weak alarm] cmd, res, body in MainActor.assumeIsolated { alarm?.bandResponse(cmd: cmd, result: res, body: body) } }
         ble.onWhoopReady = { [weak alarm] in MainActor.assumeIsolated { alarm?.bandResend() } }
+        ble.whoop.onDoubleTap = { [weak self] in MainActor.assumeIsolated { self?.bandTapped() } }
         alarm.rearm()
         InsightNotifications.scheduleJournal()
         // Widget bijwerken zodra er nieuwe nachtscores zijn.
@@ -34,6 +35,21 @@ final class AppServices {
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.updateWidget() } }
         }
     }
+
+    /// Dubbeltik op de band. Rond een wekker (40 min ervoor tot 20 min erna) is de tik voor de wekker;
+    /// anders start of stopt hij een activiteit, met een melding als bevestiging.
+    func bandTapped(now: Date = Date()) {
+        guard UserDefaults.standard.object(forKey: Self.tapActivityKey) as? Bool ?? true else { return }
+        if alarm.schedule.enabled {
+            let w = alarm.schedule.nextWake(after: now.addingTimeInterval(-20 * 60))
+            if w.rule.enabled && w.date.timeIntervalSince(now) < 40 * 60 { return }
+        }
+        guard let r = acts.toggleFromBand(store: store) else { return }
+        InsightNotifications.post("band-tik", r.started ? "\(r.activity.type.name) gestart" : "\(r.activity.type.name) gestopt",
+                                  r.started ? "Tik nog een keer op je band om te stoppen. Soort wijzigen kan op Vandaag."
+                                            : "Opgeslagen op Vandaag.")
+    }
+    static let tapActivityKey = "band.tapActivity"
 
     func updateWidget() {
         let n = scores.lastNight
