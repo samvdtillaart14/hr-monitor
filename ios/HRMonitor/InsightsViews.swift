@@ -8,6 +8,8 @@ enum InsightSettings {
     static let journalKey = "insights.journal"
     static let weeklyKey = "insights.weekly", illnessKey = "insights.illness"
     static let lastWeeklyKey = "insights.lastWeekly", lastIllnessKey = "insights.lastIllness"
+    static let abnormalKey = "insights.abnormal", lastAbnormalKey = "insights.lastAbnormal"
+    static let monthlyKey = "insights.monthly", lastMonthlyKey = "insights.lastMonthly"
     static func on(_ k: String) -> Bool { UserDefaults.standard.object(forKey: k) as? Bool ?? true }
 }
 
@@ -15,7 +17,7 @@ enum InsightSettings {
 @MainActor
 final class AppRouter: ObservableObject {
     static let shared = AppRouter()
-    enum Sheet: String, Identifiable { case journal, week; var id: String { rawValue } }
+    enum Sheet: String, Identifiable { case journal, week, month; var id: String { rawValue } }
     @Published var sheet: Sheet?
 }
 
@@ -207,6 +209,109 @@ struct WeekReportSheet: View {
     }
 }
 
+// MARK: maandrapport
+
+enum MonthReport {
+    struct Summary {
+        var nights = 0, days = 0
+        var week = Insights.WeekSummary()
+        var strain: Double?, steps: Double?, inactiveMin: Double?, vo2: Double?, resp: Double?, skin: Double?
+    }
+
+    /// Maand `offset` terug t.o.v. `now` (1 = vorige maand): eerste dag van die maand.
+    static func monthStart(_ offset: Int, now: Date = Date()) -> Date {
+        let cal = Calendar.current
+        let first = cal.date(from: cal.dateComponents([.year, .month], from: now)) ?? now
+        return cal.date(byAdding: .month, value: -offset, to: first) ?? first
+    }
+
+    static func name(_ d: Date) -> String {
+        let f = DateFormatter(); f.locale = Locale(identifier: "nl_NL"); f.dateFormat = "LLLL"
+        return f.string(from: d)
+    }
+
+    @MainActor static func summary(_ start: Date) -> Summary {
+        let cal = Calendar.current
+        let end = cal.date(byAdding: .month, value: 1, to: start) ?? start
+        let lo = DayStore.dayFmt.string(from: start), hi = DayStore.dayFmt.string(from: end)
+        let ns = NightArchive.shared.all.filter { $0.key >= lo && $0.key < hi }.map(\.value)
+        let ds = DayArchive.shared.all.filter { $0.key >= lo && $0.key < hi }.map(\.value)
+        var s = Summary()
+        s.nights = ns.count; s.days = ds.count
+        s.week = Insights.summary(ns)
+        s.strain = avg(ds.map(\.strain))
+        s.steps = avg(ds.compactMap(\.steps).map(Double.init))
+        s.inactiveMin = avg(ds.compactMap(\.inactiveMin).map(Double.init))
+        s.resp = avg(ns.compactMap(\.resp))
+        s.skin = avg(ns.compactMap(\.skinTemp))
+        let rhr = ns.compactMap(\.rhr).sorted()
+        if rhr.count >= 5 { s.vo2 = 15.3 * UserProfile.maxHr / rhr[rhr.count / 2] }
+        return s
+    }
+
+    private static func avg(_ v: [Double]) -> Double? { v.isEmpty ? nil : v.reduce(0, +) / Double(v.count) }
+}
+
+struct MonthReportView: View {
+    var body: some View {
+        let m0 = MonthReport.monthStart(1), m1 = MonthReport.monthStart(2)
+        let a = MonthReport.summary(m0), b = MonthReport.summary(m1)
+        ScrollView {
+            VStack(spacing: Theme.gap) {
+                Card(title: "\(MonthReport.name(m0).capitalized) · \(a.nights) nachten") {
+                    row("Herstel", a.week.recovery, b.week.recovery, "%.0f%%", up: true)
+                    row("Slaap", a.week.sleepMin, b.week.sleepMin, nil, up: true)
+                    row("Slaapprestatie", a.week.sleepPerf, b.week.sleepPerf, "%.0f%%", up: true)
+                    row("Regelmaat", a.week.consistency, b.week.consistency, "%.0f%%", up: true)
+                    row("HRV", a.week.hrv, b.week.hrv, "%.0f ms", up: true)
+                    row("Rust-HR", a.week.rhr, b.week.rhr, "%.0f bpm", up: false)
+                    row("Ademfrequentie", a.resp, b.resp, "%.1f /min", up: nil)
+                    row("VO2max (schatting)", a.vo2, b.vo2, "%.0f", up: true)
+                }
+                Card(title: "Overdag · \(a.days) dagen") {
+                    row("Belasting", a.strain, b.strain, "%.1f", up: nil)
+                    row("Stappen per dag", a.steps, b.steps, "%.0f", up: true)
+                    row("Inactief per dag", a.inactiveMin, b.inactiveMin, nil, up: false)
+                }
+                Text("Gemiddelden per nacht of dag, vergeleken met \(MonthReport.name(m1)). Alleen wat Pulse heeft gemeten.")
+                    .font(.caption).foregroundStyle(Theme.muted)
+            }.padding()
+        }
+        .background(Theme.bg.ignoresSafeArea())
+        .navigationTitle("Maandrapport")
+    }
+
+    private func fmt(_ v: Double?, _ f: String?) -> String {
+        guard let v else { return "--" }
+        guard let f else { return DV.hm(v) }
+        return String(format: f, v)
+    }
+
+    /// up: true = hoger is beter, false = lager is beter, nil = neutraal.
+    @ViewBuilder private func row(_ t: String, _ a: Double?, _ b: Double?, _ f: String?, up: Bool?) -> some View {
+        HStack {
+            Text(t)
+            Spacer()
+            Text(fmt(a, f)).monospacedDigit()
+            if let a, let b {
+                let d = a - b
+                let small = abs(d) < 0.02 * max(abs(b), 1)
+                let color: Color = small ? Theme.muted : up.map { $0 == (d >= 0) ? Theme.accent : Theme.hr } ?? Theme.muted
+                Text((d >= 0 ? "+" : "−") + fmt(abs(d), f))
+                    .font(.caption).foregroundStyle(Theme.muted).monospacedDigit()
+                Image(systemName: d >= 0 ? "arrow.up.right" : "arrow.down.right").foregroundStyle(color)
+            }
+        }.font(.subheadline)
+    }
+}
+
+struct MonthReportSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        NavigationStack { MonthReportView().toolbar { Button("Klaar") { dismiss() } } }
+    }
+}
+
 // MARK: meldingen
 
 @MainActor
@@ -247,6 +352,51 @@ enum InsightNotifications {
         post("week", "Je weekrapport", (head.isEmpty ? "" : "Gemiddeld " + head.joined(separator: ", ") + ". ") + adv, sheet: .week)
     }
 
+    /// Maandrapport op de 1e van de maand vanaf 09:00, één keer per maand.
+    static func checkMonthly(now: Date = Date()) {
+        guard InsightSettings.on(InsightSettings.monthlyKey) else { return }
+        let cal = Calendar.current
+        guard cal.component(.day, from: now) == 1, cal.component(.hour, from: now) >= 9 else { return }
+        let m0 = MonthReport.monthStart(1, now: now)
+        let key = DayStore.dayFmt.string(from: m0)
+        guard UserDefaults.standard.string(forKey: InsightSettings.lastMonthlyKey) != key else { return }
+        UserDefaults.standard.set(key, forKey: InsightSettings.lastMonthlyKey)
+        let a = MonthReport.summary(m0), b = MonthReport.summary(MonthReport.monthStart(2, now: now))
+        guard a.nights + a.days > 0 else { return }
+        var parts: [String] = []
+        func add(_ name: String, _ x: Double?, _ y: Double?, _ f: String, unit: String = "") {
+            guard let x else { return }
+            var t = "\(name) " + String(format: f, x) + unit
+            if let y { let d = x - y; t += " (" + (d >= 0 ? "+" : "−") + String(format: f, abs(d)) + ")" }
+            parts.append(t)
+        }
+        add("herstel", a.week.recovery, b.week.recovery, "%.0f", unit: "%")
+        if let s = a.week.sleepMin {
+            var t = "slaap \(DV.hm(s))"
+            if let p = b.week.sleepMin { let d = s - p; t += " (" + (d >= 0 ? "+" : "−") + DV.hm(abs(d)) + ")" }
+            parts.append(t)
+        }
+        add("HRV", a.week.hrv, b.week.hrv, "%.0f", unit: " ms")
+        add("rust-HR", a.week.rhr, b.week.rhr, "%.0f", unit: " bpm")
+        add("stappen", a.steps, b.steps, "%.0f")
+        let month = MonthReport.name(m0)
+        post("maand", "Je maandrapport \(month)", parts.joined(separator: ", ").capitalizedFirst + ". Tik voor alles, vergeleken met \(MonthReport.name(MonthReport.monthStart(2, now: now))).", sheet: .month)
+    }
+
+    /// Na de ochtendberekening: één melding als een waarde duidelijk afwijkt van je eigen normaal
+    /// (rust-HR, HRV, huidtemperatuur, ademhaling, SpO2). Niet als de ziekte-waarschuwing deze nacht al kwam.
+    static func checkAbnormal(_ n: Night?) {
+        guard InsightSettings.on(InsightSettings.abnormalKey), let n else { return }
+        let key = DayStore.dayFmt.string(from: n.date)
+        let d = UserDefaults.standard
+        guard d.string(forKey: InsightSettings.lastAbnormalKey) != key, d.string(forKey: InsightSettings.lastIllnessKey) != key else { return }
+        let hist = NightArchive.shared.metrics(before: key, limit: 30)
+        let devs = Insights.signals(n.metrics, history: hist).filter(\.deviates).map(\.deviation)
+        guard !devs.isEmpty else { return }
+        d.set(key, forKey: InsightSettings.lastAbnormalKey)
+        post("afwijking", "Afwijkende waarde vannacht", text(devs) + " Vergeleken met je eigen normaal van de laatste weken.")
+    }
+
     /// Na de ochtendberekening: waarschuwen als meerdere waarden tegelijk afwijken.
     static func checkIllness(_ n: Night?) {
         guard InsightSettings.on(InsightSettings.illnessKey), let n else { return }
@@ -279,14 +429,18 @@ struct InsightSettingsSection: View {
     @AppStorage(InsightSettings.journalKey) private var journal = true
     @AppStorage(InsightSettings.weeklyKey) private var weekly = true
     @AppStorage(InsightSettings.illnessKey) private var illness = true
+    @AppStorage(InsightSettings.abnormalKey) private var abnormal = true
+    @AppStorage(InsightSettings.monthlyKey) private var monthly = true
 
     var body: some View {
         Section {
             Toggle("Dagboekherinnering ('s ochtends)", isOn: $journal)
             Toggle("Weekrapport (zondag 19:00)", isOn: $weekly)
+            Toggle("Maandrapport (1e van de maand)", isOn: $monthly)
             Toggle("Ziekte-waarschuwing", isOn: $illness)
+            Toggle("Melding bij afwijkende waarden", isOn: $abnormal)
         } header: { Text("Inzichten") } footer: {
-            Text("De ziekte-waarschuwing komt 's ochtends als minstens twee van rust-HR, HRV, huidtemperatuur, ademhaling en SpO2 tegelijk duidelijk afwijken van je eigen basislijn, of één ervan twee nachten op rij (na 5 gemeten nachten). Geen medisch advies.")
+            Text("De ziekte-waarschuwing komt 's ochtends als minstens twee van rust-HR, HRV, huidtemperatuur, ademhaling en SpO2 tegelijk duidelijk afwijken van je eigen basislijn, of één ervan twee nachten op rij (na 5 gemeten nachten). De melding bij afwijkende waarden komt al bij één waarde die vannacht duidelijk afwijkt, hooguit één per ochtend. Geen medisch advies.")
         }
         .tint(Theme.accent)
         .onChange(of: journal) { _, _ in InsightNotifications.scheduleJournal() }

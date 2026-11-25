@@ -90,9 +90,10 @@ final class ScoreModel: ObservableObject {
         let personal = UserProfile.hasPersonalBaseline
         let manual = SleepEdits.all
         Task {
-            let (n, dl) = await Task.detached(priority: .utility) { () -> ([Night], [DayLoad]) in
+            let (n, dl, ds) = await Task.detached(priority: .utility) { () -> ([Night], [DayLoad], [(String, DayStats)]) in
                 let conv = input.map { ($0.0, $0.1.map(Self.convert), $0.2.map(Self.convert)) }
-                return Self.compute(conv, fixedCal, prior: prior, personalBaseline: personal, awake: awake, manual: manual)
+                let (n, dl) = Self.compute(conv, fixedCal, prior: prior, personalBaseline: personal, awake: awake, manual: manual)
+                return (n, dl, Self.dayStats(input.map { ($0.0, $0.2) }, nights: n, days: dl))
             }.value
             // Vermoedelijke SpO2 per nacht: mediaan van de bandwaarden tussen inslapen en wakker worden.
             var n = n
@@ -106,12 +107,29 @@ final class ScoreModel: ObservableObject {
             if self.rerun { self.rerun = false; self.refresh(store: store, end: self.requestedEnd) }
             else { let w = self.waiters; self.waiters = []; w.forEach { $0() } }
             NightArchive.shared.store(n.map { (DayStore.dayFmt.string(from: $0.date), $0.metrics) })
+            DayArchive.shared.store(ds)
             if end == nil { UserProfile.updateRestHr(from: NightArchive.shared.recentRhr(30)) }
         }
     }
 
     nonisolated static func convert(_ s: DayStore.Sample) -> Sample {
         Sample(t: Double(s.t), hr: Double(s.hr), rr: s.rr.map(Double.init), q: s.q?.map(Double.init), skinTemp: s.skin)
+    }
+
+    /// Dagwaarden voor het maandrapport: belasting, stappen en inactiviteit (slaap telt niet als inactief).
+    /// Alleen dagen met minstens 2 uur metingen.
+    nonisolated static func dayStats(_ input: [(Date, [DayStore.Sample])], nights: [Night], days: [DayLoad]) -> [(String, DayStats)] {
+        let cal = Calendar.current
+        return input.compactMap { (item: (Date, [DayStore.Sample])) -> (String, DayStats)? in
+            let (date, s) = item
+            guard let d = days.first(where: { cal.isDate($0.date, inSameDayAs: date) }), d.measuredMin >= 120 else { return nil }
+            let excl = nights.filter { cal.isDate($0.date, inSameDayAs: date) }.map { (start: $0.r.onset, end: $0.r.wake) }
+            let hasSteps = s.contains { $0.steps != nil }
+            let ina = DayStore.inactivity(s, exclude: excl)
+            return (DayStore.dayFmt.string(from: date),
+                    DayStats(strain: d.strain, steps: hasSteps ? DayStore.steps(s) : nil,
+                             inactiveMin: ina.measured >= 60 ? ina.inactive : nil))
+        }
     }
 
     nonisolated static func fin(_ v: Double) -> Double? { v.isFinite ? v : nil }
@@ -223,6 +241,34 @@ final class NightArchive {
         for (k, m) in items { byDay[k] = m }
         let keys = byDay.keys.sorted()
         if keys.count > 90 { for k in keys.prefix(keys.count - 90) { byDay[k] = nil } }
+        if let d = try? JSONEncoder().encode(byDay) { try? d.write(to: Self.url, options: .atomic) }
+    }
+}
+
+/// Dagwaarden per kalenderdag (Documenten/days.json) voor het maandrapport. Houdt 100 dagen bij.
+struct DayStats: Codable, Sendable {
+    var strain: Double
+    var steps: Int?
+    var inactiveMin: Int?
+}
+
+@MainActor
+final class DayArchive {
+    static let shared = DayArchive()
+    private var byDay: [String: DayStats] = [:]
+    private static var url: URL { Recorder.folder.appendingPathComponent("days.json") }
+
+    private init() {
+        if let d = try? Data(contentsOf: Self.url), let v = try? JSONDecoder().decode([String: DayStats].self, from: d) { byDay = v }
+    }
+
+    var all: [String: DayStats] { byDay }
+
+    func store(_ items: [(String, DayStats)]) {
+        guard !items.isEmpty else { return }
+        for (k, m) in items { byDay[k] = m }
+        let keys = byDay.keys.sorted()
+        if keys.count > 100 { for k in keys.prefix(keys.count - 100) { byDay[k] = nil } }
         if let d = try? JSONEncoder().encode(byDay) { try? d.write(to: Self.url, options: .atomic) }
     }
 }

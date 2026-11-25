@@ -157,6 +157,15 @@ struct HealthTab: View {
                     if showSignals { SignalsCard(revision: model.nights.count) }
                     if showVo2 { Vo2Card(revision: model.nights.count) }
                     if showHrr { HrrCard(acts: acts.items.filter { $0.hrr1 != nil }.sorted { $0.start < $1.start }) }
+                    NavigationLink { MonthReportView() } label: {
+                        Card(title: "Maandrapport") {
+                            HStack {
+                                Text("Vorige maand vergeleken met de maand daarvoor").font(.subheadline).foregroundStyle(Theme.text)
+                                Spacer()
+                                Image(systemName: "chevron.right").foregroundStyle(Theme.muted)
+                            }
+                        }
+                    }.buttonStyle(.plain)
                     NavigationLink { WeekReportView() } label: {
                         Card(title: "Weekrapport") {
                             HStack {
