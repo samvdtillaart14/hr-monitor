@@ -90,7 +90,7 @@ struct SettingsView: View {
                 Toggle("Activiteiten automatisch herkennen", isOn: Binding(get: { !autoDetectOff }, set: { autoDetectOff = !$0 })).tint(Theme.accent)
                 Toggle("Dubbeltik op band start/stopt activiteit", isOn: $tapActivity).tint(Theme.accent)
             } header: { Text("Activiteiten") } footer: {
-                Text("Dubbeltik op de band (niet rond je wekker) start een activiteit van dezelfde soort als de vorige; nog een dubbeltik stopt hem.")
+                Text("Dubbeltik op de band (behalve in de minuut dat je wekker afgaat) start een activiteit van dezelfde soort als de vorige; nog een dubbeltik stopt hem.")
             }
             Section {
                 Toggle("Altijd alles opnemen", isOn: Binding(get: { !alwaysOff }, set: { on in
