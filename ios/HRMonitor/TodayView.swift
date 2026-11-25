@@ -23,6 +23,7 @@ struct TodayView: View {
     @AppStorage(Display.todayStressChart) private var showStressChart = true
     /// Getoonde dag: vandaag of tot 30 dagen terug.
     @State private var selected = Date()
+    @State private var showCalendar = false
     @StateObject private var past = ScoreModel()
     static let maxDaysBack = 30
 
@@ -161,7 +162,14 @@ struct TodayView: View {
         HStack(spacing: 8) {
             Button { step(-1) } label: { Image(systemName: "chevron.left").font(.headline) }
                 .disabled(Calendar.current.startOfDay(for: selected) <= minDate)
-            Text(dayLabel).font(.headline)
+            Button { showCalendar = true } label: {
+                HStack(spacing: 4) {
+                    Text(dayLabel).font(.headline)
+                    Image(systemName: "calendar").font(.subheadline).foregroundStyle(Theme.muted)
+                }
+            }
+            .buttonStyle(.plain)
+            .sheet(isPresented: $showCalendar) { RecoveryCalendarSheet(selected: $selected, minDate: minDate) }
             Button { step(1) } label: { Image(systemName: "chevron.right").font(.headline) }
                 .disabled(isToday)
             if !isToday {
