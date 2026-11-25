@@ -303,18 +303,6 @@ final class SleepAlarm: ObservableObject {
     }
 
     /// Na (her)verbinden opnieuw versturen: de band kan een herstart of een Whoop-sync gehad hebben.
-    /// Laatste bevestigingstrilling; dubbeltikken kort daarna (trilling uitzetten) tellen niet als activiteit-tik.
-    private(set) var lastBuzz = Date.distantPast
-    /// Band één keer laten trillen als bevestiging: wekker over 5 s, daarna de echte wekker terugzetten.
-    func buzz() {
-        guard ble.state == .connected, sendSet(Date().addingTimeInterval(5), variant: variant) == nil else { return }
-        lastBuzz = Date()
-        log("Bevestiging: band trilt over 5 s (activiteit gestart)")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 40) { [weak self] in
-            MainActor.assumeIsolated { self?.bandResend() }
-        }
-    }
-
     func bandResend() {
         bandSentFor = nil
         if armed != nil { sendBandIfNeeded() }
