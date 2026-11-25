@@ -60,8 +60,8 @@ final class BLEManager: NSObject, ObservableObject {
               !UserDefaults.standard.bool(forKey: Self.fitOffKey) else { return }
         fitAlertSent = true
         let c = UNMutableNotificationContent()
-        c.title = "Band zit niet goed"
-        c.body = "Al 10 minuten geen hartslag. Schuif de band iets hoger en wat strakker om je pols."
+        c.title = L("Band zit niet goed")
+        c.body = L("Al 10 minuten geen hartslag. Schuif de band iets hoger en wat strakker om je pols.")
         c.sound = .default
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "pasvorm", content: c, trigger: nil))
     }
@@ -76,8 +76,8 @@ final class BLEManager: NSObject, ObservableObject {
         guard pct <= 10, pct > 0, !d.bool(forKey: lowBatterySentKey), !d.bool(forKey: lowBatteryOffKey) else { return }
         d.set(true, forKey: lowBatterySentKey)
         let c = UNMutableNotificationContent()
-        c.title = "Band bijna leeg (\(pct)%)"
-        c.body = "Laad je band op, anders mis je metingen."
+        c.title = String(format: L("Band bijna leeg (%d%%)"), pct)
+        c.body = L("Laad je band op, anders mis je metingen.")
         c.sound = .default
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "batterij", content: c, trigger: nil))
     }

@@ -235,7 +235,7 @@ struct AgeOrb: View {
                     Text("Te weinig data").font(.headline).foregroundStyle(Theme.muted)
                 }
                 if bio != nil && size > 200 {
-                    Text(String(format: "%.0f jaar %@", abs(offset), offset >= 0 ? "ouder" : "jonger"))
+                    Text(String(format: L("%.0f jaar %@"), abs(offset), offset >= 0 ? "ouder" : "jonger"))
                         .font(.headline).foregroundStyle(offset > 0 ? DV.poor : Theme.hex(0x8EC5FF))
                 }
             }
@@ -358,7 +358,7 @@ struct HealthspanView: View {
             if isOpen {
                 Text(f.value == nil ? (f.missing ?? "Nog geen waarde.") :
                         (f.years > 0.05 ? "Kans om te verbeteren. " : f.years < -0.05 ? "Dit werkt in je voordeel. " : "Neutraal. ")
-                        + String(format: "Deze factor telt nu %+.0f jaar mee. ", f.years) + f.info)
+                        + String(format: L("Deze factor telt nu %+.0f jaar mee. "), f.years) + f.info)
                     .font(.subheadline).foregroundStyle(Theme.muted)
             }
         }
@@ -641,11 +641,11 @@ struct SignalsCard: View {
     private static let names: [String: String] = ["rhr": "Rust-HR", "hrv": "HRV", "skin": "Huidtemperatuur", "resp": "Ademfrequentie", "spo2": "SpO2 (voorlopig)"]
     private static func fmt(_ d: Insights.Deviation) -> String {
         switch d.metric {
-        case "rhr": return String(format: "%.0f bpm (normaal %.0f)", d.value, d.baseline)
-        case "hrv": return String(format: "%.0f ms (normaal %.0f)", d.value, d.baseline)
+        case "rhr": return String(format: L("%.0f bpm (normaal %.0f)"), d.value, d.baseline)
+        case "hrv": return String(format: L("%.0f ms (normaal %.0f)"), d.value, d.baseline)
         case "skin": return String(format: "%+.1f °C", d.delta).replacingOccurrences(of: ".", with: ",")
-        case "resp": return String(format: "%.1f/min (normaal %.1f)", d.value, d.baseline).replacingOccurrences(of: ".", with: ",")
-        default: return String(format: "%.0f%% (normaal %.0f%%)", d.value, d.baseline)
+        case "resp": return String(format: L("%.1f/min (normaal %.1f)"), d.value, d.baseline).replacingOccurrences(of: ".", with: ",")
+        default: return String(format: L("%.0f%% (normaal %.0f%%)"), d.value, d.baseline)
         }
     }
 

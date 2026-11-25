@@ -151,14 +151,14 @@ final class ActivityStore: ObservableObject {
             AppRouter.shared.activity = .init(id: id)
             return
         }
-        var parts = [a.type.name, "\(Int((a.duration / 60).rounded())) min"]
+        var parts = [L(a.type.name), "\(Int((a.duration / 60).rounded())) min"]
         if let s = a.summary {
-            parts.append(String(format: "belasting %.1f", s.strain))
+            parts.append(String(format: L("belasting %.1f"), s.strain))
             parts.append("gem. \(Int(s.avgHr.rounded())) bpm")
         }
         let c = UNMutableNotificationContent()
-        c.title = "Activiteit klaar"
-        c.body = parts.joined(separator: " · ") + ". Tik voor de samenvatting."
+        c.title = L("Activiteit klaar")
+        c.body = parts.joined(separator: " · ") + L(". Tik voor de samenvatting.")
         c.sound = .default
         c.userInfo = ["activity": id.uuidString]
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "activiteit", content: c, trigger: nil))

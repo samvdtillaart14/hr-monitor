@@ -42,7 +42,7 @@ struct SleepHabitsCard: View {
                       lowerIsBetter: Bool, uitleg: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline) {
-                Text(title.uppercased()).font(Theme.label).tracking(1.5)
+                Text(L(title).uppercased()).font(Theme.label).tracking(1.5)
                 Spacer()
                 Text(value.map(text) ?? "--").font(Theme.number(22)).monospacedDigit()
             }

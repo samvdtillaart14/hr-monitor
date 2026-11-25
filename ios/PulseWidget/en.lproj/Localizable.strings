@@ -1,0 +1,8 @@
+"Slaap" = "Sleep";
+"Herstel" = "Recovery";
+"Belasting" = "Strain";
+"Herstel %@" = "Recovery %@";
+"Slaap %@" = "Sleep %@";
+"Bed %@ · wekker %@" = "Bed %@ · alarm %@";
+"Herstel %@ · bed %@" = "Recovery %@ · bed %@";
+"Slaap, herstel en belasting zoals op Vandaag." = "Sleep, recovery and strain as on Today.";

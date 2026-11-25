@@ -333,7 +333,7 @@ struct ActivityDetailView: View {
                 Text(v).font(Theme.number(44)).foregroundStyle(color).monospacedDigit()
                 if let avg { DeltaPill(text: avg, delta: delta) }
             }
-            Text(label.uppercased()).font(Theme.label).tracking(1.8).foregroundStyle(Theme.muted)
+            Text(L(label).uppercased()).font(Theme.label).tracking(1.8).foregroundStyle(Theme.muted)
         }
     }
 
@@ -571,8 +571,8 @@ struct RouteCard: View {
         var climb = 0.0, ref = p[0].alt
         for x in p.dropFirst() { if x.alt - ref > 1 { climb += x.alt - ref; ref = x.alt } else if x.alt < ref { ref = x.alt } }
         let items: [(String, String)] = [
-            ("Afstand", String(format: "%.1f km", dist / 1000)),
-            ("Gem. snelheid", String(format: "%.0f km/h", kmh)),
+            ("Afstand", String(format: L("%.1f km"), dist / 1000)),
+            ("Gem. snelheid", String(format: L("%.0f km/h"), kmh)),
             ("Gem. tempo", pace > 0 && pace < 3600 ? "\(fmtPace(pace)) /km" : "–"),
             ("Gem. HR", DV.mean(hrs).map { "\(Int($0.rounded())) bpm" } ?? "–"),
             ("Max. HR", hrs.max().map { "\(Int($0.rounded())) bpm" } ?? "–"),

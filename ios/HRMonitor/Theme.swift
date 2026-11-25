@@ -63,7 +63,7 @@ struct Card<Content: View>: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let title { Text(title.uppercased()).font(Theme.label).foregroundStyle(Theme.muted).tracking(2) }
+            if let title { Text(L(title).uppercased()).font(Theme.label).foregroundStyle(Theme.muted).tracking(2) }
             content
             if let info {
                 Text(info).font(.footnote).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)

@@ -1,0 +1,4 @@
+"NSBluetoothAlwaysUsageDescription" = "Pulse connects to your heart rate band via Bluetooth.";
+"NSMotionUsageDescription" = "Pulse uses your steps and your iPhone's motion detection to recognise and count activities (such as running).";
+"NSLocationWhenInUseUsageDescription" = "Pulse records your route (map, distance and pace) during an activity you start yourself.";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "Pulse records your route during an activity you start yourself, even with the screen off.";

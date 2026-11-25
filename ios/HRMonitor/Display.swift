@@ -4,6 +4,13 @@ import SwiftUI
 enum Display {
     /// Weergave: "system", "light" of "dark" (standaard donker, zoals altijd).
     static let appearance = "ui.appearance"
+    /// Gekozen taal ("" = systeem, "nl", "en"), via AppleLanguages; geldt na herstart van de app.
+    static var language: String { (UserDefaults.standard.array(forKey: "AppleLanguages") as? [String])?.first.flatMap { ["nl", "en"].contains(String($0.prefix(2))) && UserDefaults.standard.bool(forKey: "ui.languageSet") ? String($0.prefix(2)) : nil } ?? "" }
+    static func setLanguage(_ v: String) {
+        let d = UserDefaults.standard
+        if v.isEmpty { d.removeObject(forKey: "AppleLanguages"); d.set(false, forKey: "ui.languageSet") }
+        else { d.set([v], forKey: "AppleLanguages"); d.set(true, forKey: "ui.languageSet") }
+    }
     static func scheme(_ v: String) -> ColorScheme? { v == "light" ? .light : v == "system" ? nil : .dark }
     static let liveMinMax = "ui.show.live.minmax"
     static let liveSkin = "ui.show.live.skin"
@@ -33,7 +40,12 @@ struct DisplaySettingsSection: View {
             Picker("Weergave", selection: $appearance) {
                 Text("Systeem").tag("system"); Text("Licht").tag("light"); Text("Donker").tag("dark")
             }
-        } header: { Text("Weergave") }
+            Picker("Taal", selection: Binding(get: { Display.language }, set: { Display.setLanguage($0) })) {
+                Text("Systeem").tag(""); Text("Nederlands").tag("nl"); Text("English").tag("en")
+            }
+        } header: { Text("Weergave") } footer: {
+            Text("Herstart de app om de taal te wisselen. Je kunt de taal ook kiezen in iOS-instellingen › Pulse › Taal.")
+        }
         Section {
             Toggle("Live: min / gem / max", isOn: $liveMinMax)
             Toggle("Live: huidtemperatuur", isOn: $liveSkin)

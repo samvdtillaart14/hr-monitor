@@ -45,7 +45,7 @@ struct WidgetRing: View {
                     .foregroundStyle(.primary)
             }
             .frame(width: 78, height: 78)
-            Text(label.uppercased()).font(.system(size: 10, weight: .semibold)).tracking(1.5).foregroundStyle(.primary)
+            Text(L(label).uppercased()).font(.system(size: 10, weight: .semibold)).tracking(1.5).foregroundStyle(.primary)
                 .lineLimit(1).minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity)
@@ -67,9 +67,9 @@ struct PulseWidgetView: View {
                 .gaugeStyle(.accessoryCircularCapacity)
         case .accessoryRectangular:
             VStack(alignment: .leading, spacing: 1) {
-                Text("Herstel \(s?.recovery.map { "\($0)%" } ?? "--")").font(.headline)
-                Text("Slaap \(hm(s?.asleepMin))").font(.caption)
-                Text("Bed \(clock(s?.bedtime)) · wekker \(clock(s?.wake))").font(.caption)
+                Text(String(format: L("Herstel %@"), s?.recovery.map { "\($0)%" } ?? "--")).font(.headline)
+                Text(String(format: L("Slaap %@"), hm(s?.asleepMin))).font(.caption)
+                Text(String(format: L("Bed %@ · wekker %@"), clock(s?.bedtime), clock(s?.wake))).font(.caption)
             }
         case .systemMedium:
             HStack(spacing: 4) {
@@ -81,12 +81,12 @@ struct PulseWidgetView: View {
                            text: s?.strain.map { String(format: "%.0f", $0) } ?? "--", color: strainC)
             }
         case .accessoryInline:
-            Text("Herstel \(s?.recovery.map { "\($0)%" } ?? "--") · bed \(clock(s?.bedtime))")
+            Text(String(format: L("Herstel %@ · bed %@"), s?.recovery.map { "\($0)%" } ?? "--", clock(s?.bedtime)))
         default:
             VStack(alignment: .leading, spacing: 6) {
-                Text("HERSTEL").font(.caption2.bold()).foregroundStyle(.secondary)
+                Text(L("Herstel").uppercased()).font(.caption2.bold()).foregroundStyle(.secondary)
                 Text(s?.recovery.map { "\($0)%" } ?? "--").font(.system(size: 34, weight: .bold, design: .rounded)).foregroundStyle(recColor(s?.recovery))
-                Text("Slaap \(hm(s?.asleepMin))\(s?.sleepPerf.map { " · \($0)%" } ?? "")").font(.caption)
+                Text(String(format: L("Slaap %@"), hm(s?.asleepMin) + (s?.sleepPerf.map { " · \($0)%" } ?? ""))).font(.caption)
                 Label(clock(s?.bedtime), systemImage: "moon.zzz.fill").font(.caption)
             }
             .frame(maxWidth: .infinity, alignment: .leading)

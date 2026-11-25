@@ -14,8 +14,8 @@ enum DV {
         guard min.isFinite else { return "--" }
         let m = Int(min.rounded()); return "\(m / 60):\(String(format: "%02d", abs(m % 60)))"
     }
-    /// Datums altijd in het Nederlands, ook als de iPhone op Engels staat.
-    static let nl = Locale(identifier: "nl_NL")
+    /// Taal van datums en teksten: Engels als de app in het Engels draait, anders Nederlands.
+    static let nl: Locale = Bundle.main.preferredLocalizations.first == "en" ? Locale(identifier: "en_GB") : Locale(identifier: "nl_NL")
     static func clock(_ d: Date) -> String { d.formatted(Date.FormatStyle(date: .omitted, time: .shortened, locale: nl)) }
     static func recoveryColor(_ r: Int?) -> Color {
         guard let r else { return Theme.muted }
@@ -63,7 +63,7 @@ struct BigRing: View {
                 .rotationEffect(.degrees(-90)).shadow(color: color.opacity(0.45), radius: 10)
             VStack(spacing: 4) {
                 Text(text).font(Theme.number(64)).monospacedDigit().minimumScaleFactor(0.5).lineLimit(1)
-                Text(label.uppercased()).font(Theme.label).tracking(2.5).multilineTextAlignment(.center)
+                Text(L(label).uppercased()).font(Theme.label).tracking(2.5).multilineTextAlignment(.center)
             }.padding(30)
         }
         .frame(width: 230, height: 230).frame(maxWidth: .infinity).padding(.vertical, 8)
@@ -82,7 +82,7 @@ struct CompareRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon).foregroundStyle(Theme.muted).frame(width: 24)
-            Text(title.uppercased()).font(Theme.label).tracking(1.5)
+            Text(L(title).uppercased()).font(Theme.label).tracking(1.5)
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
                 Text(value).font(Theme.number(24)).monospacedDigit()
@@ -633,7 +633,7 @@ struct HealthMonitorView: View {
                 Text("°C").font(.footnote).foregroundStyle(Theme.muted)
             }
             if let delta, let s = DV.sd(hist) {
-                abs(delta) <= max(0.2, s) ? StatusPill(text: String(format: "binnen ±%.1f", max(0.2, s)), ok: true)
+                abs(delta) <= max(0.2, s) ? StatusPill(text: String(format: L("binnen ±%.1f"), max(0.2, s)), ok: true)
                     : StatusPill(text: delta > 0 ? "↑ hoger · let op" : "↓ lager · let op", ok: false)
             } else { StatusPill(text: "basislijn volgt", ok: nil) }
         }
