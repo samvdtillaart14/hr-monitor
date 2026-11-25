@@ -1,4 +1,6 @@
 import Foundation
+import UIKit
+import UserNotifications
 import CoreMotion
 import WhoopScores
 
@@ -135,7 +137,31 @@ final class ActivityStore: ObservableObject {
             if pts.count > 1 { items[i].distanceM = Route.distance(pts) }
         }
         save()
-        Task { await self.enrich(id, store: store, forceSummary: true) }
+        Task { await self.enrich(id, store: store, forceSummary: true); self.showSummary(id) }
+    }
+
+    /// Samenvatting na een activiteit (standaard aan); opgeslagen als "uit".
+    static let summaryOffKey = "activity.summaryOff"
+
+    /// Pop-up met de samenvatting als de app open is, anders een melding die de pop-up opent.
+    func showSummary(_ id: UUID) {
+        guard !UserDefaults.standard.bool(forKey: Self.summaryOffKey),
+              let a = items.first(where: { $0.id == id }), !a.isOngoing, a.duration >= 180 else { return }
+        if UIApplication.shared.applicationState == .active {
+            AppRouter.shared.activity = .init(id: id)
+            return
+        }
+        var parts = [a.type.name, "\(Int((a.duration / 60).rounded())) min"]
+        if let s = a.summary {
+            parts.append(String(format: "belasting %.1f", s.strain))
+            parts.append("gem. \(Int(s.avgHr.rounded())) bpm")
+        }
+        let c = UNMutableNotificationContent()
+        c.title = "Activiteit klaar"
+        c.body = parts.joined(separator: " · ") + ". Tik voor de samenvatting."
+        c.sound = .default
+        c.userInfo = ["activity": id.uuidString]
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "activiteit", content: c, trigger: nil))
     }
 
     func delete(_ id: UUID) {
@@ -203,6 +229,11 @@ final class ActivityStore: ObservableObject {
             self.save()
             self.busy = false
             for id in newIds { await self.enrich(id, store: store, guessType: true) }
+            // Net automatisch herkende activiteit (afgelopen in het laatste half uur): samenvatting tonen.
+            if let last = newIds.compactMap({ id in self.items.first { $0.id == id } })
+                .filter({ $0.effectiveEnd > Date().addingTimeInterval(-1800) }).max(by: { $0.start < $1.start }) {
+                self.showSummary(last.id)
+            }
             // Stappen ontbreken nog bij eerdere activiteiten (bv. toestemming net gegeven)
             // (één poging per activiteit per app-start, anders elke 30 s opnieuw zonder toestemming)
             for a in self.items where a.steps == nil && !a.isOngoing && !self.stepsTried.contains(a.id)

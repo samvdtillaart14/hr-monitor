@@ -19,6 +19,9 @@ final class AppRouter: ObservableObject {
     static let shared = AppRouter()
     enum Sheet: String, Identifiable { case journal, week, month; var id: String { rawValue } }
     @Published var sheet: Sheet?
+    /// Samenvatting van een net afgelopen activiteit.
+    struct ActivityRef: Identifiable { let id: UUID }
+    @Published var activity: ActivityRef?
 }
 
 // MARK: dagboek

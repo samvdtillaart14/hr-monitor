@@ -107,6 +107,7 @@ struct HRMonitorApp: App {
                     case .month: MonthReportSheet()
                     }
                 }
+                .sheet(item: $router.activity) { ActivitySummarySheet(id: $0.id) }
                 .overlay { if splash { SplashView(visible: $splash).transition(.opacity) } }
                 .environment(\.locale, DV.nl)
                 .environmentObject(services.store)
