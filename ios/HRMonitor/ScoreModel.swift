@@ -90,13 +90,13 @@ final class ScoreModel: ObservableObject {
         let personal = UserProfile.hasPersonalBaseline
         let manual = SleepEdits.all
         Task {
-            let (n, dl, ds) = await Task.detached(priority: .utility) { () -> ([Night], [DayLoad], [(String, DayStats)]) in
+            let (computed, dl, ds) = await Task.detached(priority: .utility) { () -> ([Night], [DayLoad], [(String, DayStats)]) in
                 let conv = input.map { ($0.0, $0.1.map(Self.convert), $0.2.map(Self.convert)) }
                 let (n, dl) = Self.compute(conv, fixedCal, prior: prior, personalBaseline: personal, awake: awake, manual: manual)
                 return (n, dl, Self.dayStats(input.map { ($0.0, $0.2) }, nights: n, days: dl))
             }.value
             // Vermoedelijke SpO2 per nacht: mediaan van de bandwaarden tussen inslapen en wakker worden.
-            var n = n
+            var n = computed
             for i in n.indices {
                 let lo = UInt32(n[i].r.onset), hi = UInt32(n[i].r.wake)
                 let v = input.first { Calendar.current.isDate($0.0, inSameDayAs: n[i].date) }?.1
