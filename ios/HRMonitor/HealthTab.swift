@@ -114,6 +114,9 @@ struct HealthTab: View {
     @State private var stepsLoaded = false
     @AppStorage(Display.healthAge) private var showAge = true
     @AppStorage(Display.healthPace) private var showPace = true
+    @AppStorage(BandMetricsCard.spo2Key) private var showSpo2 = true
+    @AppStorage(BandMetricsCard.skinKey) private var showSkin = true
+    @AppStorage(BandMetricsCard.respKey) private var showResp = true
 
     private var tips: [Improvement] {
         Improvements.build(ImprovementData.input(model: model, acts: acts, age: age, male: male,
@@ -143,6 +146,9 @@ struct HealthTab: View {
                     }
                     if showAge { AgeOrb(bio: hasData ? age.map { $0 + offset } : nil, offset: offset, size: 250) }
                     if showPace { paceCard }
+                    if showSpo2 || showSkin || showResp {
+                        BandMetricsCard(spo2: showSpo2, skin: showSkin, resp: showResp, revision: model.nights.count)
+                    }
                     NavigationLink { WeekReportView() } label: {
                         Card(title: "Weekrapport") {
                             HStack {
@@ -485,5 +491,58 @@ struct ProfileSheet: View {
                 }
             }
         }
+    }
+}
+
+/// Nachtwaarden van de band: SpO2 (voorlopig), huidtemperatuur t.o.v. je basislijn en ademfrequentie.
+struct BandMetricsCard: View {
+    static let spo2Key = "band.showSpo2", skinKey = "band.showSkinTemp", respKey = "band.showResp"
+    let spo2: Bool, skin: Bool, resp: Bool
+    /// verandert als er nieuwe nachten zijn berekend (dan opnieuw uit het archief lezen)
+    var revision = 0
+
+    private var nights: [NightMetrics] { NightArchive.shared.all.sorted { $0.key < $1.key }.map(\.value) }
+
+    private func row(_ title: String, _ value: String, _ sub: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.text)
+                Text(sub).font(.caption).foregroundStyle(Theme.muted)
+            }
+            Spacer()
+            Text(value).font(Theme.number(22)).monospacedDigit().foregroundStyle(Theme.text)
+        }
+    }
+
+    /// Laatste nacht met een waarde, en het gemiddelde van de (max. 30) nachten daarvoor.
+    private func last(_ k: KeyPath<NightMetrics, Double?>) -> (v: Double, base: Double?)? {
+        let vals = nights.compactMap { $0[keyPath: k] }
+        guard let v = vals.last else { return nil }
+        let prior = vals.dropLast().suffix(30)
+        return (v, prior.count >= 3 ? prior.reduce(0, +) / Double(prior.count) : nil)
+    }
+
+    var body: some View {
+        Card(title: "Band 's nachts") {
+            VStack(spacing: 12) {
+                if spo2 {
+                    let x = last(\.spo2)
+                    row("Zuurstof (SpO2)", x.map { "\(Int($0.v.rounded()))%" } ?? "--",
+                        x?.base.map { "normaal \(Int($0.rounded()))% · voorlopige meting" } ?? "voorlopige meting, nog niet bevestigd")
+                }
+                if skin {
+                    let x = last(\.skinTemp)
+                    let d = x.flatMap { a in a.base.map { a.v - $0 } }
+                    row("Huidtemperatuur", d.map { String(format: "%+.1f °C", $0).replacingOccurrences(of: ".", with: ",") } ?? "--",
+                        d != nil ? "t.o.v. je normaal" : "afwijking verschijnt na 4 nachten")
+                }
+                if resp {
+                    let x = last(\.resp)
+                    row("Ademfrequentie", x.map { "\(Int($0.v.rounded()))/min" } ?? "--",
+                        x?.base.map { "normaal \(Int($0.rounded()))/min" } ?? "per nacht, tijdens de slaap")
+                }
+            }
+        }
+        .id(revision)
     }
 }

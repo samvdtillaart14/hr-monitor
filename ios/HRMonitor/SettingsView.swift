@@ -9,6 +9,9 @@ struct SettingsView: View {
     @AppStorage(Recorder.alwaysOffKey) private var alwaysOff = false
     @AppStorage(ActivityStore.autoDetectOffKey) private var autoDetectOff = false
     @AppStorage(AppServices.tapActivityKey) private var tapActivity = true
+    @AppStorage(BandMetricsCard.spo2Key) private var showSpo2 = true
+    @AppStorage(BandMetricsCard.skinKey) private var showSkin = true
+    @AppStorage(BandMetricsCard.respKey) private var showResp = true
     @EnvironmentObject var rec: Recorder
     @EnvironmentObject var raw: RawLogger
     @EnvironmentObject var ble: BLEManager
@@ -85,6 +88,13 @@ struct SettingsView: View {
                 Toggle("GPS automatisch aan", isOn: $acts.autoGps).tint(Theme.accent)
             } header: { Text("Activiteiten") } footer: {
                 Text("Zet de GPS vanzelf aan bij verhoogde hartslag of als je iPhone hardlopen/fietsen ziet. Kies bij locatie \"Altijd\".")
+            }
+            Section {
+                Toggle("Zuurstof (SpO2)", isOn: $showSpo2).tint(Theme.accent)
+                Toggle("Huidtemperatuur", isOn: $showSkin).tint(Theme.accent)
+                Toggle("Ademfrequentie", isOn: $showResp).tint(Theme.accent)
+            } header: { Text("Band-functies op Gezondheid") } footer: {
+                Text("SpO2 is een voorlopige uitlezing van de band (nog niet bevestigd). Huidtemperatuur toont de afwijking van je eigen normaal.")
             }
             Section {
                 Toggle("Activiteiten automatisch herkennen", isOn: Binding(get: { !autoDetectOff }, set: { autoDetectOff = !$0 })).tint(Theme.accent)

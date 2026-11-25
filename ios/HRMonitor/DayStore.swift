@@ -19,6 +19,8 @@ final class DayStore: ObservableObject {
         var rec = false
         /// stappenteller van de band (R18 @61), cumulatief sinds herstart van de band
         var steps: Int?
+        /// vermoedelijke SpO2 (%) uit het historierecord, voorlopig
+        var spo2: Int?
     }
 
     /// Aantal dagen dat in het geheugen blijft (en bij de start wordt ingelezen).
@@ -104,6 +106,7 @@ final class DayStore: ObservableObject {
                     if let skin { s.skin = skin }
                     if let q { s.q = q }
                     if p.count >= 8, let st = Int(p[7]) { s.steps = st }
+                    if p.count >= 9, let o = Int(p[8]) { s.spo2 = o }
                     d[t] = s
                 }
                 out[k] = d
@@ -138,7 +141,7 @@ final class DayStore: ObservableObject {
             }
             lastQ = r.motion; lastQTime = r.time
         }
-        add(Sample(t: r.time, hr: r.hr, rr: r.rr, motion: m, skin: r.skinTemp, q: valid ? r.motion : nil, rec: true, steps: r.steps))
+        add(Sample(t: r.time, hr: r.hr, rr: r.rr, motion: m, skin: r.skinTemp, q: valid ? r.motion : nil, rec: true, steps: r.steps, spo2: r.spo2))
     }
 
     private func add(_ s: Sample) {
@@ -157,9 +160,10 @@ final class DayStore: ObservableObject {
         if s.skin != nil { cur.skin = s.skin }
         if s.q != nil { cur.q = s.q }
         if s.steps != nil { cur.steps = s.steps }
+        if s.spo2 != nil { cur.spo2 = s.spo2 }
         byDay[k, default: [:]][s.t] = cur
         sortedCache[k] = nil
-        let line = "\(s.t);\(s.hr);\(s.rr.map(String.init).joined(separator: " "));\(s.motion.map { String($0) } ?? "");\(s.skin.map { String($0) } ?? "");\(s.q.map { $0.map { String($0) }.joined(separator: " ") } ?? "");\(s.rec ? "H" : "L");\(s.steps.map(String.init) ?? "")\n"
+        let line = "\(s.t);\(s.hr);\(s.rr.map(String.init).joined(separator: " "));\(s.motion.map { String($0) } ?? "");\(s.skin.map { String($0) } ?? "");\(s.q.map { $0.map { String($0) }.joined(separator: " ") } ?? "");\(s.rec ? "H" : "L");\(s.steps.map(String.init) ?? "");\(s.spo2.map(String.init) ?? "")\n"
         pending[k, default: ""] += line
         scheduleFlush()
     }

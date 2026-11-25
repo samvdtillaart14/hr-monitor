@@ -46,6 +46,8 @@ public struct NightMetrics: Codable, Sendable {
     public var sufficiency: Double?, efficiency: Double?, consistency: Double?
     /// herstel (0–100) en geslapen minuten; los gezet (niet in init), voor weekrapport en dagboek
     public var recovery: Double?, asleepMin: Double?
+    /// vermoedelijke SpO2 (%), mediaan tijdens de slaap; voorlopig (niet bevestigd)
+    public var spo2: Double?
     public init(hrv: Double? = nil, rhr: Double? = nil, resp: Double? = nil, sleepPerf: Double? = nil, skinTemp: Double? = nil,
                 sufficiency: Double? = nil, efficiency: Double? = nil, consistency: Double? = nil) {
         self.hrv = hrv; self.rhr = rhr; self.resp = resp; self.sleepPerf = sleepPerf; self.skinTemp = skinTemp
