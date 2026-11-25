@@ -131,6 +131,7 @@ struct SettingsView: View {
                 if devMode {
                     NavigationLink { ExplorerView() } label: { Label("Verkenner (BLE-data en commando's)", systemImage: "antenna.radiowaves.left.and.right") }
                     NavigationLink { FilesView() } label: { Label("Opnames (CSV-bestanden)", systemImage: "folder") }
+                    NavigationLink { HapticProbeView() } label: { Label("Trilcommando zoeken", systemImage: "waveform.path") }
                 }
             } footer: {
                 Text(devMode
