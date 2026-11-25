@@ -1,6 +1,7 @@
 import Foundation
 import CoreBluetooth
 import UIKit
+import UserNotifications
 import WhoopScores
 
 /// Verbindt met een BLE-hartslagband (standaard Heart Rate Service 0x180D),
@@ -35,7 +36,23 @@ final class BLEManager: NSObject, ObservableObject {
     @Published var contact: String = "-"
     @Published var lastRR: Double?
     @Published var rmssd: Double?
-    @Published var battery: Int?
+    @Published var battery: Int? { didSet { if let battery { Self.checkLowBattery(battery) } } }
+
+    /// Melding "Band bijna leeg" (standaard aan); opgeslagen als "uit".
+    static let lowBatteryOffKey = "band.lowBatteryOff"
+    private static let lowBatterySentKey = "band.lowBatterySent"
+    /// Eén melding per ontlaadcyclus: bij ≤ 10%, opnieuw pas na opladen tot ≥ 20%.
+    static func checkLowBattery(_ pct: Int) {
+        let d = UserDefaults.standard
+        if pct >= 20 { d.set(false, forKey: lowBatterySentKey); return }
+        guard pct <= 10, pct > 0, !d.bool(forKey: lowBatterySentKey), !d.bool(forKey: lowBatteryOffKey) else { return }
+        d.set(true, forKey: lowBatterySentKey)
+        let c = UNMutableNotificationContent()
+        c.title = "Band bijna leeg (\(pct)%)"
+        c.body = "Laad je band op, anders mis je metingen."
+        c.sound = .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "batterij", content: c, trigger: nil))
+    }
     @Published var samples: [Sample] = []   // laatste 5 min voor de grafiek
     @Published var sessionMin: Int?
     @Published var sessionMax: Int?
