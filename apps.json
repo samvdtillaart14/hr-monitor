@@ -11,11 +11,11 @@
     "iconURL": "https://raw.githubusercontent.com/samvdtillaart14/hr-monitor/main/icon-512.png",
     "tintColor": "00F19F",
     "versions": [{
-      "version": "1.0.169",
-      "buildVersion": "169",
-      "date": "2026-11-26T14:42:40Z",
+      "version": "1.0.171",
+      "buildVersion": "171",
+      "date": "2026-11-26T15:18:42Z",
       "downloadURL": "https://github.com/samvdtillaart14/hr-monitor/releases/download/latest/HRMonitor.ipa",
-      "size": 2091299,
+      "size": 2091360,
       "minOSVersion": "17.0"
     }],
     "appPermissions": {
