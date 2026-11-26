@@ -181,22 +181,34 @@ enum MorningBrief {
     }
 }
 
-/// Meldingen ook tonen als de app open staat.
+/// Meldingen ook tonen als de app open staat; een tik opent Pulse op het juiste scherm.
+/// Completion-handler-varianten (niet async): die worden betrouwbaar op de hoofdthread afgehandeld,
+/// ook bij een koude start vanaf de melding.
 final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationDelegate()
-    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner, .list, .sound]
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .list, .sound])
     }
-    /// Tik op een melding: ochtendoverzicht, dagboek of weekrapport openen.
-    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
         let req = response.notification.request
-        if req.identifier == "ochtend" { await MainActor.run { MorningRouter.shared.show = true }; return }
-        if let s = req.content.userInfo["activity"] as? String, let id = UUID(uuidString: s) {
-            await MainActor.run { AppRouter.shared.activity = .init(id: id) }
-            return
+        let id = req.identifier
+        let info = req.content.userInfo
+        Task { @MainActor in
+            NotificationDelegate.route(id: id, info: info)
+            completionHandler()
         }
-        guard let raw = req.content.userInfo["sheet"] as? String,
-              let s = AppRouter.Sheet(rawValue: raw) else { return }
-        await MainActor.run { AppRouter.shared.sheet = s }
+    }
+    @MainActor static func route(id: String, info: [AnyHashable: Any]) {
+        let r = AppRouter.shared
+        if id == "ochtend" { r.tab = .today; MorningRouter.shared.show = true; return }
+        if let s = info["activity"] as? String, let u = UUID(uuidString: s) { r.tab = .today; r.activity = .init(id: u); return }
+        if let raw = info["sheet"] as? String, let s = AppRouter.Sheet(rawValue: raw) { r.tab = .health; r.sheet = s; return }
+        switch id {
+        case "ziekte", "afwijking", "dagboek", "week", "maand": r.tab = .health
+        case "batterij", "pasvorm": r.tab = .live
+        default: r.tab = .today
+        }
     }
 }
