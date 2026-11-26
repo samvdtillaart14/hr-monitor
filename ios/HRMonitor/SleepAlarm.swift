@@ -37,7 +37,14 @@ final class SleepAlarm: ObservableObject {
     /// Laatste antwoord van de band in bytes, voor het ontcijferen (alleen zichtbaar met ontwikkelaarsopties).
     @Published private(set) var bandRaw: String?
     /// Logboek van verstuurde commando's en antwoorden (nieuwste boven), en tellers.
-    @Published private(set) var bandLog: [String] = []
+    /// Logboek van de wekkercommando's; bewaard (laatste 100 regels) zodat je achteraf kunt zien wat er gebeurde.
+    @Published private(set) var bandLog: [String] = UserDefaults.standard.stringArray(forKey: "alarm.bandLog") ?? []
+    /// Eigen SET-commando's die nog op antwoord wachten; een SET-antwoord zonder openstaand eigen commando
+    /// komt van de Whoop-app (die zet bij elk verbinden zijn eigen wekker op nummer 1 en overschrijft de onze).
+    private var ownSetsOpen = 0
+    private var lastForeignResend = Date.distantPast
+    private var lastOwnSet = Date.distantPast
+    private var lastBandSend = Date.distantPast
     @Published private(set) var bandSent = 0
     @Published private(set) var bandAnswered = 0
     @Published private(set) var bandOk = 0
@@ -167,6 +174,10 @@ final class SleepAlarm: ObservableObject {
         let now = Date()
         // Wektijd voorbij: de volgende ochtend instellen.
         if now > a.wake.addingTimeInterval(120) { armed = nil; rearm(); return }
+        // Voor de zekerheid elke 3 uur opnieuw naar de band (de Whoop-app kan hem overschreven hebben).
+        if !a.fired, ble.state == .connected, now.timeIntervalSince(lastBandSend) > 3 * 3600, a.wake.timeIntervalSince(now) > 300 {
+            bandSentFor = nil; sendBandIfNeeded()
+        }
         guard !a.fired, a.mode != .exact, !estimating,
               now >= a.wake.addingTimeInterval(-SleepPlanner.smartWindowMin * 60),
               now.timeIntervalSince(lastCheck) >= 300 else { return }
@@ -233,14 +244,20 @@ final class SleepAlarm: ObservableObject {
     private func hex(_ b: [UInt8]) -> String { b.isEmpty ? "–" : b.prefix(16).map { String(format: "%02x", $0) }.joined(separator: " ") }
 
     private func log(_ line: String) {
-        bandLog.insert("\(Self.clock(Date(), seconds: true))  \(line)", at: 0)
-        if bandLog.count > 20 { bandLog.removeLast(bandLog.count - 20) }
+        let stamp = Date().formatted(.dateTime.locale(DV.nl).day().month(.abbreviated)) + " " + Self.clock(Date(), seconds: true)
+        bandLog.insert("\(stamp)  \(line)", at: 0)
+        if bandLog.count > 100 { bandLog.removeLast(bandLog.count - 100) }
+        d.set(bandLog, forKey: "alarm.bandLog")
     }
 
     /// Verstuurt een wekkercommando en zet het in het logboek.
     @discardableResult
     private func send(_ cmd: UInt8, _ body: [UInt8]) -> String? {
         let e = ble.sendBandAlarm(cmd, body: body)
+        if e == nil, cmd == SleepPlanner.BandAlarm.set {
+            if Date().timeIntervalSince(lastOwnSet) > 30 { ownSetsOpen = 0 }   // antwoorden kwijt: teller niet laten oplopen
+            ownSetsOpen += 1; lastOwnSet = Date()
+        }
         if let e { log("✗ \(Self.name(cmd)) niet verstuurd: \(e)") } else { bandSent += 1; log("→ \(Self.name(cmd)) [\(hex(body))]") }
         return e
     }
@@ -272,6 +289,7 @@ final class SleepAlarm: ObservableObject {
         guard ble.state == .connected else { bandStatus = "Band niet verbonden; de wekker wordt verstuurd zodra hij verbindt."; return }
         if let e = sendSet(a.wake, variant: variant) { bandStatus = e; return }
         bandSentFor = a.wake
+        lastBandSend = Date()
         bandStatus = "Wekker \(Self.clock(a.wake)) naar de band gestuurd, wacht op antwoord…"
     }
 
@@ -339,6 +357,10 @@ final class SleepAlarm: ObservableObject {
         let ours = SleepPlanner.BandAlarm.isAlarmCommand(cmd)
         if ours { bandAnswered += 1; if result == 1 { bandOk += 1 } }
         log("← \(Self.name(cmd)) \(Self.resultText(result)) [\(hex(body))]" + (ours ? "" : " (niet van ons, bv. Whoop-app)"))
+        if cmd == SleepPlanner.BandAlarm.set {
+            if ownSetsOpen > 0 && Date().timeIntervalSince(lastOwnSet) < 30 { ownSetsOpen -= 1 }
+            else { ownSetsOpen = 0; foreignSet(); return }
+        }
         switch cmd {
         case SleepPlanner.BandAlarm.set where awaitingBuzz && Date().timeIntervalSince(lastBuzz) < 10:
             // Antwoord op de bevestigingstrilling: niets aan de echte wekker veranderen.
@@ -381,6 +403,19 @@ final class SleepAlarm: ObservableObject {
             if result != 1 { bandStatus = "Band weigerde direct trillen (code \(result)); de wekker gaat op de ingestelde tijd." }
         default:
             break
+        }
+    }
+
+    /// Een ander (de Whoop-app) zette een wekker op de band: na 10 s onze wekkers opnieuw zetten (hooguit 1× per 2 min).
+    private func foreignSet() {
+        log("Wekker van buitenaf gezet (Whoop-app?): onze wekker wordt opnieuw gezet")
+        guard Date().timeIntervalSince(lastForeignResend) > 120 else { return }
+        lastForeignResend = Date()
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 10_000_000_000)
+            guard self.armed != nil else { return }
+            self.bandSentFor = nil
+            self.sendBandIfNeeded()
         }
     }
 
