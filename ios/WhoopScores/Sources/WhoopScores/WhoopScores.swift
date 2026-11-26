@@ -195,7 +195,10 @@ public enum WhoopScores {
             if let last = runs.last {
                 let gap = eps[last.upperBound..<i]
                 let known = gap.filter { $0.n > 0 }.count, unknown = gap.count - known
-                if known <= c.maxGapMin && unknown <= bridge { runs[runs.count - 1] = last.lowerBound..<j }
+                // Telefoongebruik in de tussentijd = zeker wakker: dan niet samenvoegen (mainSleep beslist of het
+                // blok ervoor toch bij de nacht hoort). Anders plakt stil liggen tussen het scrollen door aan de nacht.
+                let phone = forcedAwake[last.upperBound..<i].contains(true)
+                if known <= c.maxGapMin && unknown <= bridge && !phone { runs[runs.count - 1] = last.lowerBound..<j }
                 else { runs.append(i..<j) }
             } else { runs.append(i..<j) }
             i = j + 1
@@ -271,6 +274,14 @@ public enum WhoopScores {
         }
         // Tussentijd telt alleen in minuten mét metingen (een datagat is geen wakker zijn).
         func gapMin(_ a: Int, _ b: Int) -> Int { a < b ? eps[a..<b].filter { $0.n > 0 }.count : 0 }
+        // Telefoon gebruikt tussen een blok en de nacht erna? Dan was dat blok stil liggen/scrollen op de bank,
+        // tenzij het zelf al een flink stuk slaap is (wc/telefoon midden in de nacht). 25-11: tot 23:00 op de telefoon.
+        func phoneBetween(_ a: Int, _ b: Int) -> Bool {
+            guard !awake.isEmpty, a < b else { return false }
+            let t0 = eps[a].t, t1 = eps[min(b, eps.count - 1)].t
+            return awake.contains { $0.lowerBound < t1 && $0.upperBound > t0 }
+        }
+        let minBeforePhone = c.minBlockBeforePhoneMin ?? 90
         var main = longest
         var parts = [longest]
         if night(longest) {
@@ -281,7 +292,8 @@ public enum WhoopScores {
                     let inside = night(p)
                     let g = inside ? c.nightMergeGapMin : c.nightExtendGapMin   // aansluitend blok buiten de nacht: alleen bij korte onderbreking
                     if p.upperBound <= main.lowerBound && gapMin(p.upperBound, main.lowerBound) <= g
-                        && (inside || quietExtension(p, gapFrom: p.upperBound, to: main.lowerBound)) {
+                        && (inside ? (p.count >= minBeforePhone || !phoneBetween(p.upperBound, main.lowerBound))
+                                   : quietExtension(p, gapFrom: p.upperBound, to: main.lowerBound)) {
                         main = p.lowerBound..<main.upperBound; parts.append(p); grew = true
                     } else if p.lowerBound >= main.upperBound && gapMin(main.upperBound, p.lowerBound) <= g
                                 && (inside || quietExtension(p, gapFrom: main.upperBound, to: p.lowerBound)) {

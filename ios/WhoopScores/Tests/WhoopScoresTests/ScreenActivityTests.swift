@@ -71,4 +71,14 @@ final class ScreenActivityTests: XCTestCase {
         // zelf ingestelde start: 06:30
         XCTAssertFalse(ScreenActivity.morningBriefDue(now: at(6.2), tzOffsetMin: cet, lastBriefDay: nil, startHour: 6.5))
     }
+
+    /// 25-11: tot ~23:00 af en toe op de telefoon, ertussen stil: inslapen pas na het laatste telefoonmoment.
+    func testPhoneBeforeBedPostponesOnset() throws {
+        let eps = quietNight()
+        // 3× 3 min telefoon met 25 min stil ertussen, laatste eindigt op minuut 84
+        let awake = [0, 28, 81].map { day + Double($0) * 60 ..< day + Double($0 + 3) * 60 }
+        let d = WhoopScores.detectSleep(eps, cal, awake: awake)
+        let r = try XCTUnwrap(WhoopScores.mainSleep(eps, periods: d.periods, cal, tzOffsetMin: 0, awake: awake))
+        XCTAssertGreaterThanOrEqual(r.main.lowerBound, 84)
+    }
 }

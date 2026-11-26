@@ -70,6 +70,9 @@ public struct Calibration: Codable, Equatable, Sendable {
         /// Inslapen: het begin van een slaapblok schuift op tot de HR (mediaan over 10 min) gezakt is tot
         /// hooguit zoveel boven rust; daarvoor is het stil liggen of tv kijken. nil = 12 bpm.
         public var onsetHrAbove: Double? = nil
+        /// Een slaapblok vóór de nacht met telefoongebruik ertussen hoort alleen bij de nacht als het minstens
+        /// zo lang is (echt geslapen, daarna even wakker). Korter = op de bank/in bed met telefoon. nil = 90 min.
+        public var minBlockBeforePhoneMin: Int? = nil
         /// Een los staartje slaap korter dan dit na het wakker worden telt niet mee.
         public var edgeRunMin: Int = 20
         /// Extra wakker-regel op ruwe beweging (× drempel); 0 = uit.
