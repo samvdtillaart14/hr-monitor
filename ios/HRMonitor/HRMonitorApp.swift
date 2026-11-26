@@ -112,10 +112,10 @@ struct HRMonitorApp: App {
     @AppStorage(Display.appearance) private var appearance = "dark"
     var body: some Scene {
         WindowGroup {
-            TabView {
-                TodayView().tabItem { Label("Vandaag", systemImage: "sun.max.fill") }
-                ContentView().tabItem { Label("Live", systemImage: "heart.fill") }
-                HealthTab().tabItem { Label("Gezondheid", systemImage: "heart.text.square.fill") }
+            TabView(selection: $router.tab) {
+                TodayView().tabItem { Label("Vandaag", systemImage: "sun.max.fill") }.tag(AppRouter.Tab.today)
+                ContentView().tabItem { Label("Live", systemImage: "heart.fill") }.tag(AppRouter.Tab.live)
+                HealthTab().tabItem { Label("Gezondheid", systemImage: "heart.text.square.fill") }.tag(AppRouter.Tab.health)
             }
                 .sheet(item: $router.sheet) { s in
                     switch s {

@@ -22,6 +22,9 @@ final class AppRouter: ObservableObject {
     /// Samenvatting van een net afgelopen activiteit.
     struct ActivityRef: Identifiable { let id: UUID }
     @Published var activity: ActivityRef?
+    /// Geselecteerde tab (een tik op een melding springt naar het juiste tabblad).
+    enum Tab: Hashable { case today, live, health }
+    @Published var tab: Tab = .today
 }
 
 // MARK: dagboek
