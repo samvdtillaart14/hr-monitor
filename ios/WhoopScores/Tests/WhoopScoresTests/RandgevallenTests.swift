@@ -170,4 +170,22 @@ final class RandgevallenTests: XCTestCase {
         XCTAssertEqual(r.main.lowerBound, 0)
         XCTAssertGreaterThanOrEqual(r.main.upperBound, 470)
     }
+
+    /// 25-11: stil op de bank (HR ~76, geen bewegingsdata) telde als slaap; inslapen pas bij de HR-daling.
+    func testCouchWithoutMotionIsNotSleep() {
+        let eps = (0..<600).map { i in
+            Epoch(t: day + Double(i) * 60, hr: i < 90 ? 76 : 57, hrSd: 1, move: 0, skinTemp: .nan, n: 60, hasMotion: false)
+        }
+        let d = WhoopScores.detectSleep(eps, cal)
+        XCTAssertEqual(d.periods.first?.lowerBound ?? -1, 90, accuracy: 3)
+    }
+
+    /// Wel bewegingsdata, stil liggen met verhoogde HR: inslapen schuift op naar de HR-daling.
+    func testOnsetWaitsForHrDrop() {
+        let eps = (0..<600).map { i in
+            Epoch(t: day + Double(i) * 60, hr: i < 60 ? 72 : 56, hrSd: 1, move: 0, skinTemp: .nan, n: 60)
+        }
+        let d = WhoopScores.detectSleep(eps, cal)
+        XCTAssertEqual(d.periods.first?.lowerBound ?? -1, 60, accuracy: 6)
+    }
 }

@@ -64,6 +64,12 @@ public struct Calibration: Codable, Equatable, Sendable {
         /// Slaap die niet in het nachtvenster valt telt alleen als nacht als hij minstens zo lang duurt (late/verschoven nacht).
         /// Korter = dutje of stilzitten overdag, dan is er geen nacht (geen slaap- en herstelscore).
         public var minDayMainMin: Int? = nil   // nil = 180 min (optioneel: oude kalibraties)
+        /// Minuten zonder bewegingsdata (alleen live hartslag) tellen alleen als slaap bij een HR hooguit zoveel
+        /// boven rust: zonder beweging is stil op de bank niet van slaap te onderscheiden. nil = 10 bpm.
+        public var noMotionHrAbove: Double? = nil
+        /// Inslapen: het begin van een slaapblok schuift op tot de HR (mediaan over 10 min) gezakt is tot
+        /// hooguit zoveel boven rust; daarvoor is het stil liggen of tv kijken. nil = 12 bpm.
+        public var onsetHrAbove: Double? = nil
         /// Een los staartje slaap korter dan dit na het wakker worden telt niet mee.
         public var edgeRunMin: Int = 20
         /// Extra wakker-regel op ruwe beweging (× drempel); 0 = uit.
