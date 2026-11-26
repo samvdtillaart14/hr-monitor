@@ -74,11 +74,23 @@ final class ScreenActivityTests: XCTestCase {
 
     /// 25-11: tot ~23:00 af en toe op de telefoon, ertussen stil: inslapen pas na het laatste telefoonmoment.
     func testPhoneBeforeBedPostponesOnset() throws {
-        let eps = quietNight()
+        // op de bank: stil, HR nog wat hoger dan in de nacht
+        let eps = quietNight().enumerated().map { i, e in var e = e; if i < 84 { e.hr = 66 }; return e }
         // 3× 3 min telefoon met 25 min stil ertussen, laatste eindigt op minuut 84
         let awake = [0, 28, 81].map { day + Double($0) * 60 ..< day + Double($0 + 3) * 60 }
         let d = WhoopScores.detectSleep(eps, cal, awake: awake)
         let r = try XCTUnwrap(WhoopScores.mainSleep(eps, periods: d.periods, cal, tzOffsetMin: 0, awake: awake))
         XCTAssertGreaterThanOrEqual(r.main.lowerBound, 84)
+    }
+
+    /// 5 min op de telefoon om 01:00 (na 1 uur slapen): één volledige nacht, alleen die minuten wakker.
+    func testShortPhoneCheckKeepsWholeNight() throws {
+        let eps = quietNight()
+        let awake = [day + 60 * 60 ..< day + 65 * 60]
+        let d = WhoopScores.detectSleep(eps, cal, awake: awake)
+        let r = try XCTUnwrap(WhoopScores.mainSleep(eps, periods: d.periods, cal, tzOffsetMin: 0, awake: awake))
+        XCTAssertLessThanOrEqual(r.main.lowerBound, 2)
+        XCTAssertGreaterThanOrEqual(r.main.upperBound, 478)
+        for i in 60..<65 { XCTAssertFalse(d.candidate[i]) }
     }
 }
