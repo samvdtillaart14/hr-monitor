@@ -17,7 +17,9 @@ public struct Sample: Sendable {
 
 public struct Beat: Sendable { public var t: Double; public var rr: Double; public var ok: Bool; public var segEnd: Bool }
 
-public struct Epoch: Sendable { public var t: Double; public var hr: Double; public var hrSd: Double; public var move: Double; public var skinTemp: Double; public var n: Int }
+public struct Epoch: Sendable { public var t: Double; public var hr: Double; public var hrSd: Double; public var move: Double; public var skinTemp: Double; public var n: Int
+    /// false = in deze minuut geen oriëntatiedata (alleen live hartslag): `move` = 0 betekent dan "onbekend", niet "stil".
+    public var hasMotion: Bool = true }
 
 public enum Stage: Int, Sendable { case wake = 0, light = 1, deep = 2, rem = 3 }
 
@@ -139,19 +141,19 @@ public enum WhoopScores {
     public static func epochs(_ samples: [Sample], epochSec: Double = 60) -> [Epoch] {
         guard let first = samples.first else { return [] }
         let t0 = first.t
-        var hrs: [[Double]] = [], temps: [[Double]] = [], moves: [Double] = [], ns: [Int] = []
+        var hrs: [[Double]] = [], temps: [[Double]] = [], moves: [Double] = [], ns: [Int] = [], qs: [Int] = []
         var prevQ: [Double]? = nil
         for s in samples {
             let i = Int(((s.t - t0) / epochSec).rounded(.down))
-            while hrs.count <= i { hrs.append([]); temps.append([]); moves.append(0); ns.append(0) }
+            while hrs.count <= i { hrs.append([]); temps.append([]); moves.append(0); ns.append(0); qs.append(0) }
             ns[i] += 1
             if s.hr > 0 { hrs[i].append(s.hr) }
             if let st = s.skinTemp, st.isFinite { temps[i].append(st) }
-            if let q = s.q, q.count == 4 { if let p = prevQ { moves[i] += quatAngle(p, q) }; prevQ = q }
+            if let q = s.q, q.count == 4 { if let p = prevQ { moves[i] += quatAngle(p, q) }; prevQ = q; qs[i] += 1 }
         }
         return hrs.indices.map { i in
             Epoch(t: t0 + Double(i) * epochSec, hr: hrs[i].isEmpty ? .nan : M.mean(hrs[i]), hrSd: M.sd(hrs[i]),
-                  move: moves[i], skinTemp: temps[i].isEmpty ? .nan : M.mean(temps[i]), n: ns[i])
+                  move: moves[i], skinTemp: temps[i].isEmpty ? .nan : M.mean(temps[i]), n: ns[i], hasMotion: qs[i] > 0)
         }
     }
 
@@ -169,13 +171,18 @@ public enum WhoopScores {
         let c = cal.sleep
         let moveS = M.movingMedian(eps.map { $0.move }, 7)   // mediaan: een omdraaimoment maakt je niet wakker
         let moveThr = c.moveThreshold > 0 ? c.moveThreshold
-            : max(1e-3, 3 * M.percentile(moveS.indices.filter { eps[$0].n > 0 }.map { moveS[$0] }, 0.1))   // gaten tellen niet mee
+            : max(1e-3, 3 * M.percentile(moveS.indices.filter { eps[$0].n > 0 && eps[$0].hasMotion }.map { moveS[$0] }, 0.1))   // gaten tellen niet mee
         // rustreferentie: gekalibreerde rust-HR, of hoger als de nacht zelf hoger ligt (alcohol, ziekte, warmte)
         let p5 = M.percentile(eps.map { $0.hr }, 0.05)
         let rhr = max(cal.profile.restingHr, p5.isFinite ? p5 : 0)
         let forcedAwake = ScreenActivity.awakeMask(eps, awake)
+        // Zonder bewegingsdata (alleen live HR) is stil zitten niet van slaap te onderscheiden: dan moet de HR
+        // echt laag zijn (25-11: bank 21:30–23:00 met HR ~75 werd anders als slaap gezien).
+        let noMotionHr = rhr + (c.noMotionHrAbove ?? 10)
         var cand = eps.indices.map { i in
-            !forcedAwake[i] && moveS[i] < moveThr && (!eps[i].hr.isFinite || eps[i].hr < rhr + c.hrAboveRest) && eps[i].n > 0
+            guard !forcedAwake[i], eps[i].n > 0 else { return false }
+            if !eps[i].hasMotion { return eps[i].hr.isFinite && eps[i].hr < noMotionHr }
+            return moveS[i] < moveThr && (!eps[i].hr.isFinite || eps[i].hr < rhr + c.hrAboveRest)
         }
         // Een gat zonder metingen is geen wakker zijn: alleen minuten mét data tellen voor maxGapMin,
         // zolang het datagat zelf niet langer is dan noDataBridgeMin.
@@ -194,6 +201,19 @@ public enum WhoopScores {
             i = j + 1
         }
         // los staartje aan het eind van een blok (na >= 5 min wakker) weghalen
+        // Inslapen pas als de HR gezakt is: begin van elk blok opschuiven zolang de mediaan-HR van de
+        // komende 10 minuten nog duidelijk boven rust ligt (stil op de bank/in bed met tv is nog geen slaap).
+        let onsetHr = rhr + (c.onsetHrAbove ?? 12)
+        func medianHr(_ a: Int, _ b: Int) -> Double {
+            let v = eps[a..<min(b, eps.count)].map(\.hr).filter { $0.isFinite && $0 > 0 }.sorted()
+            return v.isEmpty ? .nan : v[v.count / 2]
+        }
+        for r in runs.indices {
+            var s = runs[r].lowerBound
+            while s < runs[r].upperBound, !cand[s] || (medianHr(s, s + 10).isFinite && medianHr(s, s + 10) > onsetHr) { s += 1 }
+            runs[r] = s..<max(s, runs[r].upperBound)
+        }
+        runs = runs.filter { !$0.isEmpty }
         for r in runs.indices {
             let lo = runs[r].lowerBound
             var end = runs[r].upperBound
