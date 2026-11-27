@@ -39,14 +39,30 @@ struct HapticProbeView: View {
     /// Geen wekkercommando's en geen andere commando-id's (die kunnen resetten, herstarten of data wissen).
     static let sweep: [(cmd: UInt8, body: [UInt8])] = {
         var out: [(UInt8, [UInt8])] = []
+        // Eerst gericht: het trildeel uit het wekkerpakket. De firmware start bij een wekker een "custom haptics"-
+        // sequentie op de DRV2625-trildriver; 2F 98 lijkt daar de reeks (effect 47 = buzz, 0x98 = 240 ms pauze),
+        // gevolgd door 8 lege plekken, herhalingen (07) en duur (1E 00 = 30 s).
+        let seqs: [[UInt8]] = [
+            [0x00, 0x00, 0x2F, 0x98, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, 0x01, 0x00],   // hele wekkerstaart, 1× 1 s
+            [0x2F, 0x98, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, 0x01, 0x00],               // vanaf het patroon
+            [0x2F, 0x98, 0, 0, 0, 0, 0, 0, 0, 0, 0x07, 0x1E, 0x00],               // zoals de wekker (7×, 30 s)
+            [0x2F, 0x98, 0, 0, 0, 0, 0, 0],                                         // alleen de 8 reeksplekken
+            [0x2F, 0x98], [0x2F], [0x2F, 0x00],
+            [0x01, 0, 0, 0, 0, 0, 0, 0], [0x0E, 0, 0, 0, 0, 0, 0, 0], [0x34, 0, 0, 0, 0, 0, 0, 0],
+        ]
+        for cmd: UInt8 in [0x4F, 0x13] {
+            for pre: [UInt8] in [[], [0x01], [0x00], [0x04, 0x08]] {
+                for q in seqs { out.append((cmd, pre + q)) }
+            }
+        }
         for p in 0...255 { out.append((0x4F, [UInt8(p)])) }
         for p in 0...255 { out.append((0x4F, [UInt8(p), 0x01])) }
         for p in 0...255 { out.append((0x4F, [0x01, UInt8(p)])) }
         for p in 0...255 { out.append((0x13, [UInt8(p)])) }
         return out
     }()
-    /// tijd tussen twee commando's (s); 1024 × 0,4 s ≈ 7 min
-    static let sweepGap = 0.4
+    /// tijd tussen twee commando's (s); ~1100 × 0,12 s ≈ 2 min
+    static let sweepGap = 0.12
 
     private static func le32(_ v: UInt32) -> [UInt8] { [UInt8(v & 0xFF), UInt8(v >> 8 & 0xFF), UInt8(v >> 16 & 0xFF), UInt8(v >> 24)] }
     /// Wekker 8 over 2 s, met aangepaste staart (zelfde opbouw als de Whoop-app: `04 id` + tijd + 15 bytes).
@@ -110,7 +126,7 @@ struct HapticProbeView: View {
                     .font(.footnote).foregroundStyle(Theme.muted)
             }
             Section {
-                Text("\(Self.sweep.count) trilcommando's (79 en 19, alle waarden) automatisch achter elkaar, zonder wekkertruc. Houd de band om. Voel je iets, druk dan meteen op Trilde nu!.")
+                Text("\(Self.sweep.count) trilcommando's (79 en 19; eerst het trildeel uit het wekkerpakket, dan alle waarden) automatisch achter elkaar, zonder wekkertruc. Houd de band om. Voel je iets, druk dan meteen op Trilde nu!.")
                     .font(.footnote).foregroundStyle(Theme.muted)
                 ProgressView(value: Double(sweepIndex), total: Double(Self.sweep.count))
                 Text("\(sweepIndex) / \(Self.sweep.count)").font(.caption.monospaced())
