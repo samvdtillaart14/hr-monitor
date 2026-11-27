@@ -90,6 +90,9 @@ struct TodayView: View {
             if phase == .active && Date().timeIntervalSince(lastCompute) > 30 { recompute() }
         }
         .onChange(of: phase) { _, p in if p == .active { recompute() } }
+        // Bij het opstarten zijn de opgeslagen dagen nog niet ingelezen: zodra dat klaar is meteen rekenen
+        // (anders bleef het scherm leeg tot je omlaag veegde, door de 30-s-grens hierboven).
+        .onChange(of: store.initialLoaded) { _, l in if l { recompute() } }
         // Stress hangt af van de rust-HR van de laatste nacht: opnieuw zodra de nachten klaar zijn.
         // dropFirst: de beginwaarde (nog lege lijst) zou activiteiten herkennen zonder slaap uit te sluiten.
         .onReceive(scores.$nights.dropFirst()) { n in
