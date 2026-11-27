@@ -80,8 +80,8 @@ public struct Calibration: Codable, Equatable, Sendable {
         public var edgeRunMin: Int = 20
         /// Extra wakker-regel op ruwe beweging (× drempel); 0 = uit.
         public var wakeMoveFactor: Double = 0
-        /// "all" = HRV/rust-HR over alle slaapvensters, "lastDeep" = laatste diepe blok.
-        public var hrvFrom: String = "all"
+        /// "lastDeep" = laatste diepe blok (zoals Whoop, standaard), "all" = alle slaapvensters.
+        public var hrvFrom: String = "lastDeep"
         /// slaapschuld = min(cap, carry·schuld gisteren + fromDeficit·(behoefte − geslapen) gisteren)
         public var debtCarry: Double = 0.1, debtFromDeficit: Double = 0.55, debtCapMin: Double = 127
     }

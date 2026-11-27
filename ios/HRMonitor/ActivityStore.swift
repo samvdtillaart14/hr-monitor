@@ -41,6 +41,9 @@ struct Activity: Codable, Identifiable, Equatable {
     var distanceM: Double?
     /// herstel na inspanning: hartslagdaling 1 en 2 min na het einde (bpm)
     var hrr1: Int?, hrr2: Int?
+    /// gestart met een dubbeltik op de band; nil/false = nog niet gecontroleerd op echte inspanning
+    var fromTap: Bool?
+    var tapChecked: Bool?
 
     var effectiveEnd: Date { end ?? Date() }
     var duration: TimeInterval { effectiveEnd.timeIntervalSince(start) }
@@ -95,7 +98,9 @@ final class ActivityStore: ObservableObject {
     var ongoing: Activity? { items.first { $0.isOngoing } }
 
     func on(day: Date) -> [Activity] {
-        items.filter { Calendar.current.isDate($0.start, inSameDayAs: day) || ($0.isOngoing && Calendar.current.isDateInToday(day)) }
+        // Ook een activiteit die de dag ervoor begon (bv. over middernacht) staat op de dag waarop hij eindigt.
+        items.filter { Calendar.current.isDate($0.start, inSameDayAs: day) || Calendar.current.isDate($0.effectiveEnd, inSameDayAs: day)
+            || ($0.isOngoing && Calendar.current.isDateInToday(day)) }
     }
 
     /// Vorige activiteiten van hetzelfde type in de 30 dagen ervoor (voor de vergelijking).
@@ -179,6 +184,7 @@ final class ActivityStore: ObservableObject {
     /// `sleep`: slaapperioden (die tellen nooit als activiteit).
     func refresh(store: DayStore, sleep: [(start: Double, end: Double)]) {
         guard !busy else { return }
+        checkTapActivities(store: store)
         busy = true
         let cal = Calendar.current, today = cal.startOfDay(for: Date())
         let rawStore: [DayStore.Sample] = (0..<7).reversed().flatMap { k in
@@ -282,9 +288,36 @@ final class ActivityStore: ObservableObject {
             return items.first { $0.id == o.id }.map { (false, $0) }
         }
         let type = items.filter { !$0.auto }.max { $0.start < $1.start }?.type ?? .running
-        let a = Activity(type: type, start: Date(), end: nil)
+        var a = Activity(type: type, start: Date(), end: nil)
+        a.fromTap = true
         add(a, store: store)
+        Timer.scheduledTimer(withTimeInterval: Self.tapCheckSec + 30, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkTapActivities(store: store) }
+        }
         return (true, a)
+    }
+
+    /// Na zoveel seconden kijken of een dubbeltik-activiteit echte inspanning is.
+    static let tapCheckSec: TimeInterval = 600
+
+    /// Een per ongeluk gestarte dubbeltik-activiteit (bv. tik om de batterij te zien, of in bed) weggooien
+    /// als de hartslag in de eerste 10 minuten niet boven rust uitkomt (< rust-HR + 15).
+    func checkTapActivities(store: DayStore) {
+        let now = Date()
+        for a in items where a.isOngoing && a.fromTap == true && a.tapChecked != true
+            && now.timeIntervalSince(a.start) >= Self.tapCheckSec {
+            let s = a.start.timeIntervalSince1970, e = s + Self.tapCheckSec
+            let raw = store.samples(day: a.start).map(ScoreModel.convert) +
+                (Calendar.current.isDate(a.start, inSameDayAs: now) ? [] : store.samples(day: now).map(ScoreModel.convert))
+            let sum = WhoopScores.activitySummary(raw, start: s, end: e, UserProfile.calibration())
+            if sum.measuredSec >= 300 && sum.avgHr < UserProfile.current.restingHr + 15 {
+                delete(a.id)
+                InsightNotifications.post("band-tik", L("Activiteit weggegooid"),
+                                          L("Na de dubbeltik op je band zag Pulse geen inspanning (hartslag in rust)."))
+            } else if sum.measuredSec >= 300 || now.timeIntervalSince(a.start) > 3600 {
+                set(a.id) { $0.tapChecked = true }
+            }
+        }
     }
     private static let pendingKey = "activity.autoRoutes"
     private static let autoSessionKey = "activity.autoSession"

@@ -78,9 +78,9 @@ test('synthetische nacht: inslapen, ontwaken, fases, HRV, rust-HR, ademfrequenti
   near((n.wake - samples[0].t) / 60, 250, 5, 'ontwaakmoment');
   near(n.deepMin / n.asleepMin, 0.20, 0.02, 'diepe slaap');
   near(n.remMin / n.asleepMin, 0.22, 0.02, 'REM');
-  near(n.rhr, 55, 2, 'rust-HR gemiddeld over de slaap');
-  const deepCal = structuredClone(W.DEFAULT_CALIBRATION); deepCal.sleep.hrvFrom = 'lastDeep';
-  near(W.analyzeNight(samples, deepCal).rhr, 50, 2, 'rust-HR uit laatste diepe blok');
+  near(n.rhr, 50, 2, 'rust-HR uit laatste diepe blok (standaard, zoals Whoop)');
+  const allCal = structuredClone(W.DEFAULT_CALIBRATION); allCal.sleep.hrvFrom = 'all';
+  near(W.analyzeNight(samples, allCal).rhr, 55, 2, 'rust-HR gemiddeld over de slaap');
   assert.ok(n.hrv > 40 && n.hrv < 90, String(n.hrv));
   near(n.resp, 15, 0.6, 'ademfrequentie');
   near(n.skinTemp, 33.6, 0.1);
@@ -103,7 +103,7 @@ test('nacht met verhoogde hartslag (alcohol): slaap wordt nog steeds gevonden', 
   const n = W.analyzeNight(hot);
   assert.ok(n, 'geen slaap gevonden');
   near((n.onset - samples[0].t) / 60, 30, 6);
-  near(n.rhr, 73, 3);
+  near(n.rhr, 68, 3); // rust-HR uit laatste diepe blok (50 + 18)
 });
 
 test('slaapstress: hogere HR en lagere HRV geven meer stress', () => {

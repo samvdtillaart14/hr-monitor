@@ -61,7 +61,7 @@ final class WhoopParser: ObservableObject {
     var onRecord: ((Record) -> Void)?
     /// Live HR en RR-intervallen (ms) uit het realtime-pakket 0x28.
     var onLive: ((Int, [Int]) -> Void)?
-    /// Dubbeltik op de band: firmwarelog "IMU double tap detected", of een 0x30-event met een id uit `tapEventIds`.
+    /// Dubbeltik op de band: firmwarelog "Double tap detected, displaying …", of een 0x30-event met een id uit `tapEventIds`.
     var onDoubleTap: (() -> Void)?
     /// 0x30-event-ids die een dubbeltik betekenen (nog onbekend; instelbaar via UserDefaults "band.tapEventIds").
     var tapEventIds: Set<Int> { Set((UserDefaults.standard.array(forKey: "band.tapEventIds") as? [Int]) ?? []) }
@@ -205,7 +205,10 @@ final class WhoopParser: ObservableObject {
             let txt = String(decoding: b[21..<(b.count - 4)].filter { $0 >= 0x20 && $0 < 0x7F || $0 == 0x0A }, as: UTF8.self)
             for line in txt.split(separator: "\n") where !line.trimmingCharacters(in: .whitespaces).isEmpty {
                 logLines.append(String(line))
-                if line.lowercased().contains("double tap") { doubleTap() }
+                // Alleen de UI-melding "Double tap detected, displaying …" telt; "… quieting haptics" is een tik
+                // om de wekker (ook die van de Whoop-app) stil te zetten en start dus geen activiteit.
+                let l = line.lowercased()
+                if l.contains("double tap") && l.contains("displaying") { doubleTap() }
             }
             if logLines.count > 50 { logLines.removeFirst(logLines.count - 50) }
         case 0x30 where b.count >= 16:

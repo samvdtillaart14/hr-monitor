@@ -91,6 +91,8 @@ enum UserProfile {
         var c = importedCalibration ?? Calibration.standard
         // Een geïmporteerde kalibratie komt uit je eigen Whoop-export: de basislijn daarin is persoonlijk.
         if importedCalibration != nil { c.recovery.baselinePersonal = true }
+        // HRV/rust-HR altijd zoals Whoop (laatste diepe blok), ook als een oudere kalibratie "all" zegt.
+        c.sleep.hrvFrom = "lastDeep"
         // Zelf ingevulde basislijn telt tot er genoeg eigen nachten zijn (daarna rekent de module met je nachten).
         let mb = manualBaseline
         if let h = mb.hrv { c.recovery.baseline.lnHrvMean = log(h); c.recovery.baselinePersonal = true }

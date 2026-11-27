@@ -40,7 +40,7 @@ export const DEFAULT_CALIBRATION = {
     edgeRunMin: 20,
     // extra wakker-regel op ruwe beweging (× drempel); 0 = uit
     wakeMoveFactor: 0,
-    hrvFrom: 'all',
+    hrvFrom: 'lastDeep',
     // slaapschuld = min(cap, carry·schuld gisteren + fromDeficit·(behoefte − geslapen) gisteren)
     debtCarry: 0.1, debtFromDeficit: 0.55, debtCapMin: 127,
   },
@@ -102,6 +102,23 @@ export function rmssd(bs) {
     const d = bs[i].rr - bs[i - 1].rr; s += d * d; n++;
   }
   return n >= 10 ? Math.sqrt(s / n) : NaN;
+}
+
+/**
+ * Strenge RMSSD voor de nacht-HRV (zoals Whoop): alleen paren van geldige slagen met |ΔRR| ≤ 17 % van de vorige slag,
+ * en het venster telt alleen als minstens 80 % van de paren bruikbaar is. NaN anders.
+ */
+export function rmssdStrict(bs) {
+  let s = 0, n = 0, pairs = 0;
+  for (let i = 1; i < bs.length; i++) {
+    if (bs[i - 1].segEnd) continue; // gat in de RR-reeks: geen paar
+    pairs++;
+    if (!bs[i].ok || !bs[i - 1].ok) continue;
+    const d = bs[i].rr - bs[i - 1].rr;
+    if (Math.abs(d) > 0.17 * bs[i - 1].rr) continue;
+    s += d * d; n++;
+  }
+  return n >= 10 && n >= 0.8 * pairs ? Math.sqrt(s / n) : NaN;
 }
 
 /** Ademfrequentie (/min) uit respiratoire sinusaritmie: piek in 0,15–0,5 Hz van het RR-tachogram. */
@@ -285,19 +302,19 @@ export function analyzeNight(samples, cal = DEFAULT_CALIBRATION, baseline = cal.
     const st = stages.slice(k, k + 5);
     if (st.includes(STAGE.WAKE)) continue;
     const wb = [].concat(...epochBeats.slice(at(k), at(k + 5)));
-    const v = rmssd(wb);
+    const v = rmssdStrict(wb);
     if (!Number.isFinite(v)) continue;
     wins.push({ k, rmssd: v, hr: mean(eps.slice(at(k), at(k + 5)).map((e) => e.hr).filter(Number.isFinite)), deep: st.filter((s) => s === STAGE.DEEP).length >= 3 });
   }
-  // Standaard: gemiddelde over alle 5-min-vensters in slaap (kwam op echte nacht het dichtst bij Whoop);
-  // hrvFrom 'lastDeep' = laatste aaneengesloten diepe blok.
-  let chosen = (c0.hrvFrom ?? 'all') === 'lastDeep' ? wins.filter((w) => w.deep) : [];
+  // Zoals Whoop: laatste aaneengesloten diepe blok (hrvFrom 'lastDeep', standaard), anders alle slaapvensters.
+  // HRV = mediaan van de vensters (ongevoelig voor een enkel verstoord venster).
+  let chosen = (c0.hrvFrom ?? 'lastDeep') === 'lastDeep' ? wins.filter((w) => w.deep) : [];
   if (chosen.length) { // laatste aaneengesloten diepe blok
     const lastBlock = [chosen[chosen.length - 1]];
     for (let i = chosen.length - 2; i >= 0 && chosen[i].k === lastBlock[0].k - 5; i--) lastBlock.unshift(chosen[i]);
     chosen = lastBlock.length >= 2 ? lastBlock : chosen;
   } else chosen = wins;
-  const hrv = chosen.length ? mean(chosen.map((w) => w.rmssd)) : NaN;
+  const hrv = chosen.length ? median(chosen.map((w) => w.rmssd)) : NaN;
   const rhr = chosen.length ? mean(chosen.map((w) => w.hr)) : NaN;
 
   // ademfrequentie: mediaan over vensters van 2 min in slaap

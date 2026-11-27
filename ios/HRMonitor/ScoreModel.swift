@@ -220,8 +220,20 @@ final class NightArchive {
     private var byDay: [String: NightMetrics] = [:]
     private static var url: URL { Recorder.folder.appendingPathComponent("nights.json") }
 
+    /// Rekenwijze van HRV/rust-HR; ophogen bij een wijziging zodat oude nachtwaarden de basislijn niet scheeftrekken.
+    private static let hrvMethod = 2
+    private static let hrvMethodKey = "nightArchive.hrvMethod"
+
     private init() {
         if let d = try? Data(contentsOf: Self.url), let v = try? JSONDecoder().decode([String: NightMetrics].self, from: d) { byDay = v }
+        let ud = UserDefaults.standard
+        if ud.integer(forKey: Self.hrvMethodKey) < Self.hrvMethod {
+            // Oude nachten met de vorige HRV/rust-HR-berekening wissen; de basislijn bouwt zich opnieuw op
+            // (de laatste 7 nachten worden bij elke verversing opnieuw uit de ruwe data berekend).
+            for k in byDay.keys { byDay[k]?.hrv = nil; byDay[k]?.rhr = nil }
+            if let d = try? JSONEncoder().encode(byDay) { try? d.write(to: Self.url, options: .atomic) }
+            ud.set(Self.hrvMethod, forKey: Self.hrvMethodKey)
+        }
     }
 
     /// Nachten vóór `key` (jjjj-mm-dd), oudste eerst, hooguit `limit`.
