@@ -157,8 +157,6 @@ final class BLEManager: NSObject, ObservableObject {
     var selfSync: Bool { UserDefaults.standard.bool(forKey: Self.selfSyncKey) }
     /// Antwoord van de band op een wekkercommando: cmd, resultaat (1 ok, 0 geweigerd, 3 onbekend), body.
     var onAlarmResponse: ((UInt8, UInt8, [UInt8]) -> Void)?
-    /// Alle commando-antwoorden, voor de Trilcommando-zoeker (Dev options).
-    var onProbeResponse: ((UInt8, UInt8, [UInt8]) -> Void)?
     /// Whoop-service gevonden na (her)verbinden: moment om bv. de wekker opnieuw naar de band te sturen.
     var onWhoopReady: (() -> Void)?
 
@@ -175,7 +173,6 @@ final class BLEManager: NSObject, ObservableObject {
         whoop.onResponseBody = { [weak self] cmd, res, body in
             // Wekkercommando's, plus onbekende commando's (bv. van de Whoop-app) voor het wekkerlogboek.
             let routine: Set<UInt8> = [0x03, 0x16, 0x17, 0x22]
-            if res != 2, !routine.contains(cmd) { self?.onProbeResponse?(cmd, res, body) }
             if res != 2, SleepPlanner.BandAlarm.isAlarmCommand(cmd) || !routine.contains(cmd) { self?.onAlarmResponse?(cmd, res, body) }
         }
         central = CBCentralManager(delegate: self, queue: .main,

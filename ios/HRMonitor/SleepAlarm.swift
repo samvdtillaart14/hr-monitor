@@ -268,6 +268,7 @@ final class SleepAlarm: ObservableObject {
         case SleepPlanner.BandAlarm.get: return "GET(67)"
         case SleepPlanner.BandAlarm.run: return "RUN(68)"
         case SleepPlanner.BandAlarm.disable: return "DISABLE(69)"
+        case SleepPlanner.BandAlarm.haptic: return "TRIL(19)"
         default: return "cmd \(cmd)"
         }
     }
@@ -326,18 +327,15 @@ final class SleepAlarm: ObservableObject {
     /// Na (her)verbinden opnieuw versturen: de band kan een herstart of een Whoop-sync gehad hebben.
     /// Laatste bevestigingstrilling (dubbeltikken vlak daarna tellen niet als nieuwe tik).
     private(set) var lastBuzz = Date.distantPast
-    private var awaitingBuzz = false
-    /// Eén korte trilling via een aparte wekker (nr. 8) over 2 s; de echte wekkers (1–7) blijven ongemoeid.
+    /// Eén korte trilling met het echte trilcommando (cmd 19); de wekkers blijven ongemoeid.
     func buzz() {
         guard ble.state == .connected else { return }
-        let u = UInt32(Date().addingTimeInterval(2).timeIntervalSince1970)
-        if send(SleepPlanner.BandAlarm.set, SleepPlanner.BandAlarm.buzzBody(unix: u)) == nil {
-            lastBuzz = Date(); awaitingBuzz = true
-            log("Bevestigingstrilling (wekker 8, 1× 1 s)")
+        if send(SleepPlanner.BandAlarm.haptic, SleepPlanner.BandAlarm.hapticBody) == nil {
+            lastBuzz = Date()
         }
     }
 
-    /// Meerdere korte trillingen na elkaar (elk via wekker 8), `gap` seconden uit elkaar.
+    /// Meerdere korte trillingen na elkaar, `gap` seconden uit elkaar.
     func buzz(times: Int, gap: Double = 3) {
         Task { @MainActor in
             for i in 0..<times {
@@ -362,9 +360,6 @@ final class SleepAlarm: ObservableObject {
             else { ownSetsOpen = 0; foreignSet(); return }
         }
         switch cmd {
-        case SleepPlanner.BandAlarm.set where awaitingBuzz && Date().timeIntervalSince(lastBuzz) < 10:
-            // Antwoord op de bevestigingstrilling: niets aan de echte wekker veranderen.
-            awaitingBuzz = false
         case SleepPlanner.BandAlarm.set:
             guard let p = pendingSet else {
                 // Antwoord op een extra wekker.
