@@ -94,6 +94,22 @@ public enum WhoopScores {
         return n >= 10 ? sqrt(s / Double(n)) : .nan
     }
 
+    /// Strenge RMSSD voor de nacht-HRV (zoals Whoop): alleen paren van geldige slagen met |ΔRR| ≤ 17 % van de vorige slag,
+    /// en het venster telt alleen als minstens 80 % van de paren bruikbaar is. NaN anders.
+    public static func rmssdStrict(_ bs: [Beat]) -> Double {
+        var s = 0.0, n = 0, pairs = 0
+        if bs.count > 1 {
+            for i in 1..<bs.count where !bs[i - 1].segEnd {
+                pairs += 1
+                guard bs[i].ok && bs[i - 1].ok else { continue }
+                let d = bs[i].rr - bs[i - 1].rr
+                if abs(d) > 0.17 * bs[i - 1].rr { continue }
+                s += d * d; n += 1
+            }
+        }
+        return n >= 10 && Double(n) >= 0.8 * Double(pairs) ? sqrt(s / Double(n)) : .nan
+    }
+
     /// Ademfrequentie (/min) uit respiratoire sinusaritmie: piek in 0,15–0,5 Hz van het RR-tachogram.
     public static func respRateWindow(_ bs: [Beat]) -> Double {
         let good = bs.filter { $0.ok }
@@ -386,19 +402,21 @@ public enum WhoopScores {
             let st = stages[k..<(k + 5)]
             if st.contains(.wake) { continue }
             let wb = Array(epochBeats[at(k)..<at(k + 5)].joined())
-            let v = rmssd(wb)
+            let v = rmssdStrict(wb)
             if !v.isFinite { continue }
             let hr = M.mean(eps[at(k)..<at(k + 5)].map { $0.hr }.filter { $0.isFinite })
             wins.append(Win(k: k, rmssd: v, hr: hr, deep: st.filter { $0 == .deep }.count >= 3))
         }
-        var chosen = cal.sleep.hrvFrom == "lastDeep" ? wins.filter { $0.deep } : []
+        // Zoals Whoop: laatste aaneengesloten diepe blok ("lastDeep", standaard), anders alle slaapvensters.
+        // HRV = mediaan van de vensters (ongevoelig voor een enkel verstoord venster).
+        var chosen = cal.sleep.hrvFrom != "all" ? wins.filter { $0.deep } : []
         if !chosen.isEmpty {
             var lastBlock = [chosen[chosen.count - 1]]
             var i = chosen.count - 2
             while i >= 0 && chosen[i].k == lastBlock[0].k - 5 { lastBlock.insert(chosen[i], at: 0); i -= 1 }
             if lastBlock.count >= 2 { chosen = lastBlock }
         } else { chosen = wins }
-        let hrv = chosen.isEmpty ? .nan : M.mean(chosen.map { $0.rmssd })
+        let hrv = chosen.isEmpty ? .nan : M.median(chosen.map { $0.rmssd })
         let rhr = chosen.isEmpty ? .nan : M.mean(chosen.map { $0.hr })
 
         var rates: [Double] = []

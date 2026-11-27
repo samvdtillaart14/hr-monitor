@@ -87,8 +87,8 @@ final class WhoopScoresTests: XCTestCase {
         XCTAssertEqual(n.stages.map { String(Array("WLDR")[$0.rawValue]) }.joined(), e.stages)
         XCTAssertEqual(n.hrv, e.hrv, accuracy: 1e-6); XCTAssertEqual(n.rhr, e.rhr, accuracy: 1e-6)
         XCTAssertEqual(n.resp, e.resp, accuracy: 1e-6); XCTAssertEqual(n.skinTemp, e.skinTemp, accuracy: 1e-6)
-        // en inhoudelijk: de synthetische nacht heeft rust-HR 50 en ademfrequentie 15/min
-        XCTAssertEqual(n.rhr, 55, accuracy: 2); XCTAssertEqual(n.resp, 15, accuracy: 0.6)
+        // en inhoudelijk: rust-HR 50 in het laatste diepe blok (zoals Whoop) en ademfrequentie 15/min
+        XCTAssertEqual(n.rhr, 50, accuracy: 2); XCTAssertEqual(n.resp, 15, accuracy: 0.6)
     }
 
     func testStrainMatchesJS() {

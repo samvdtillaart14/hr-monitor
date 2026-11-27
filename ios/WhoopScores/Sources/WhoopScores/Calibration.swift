@@ -60,7 +60,7 @@ public struct Calibration: Codable, Equatable, Sendable {
         /// een gat zonder data tot zoveel minuten wordt overbrugd. nil = 120 min (optioneel: oude kalibraties).
         public var noDataBridgeMin: Int? = nil
         /// …en alleen als de gemiddelde HR in dat blok hooguit zoveel bpm boven die van de hoofdslaap ligt.
-        public var extendMaxHrRise: Double? = nil   // nil = 4 bpm (optioneel: oude kalibraties)
+        public var extendMaxHrRise: Double? = 4   // ontbreekt in oude kalibraties: dan nil = 4 bpm
         /// Slaap die niet in het nachtvenster valt telt alleen als nacht als hij minstens zo lang duurt (late/verschoven nacht).
         /// Korter = dutje of stilzitten overdag, dan is er geen nacht (geen slaap- en herstelscore).
         public var minDayMainMin: Int? = nil   // nil = 180 min (optioneel: oude kalibraties)
@@ -80,8 +80,8 @@ public struct Calibration: Codable, Equatable, Sendable {
         public var edgeRunMin: Int = 20
         /// Extra wakker-regel op ruwe beweging (× drempel); 0 = uit.
         public var wakeMoveFactor: Double = 0
-        /// "all" = HRV/rust-HR over alle slaapvensters, "lastDeep" = laatste diepe blok.
-        public var hrvFrom: String = "all"
+        /// "lastDeep" = laatste diepe blok (zoals Whoop, standaard), "all" = alle slaapvensters.
+        public var hrvFrom: String = "lastDeep"
         /// slaapschuld = min(cap, carry·schuld gisteren + fromDeficit·(behoefte − geslapen) gisteren)
         public var debtCarry: Double = 0.1, debtFromDeficit: Double = 0.55, debtCapMin: Double = 127
     }
