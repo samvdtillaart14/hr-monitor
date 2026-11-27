@@ -39,7 +39,15 @@ struct HapticProbeView: View {
     /// Geen wekkercommando's en geen andere commando-id's (die kunnen resetten, herstarten of data wissen).
     static let sweep: [(cmd: UInt8, body: [UInt8])] = {
         var out: [(UInt8, [UInt8])] = []
-        // Eerst de vorm uit openbare Whoop-documentatie: 79 met 5 bytes [preset, herhalingen, 00 00 00].
+        // Allereerst de Whoop 5-vorm uit de noop-documentatie: commando 19 met revisie 01, acht effectbytes (DRV2625),
+        // u16 lusregeling en een herhaalbyte. Waargenomen: 01 2F 98 00 00 00 00 00 00 00 00 00.
+        for fx: [UInt8] in [[0x2F, 0x98], [0x2F], [0x2F, 0x98, 0x2F, 0x98], [0x01], [0x0E], [0x34], [0x2F, 0x2F, 0x2F]] {
+            let effects = fx + [UInt8](repeating: 0, count: 8 - fx.count)
+            for (loop, rep) in [((0, 0), 0), ((0, 0), 1), ((1, 0), 0), ((0, 0), 3)] as [((UInt8, UInt8), UInt8)] {
+                out.append((0x13, [0x01] + effects + [loop.0, loop.1, rep]))
+            }
+        }
+        // Daarna de Whoop 4-vorm: 79 met 5 bytes [preset, herhalingen, 00 00 00].
         for preset in 0...20 { for loop: UInt8 in [1, 3] { out.append((0x4F, [UInt8(preset), loop, 0, 0, 0])) } }
         // Daarna gericht: het trildeel uit het wekkerpakket. De firmware start bij een wekker een "custom haptics"-
         // sequentie op de DRV2625-trildriver; 2F 98 lijkt daar de reeks (effect 47 = buzz, 0x98 = 240 ms pauze),
@@ -144,7 +152,11 @@ struct HapticProbeView: View {
                 }
             } header: { Text("Automatisch doorlopen") }
             Section {
-                Button("Probeer 79 [02 03 00 00 00]") {
+                Button("Probeer 19 [01 2F 98 00 00 00 00 00 00 00 00 00] (Whoop 5)") {
+                    lastResponse = "wacht…"
+                    if let e = ble.sendBandAlarm(0x13, body: [0x01, 0x2F, 0x98, 0, 0, 0, 0, 0, 0, 0, 0, 0]) { lastResponse = "niet verstuurd: \(e)" }
+                }.disabled(ble.state != .connected)
+                Button("Probeer 79 [02 03 00 00 00] (Whoop 4)") {
                     lastResponse = "wacht…"
                     if let e = ble.sendBandAlarm(0x4F, body: [0x02, 0x03, 0, 0, 0]) { lastResponse = "niet verstuurd: \(e)" }
                 }.disabled(ble.state != .connected)
