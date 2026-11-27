@@ -67,8 +67,8 @@ final class WhoopParser: ObservableObject {
     var tapEventIds: Set<Int> { Set((UserDefaults.standard.array(forKey: "band.tapEventIds") as? [Int]) ?? []) }
     private var lastTap = Date.distantPast
     private func doubleTap() {
-        // log en event kunnen allebei komen: één tik binnen 3 s telt één keer
-        guard Date().timeIntervalSince(lastTap) > 3 else { return }
+        // log en event kunnen allebei komen: één tik binnen 1,5 s telt één keer
+        guard Date().timeIntervalSince(lastTap) > 1.5 else { return }
         lastTap = Date()
         onDoubleTap?()
     }

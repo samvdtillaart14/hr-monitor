@@ -116,7 +116,7 @@ struct SettingsView: View {
                 Toggle("Melding als de band niet goed zit", isOn: Binding(get: { !fitOff }, set: { fitOff = !$0 })).tint(Theme.accent)
                 Toggle("Band trilt 3× bij 5% batterij", isOn: Binding(get: { !battery5Off }, set: { battery5Off = !$0 })).tint(Theme.accent)
             } header: { Text("Activiteiten") } footer: {
-                Text("Dubbeltik op de band (behalve in de minuut dat je wekker afgaat) start een activiteit van dezelfde soort als de vorige; nog een dubbeltik stopt hem.")
+                Text("Twee keer dubbeltikken op de band binnen 15 s (behalve in de minuut dat je wekker afgaat) start een activiteit van dezelfde soort als de vorige; één dubbeltik stopt hem.")
             }
             Section {
                 Toggle("Altijd alles opnemen", isOn: Binding(get: { !alwaysOff }, set: { on in

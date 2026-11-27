@@ -108,7 +108,7 @@
 "Draag de band elke nacht; na een paar nachten krijg je een herstelscore." = "Wear the band every night; after a few nights you get a recovery score.";
 "Droeg je de band en was de app verbonden? Open Vandaag zodra de band gesynchroniseerd is." = "Were you wearing the band and was the app connected? Open Today once the band has synced.";
 "Dubbeltik op band start/stopt activiteit" = "Double tap on band starts/stops activity";
-"Dubbeltik op de band (behalve in de minuut dat je wekker afgaat) start een activiteit van dezelfde soort als de vorige; nog een dubbeltik stopt hem." = "A double tap on the band (except in the minute your alarm goes off) starts an activity of the same type as the previous one; another double tap stops it.";
+"Twee keer dubbeltikken op de band binnen 15 s (behalve in de minuut dat je wekker afgaat) start een activiteit van dezelfde soort als de vorige; één dubbeltik stopt hem." = "Two double taps on the band within 15 s (except in the minute your alarm goes off) start an activity of the same type as the previous one; one double tap stops it.";
 "Dutjes vandaag" = "Naps today";
 "Duur" = "Duration";
 "Een paar keer kort wakker, dat is normaal." = "Briefly awake a few times, that's normal.";
@@ -444,7 +444,7 @@
 "Tijd in rustige en zware hartslagzones vandaag, naast je eigen normaal." = "Time in light and hard heart rate zones today, next to your own normal.";
 "Tijd per zone" = "Time per zone";
 "Tijd tot inslapen" = "Time to fall asleep";
-"Tik nog een keer op je band om te stoppen. Soort wijzigen kan op Vandaag." = "Tap your band again to stop. You can change the type on Today.";
+"Dubbeltik op je band om te stoppen. Soort wijzigen kan op Vandaag." = "Double tap your band to stop. You can change the type on Today.";
 "Totaal" = "Total";
 "Trilcommando zoeken" = "Find vibration command";
 "Trilde!" = "Vibrated!";

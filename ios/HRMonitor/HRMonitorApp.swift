@@ -68,13 +68,23 @@ final class AppServices {
             if w.rule.enabled && w.date <= now { return }
         }
         if now.timeIntervalSince(alarm.lastBuzz) < 15 { return }
+        // Starten vraagt twee dubbeltikken binnen 15 s: één losse "dubbeltik" komt ook van stoten of
+        // de band aanraken. Stoppen blijft één dubbeltik.
+        if acts.ongoing == nil {
+            let armed = tapArmed
+            tapArmed = now
+            guard let a = armed, now.timeIntervalSince(a) <= 15 else { return }
+            tapArmed = nil
+        }
         guard let r = acts.toggleFromBand(store: store) else { return }
         if r.started { alarm.buzz() }
         InsightNotifications.post("band-tik", r.started ? "\(r.activity.type.name) gestart" : "\(r.activity.type.name) gestopt",
-                                  r.started ? "Tik nog een keer op je band om te stoppen. Soort wijzigen kan op Vandaag."
+                                  r.started ? "Dubbeltik op je band om te stoppen. Soort wijzigen kan op Vandaag."
                                             : "Opgeslagen op Vandaag.")
     }
     static let tapActivityKey = "band.tapActivity"
+    /// eerste dubbeltik van een start (de tweede binnen 15 s start de activiteit)
+    private var tapArmed: Date?
 
     func updateWidget() {
         // Nog niets berekend (bv. vlak na het opstarten): de vorige widgetstand niet met lege waarden overschrijven.
