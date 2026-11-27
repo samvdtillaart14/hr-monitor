@@ -112,6 +112,8 @@ struct TodayView: View {
     private func recompute() {
         lastCompute = Date()
         if isToday {
+            // Nog niet ingelezen: de scores uit de cache blijven staan tot de data er is (zie initialLoaded).
+            guard store.initialLoaded else { return }
             scores.refresh(store: store) { InsightNotifications.checkIllness(scores.lastNight); InsightNotifications.checkAbnormal(scores.lastNight) }
             updateStress()
         } else {
