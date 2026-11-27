@@ -31,8 +31,46 @@ struct Night: Identifiable {
     func stageTime(_ k: Int) -> Date { Date(timeIntervalSince1970: r.onset + Double(k) * 60) }
 }
 
+// Codable voor de cache van de laatst berekende scores (snel tonen bij het opstarten).
+extension Night: Codable {
+    private enum K: String, CodingKey {
+        case date, r, needMin, needBase, needStrain, needDebt, debtMin, sufficiency, efficiency, consistency, performance
+        case stressT, stressV, stressMin, hrT, hrV, recovery, recoveryNeedsNights, metrics, manual, phoneMin, latencyMin, weekDebtMin
+    }
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: K.self)
+        try c.encode(date, forKey: .date); try c.encode(r, forKey: .r)
+        try c.encode(needMin, forKey: .needMin); try c.encode(needBase, forKey: .needBase); try c.encode(needStrain, forKey: .needStrain)
+        try c.encode(needDebt, forKey: .needDebt); try c.encode(debtMin, forKey: .debtMin)
+        try c.encode(sufficiency, forKey: .sufficiency); try c.encode(efficiency, forKey: .efficiency)
+        try c.encodeIfPresent(consistency, forKey: .consistency); try c.encodeIfPresent(performance, forKey: .performance)
+        try c.encode(stress.map(\.0), forKey: .stressT); try c.encode(stress.map(\.1), forKey: .stressV)
+        try c.encode(stressMin, forKey: .stressMin)
+        try c.encode(hr.map(\.0), forKey: .hrT); try c.encode(hr.map(\.1), forKey: .hrV)
+        try c.encodeIfPresent(recovery, forKey: .recovery); try c.encode(recoveryNeedsNights, forKey: .recoveryNeedsNights)
+        try c.encode(metrics, forKey: .metrics); try c.encode(manual, forKey: .manual); try c.encode(phoneMin, forKey: .phoneMin)
+        try c.encodeIfPresent(latencyMin, forKey: .latencyMin); try c.encode(weekDebtMin, forKey: .weekDebtMin)
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: K.self)
+        self.init(date: try c.decode(Date.self, forKey: .date), r: try c.decode(NightResult.self, forKey: .r))
+        needMin = try c.decode(Double.self, forKey: .needMin); needBase = try c.decode(Double.self, forKey: .needBase)
+        needStrain = try c.decode(Double.self, forKey: .needStrain); needDebt = try c.decode(Double.self, forKey: .needDebt)
+        debtMin = try c.decode(Double.self, forKey: .debtMin)
+        sufficiency = try c.decode(Double.self, forKey: .sufficiency); efficiency = try c.decode(Double.self, forKey: .efficiency)
+        consistency = try c.decodeIfPresent(Double.self, forKey: .consistency); performance = try c.decodeIfPresent(Double.self, forKey: .performance)
+        stress = Array(zip(try c.decode([Date].self, forKey: .stressT), try c.decode([Double].self, forKey: .stressV)))
+        stressMin = try c.decode([Int].self, forKey: .stressMin)
+        hr = Array(zip(try c.decode([Date].self, forKey: .hrT), try c.decode([Double].self, forKey: .hrV)))
+        recovery = try c.decodeIfPresent(Int.self, forKey: .recovery); recoveryNeedsNights = try c.decode(Int.self, forKey: .recoveryNeedsNights)
+        metrics = try c.decode(NightMetrics.self, forKey: .metrics); manual = try c.decode(Bool.self, forKey: .manual)
+        phoneMin = try c.decode(Int.self, forKey: .phoneMin); latencyMin = try c.decodeIfPresent(Int.self, forKey: .latencyMin)
+        weekDebtMin = try c.decode(Double.self, forKey: .weekDebtMin)
+    }
+}
+
 /// Eén kalenderdag: belasting, zones en geschatte energie.
-struct DayLoad: Identifiable {
+struct DayLoad: Identifiable, Codable {
     var id: Date { date }
     let date: Date
     var strain = 0.0
@@ -58,6 +96,27 @@ final class ScoreModel: ObservableObject {
     /// Dag waarop de berekening eindigt (vandaag, of een eerdere dag bij terugbladeren).
     @Published private(set) var anchor = Date()
     private var requestedEnd: Date?
+
+    /// Cache van de laatst berekende scores (alleen voor het hoofdmodel): direct tonen bij het opstarten,
+    /// terwijl de opgeslagen dagen nog worden ingelezen en opnieuw gerekend wordt.
+    private let cached: Bool
+    private struct Cache: Codable { var anchor: Date; var nights: [Night]; var days: [DayLoad] }
+    private static var cacheURL: URL { Recorder.folder.appendingPathComponent("scores-cache.plist") }
+
+    init(cached: Bool = false) {
+        self.cached = cached
+        guard cached, let d = try? Data(contentsOf: Self.cacheURL),
+              let c = try? PropertyListDecoder().decode(Cache.self, from: d) else { return }
+        nights = c.nights; days = c.days; anchor = c.anchor
+    }
+
+    private func saveCache() {
+        guard cached else { return }
+        let e = PropertyListEncoder(); e.outputFormat = .binary
+        guard let d = try? e.encode(Cache(anchor: anchor, nights: nights, days: days)) else { return }
+        let url = Self.cacheURL
+        Task.detached(priority: .utility) { try? d.write(to: url, options: .atomic) }
+    }
 
     var lastNight: Night? {
         guard let n = nights.last, Calendar.current.isDate(n.date, inSameDayAs: anchor) else { return nil }
@@ -104,6 +163,7 @@ final class ScoreModel: ObservableObject {
                 if v.count >= 30 { n[i].metrics.spo2 = Double(v[v.count / 2]) }
             }
             self.nights = n; self.days = dl; self.anchor = endDay; self.busy = false
+            if end == nil { self.saveCache() }
             if self.rerun { self.rerun = false; self.refresh(store: store, end: self.requestedEnd) }
             else { let w = self.waiters; self.waiters = []; w.forEach { $0() } }
             NightArchive.shared.store(n.map { (DayStore.dayFmt.string(from: $0.date), $0.metrics) })

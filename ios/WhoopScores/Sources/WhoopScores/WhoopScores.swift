@@ -641,3 +641,41 @@ public enum WhoopScores {
     /// Ratio-of-ratios; pas bruikbaar als de ruwe optische (rood/IR) data gedecodeerd is.
     public static func spo2(ratio R: Double, a: Double = 110, b: Double = 25) -> Double { M.clamp(a - b * R, 70, 100) }
 }
+
+// MARK: Codable (voor de cache van de laatst berekende scores in de app)
+
+extension Stage: Codable {}
+
+extension NightResult: Codable {
+    private enum K: String, CodingKey {
+        case onset, wake, inBedMin, asleepMin, awakeMin, lightMin, deepMin, remMin, efficiency, disturbances
+        case hrv, rhr, resp, skinTemp, stress, stressMin, highStressPct, stages, napOnset, napMin
+    }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: K.self)
+        try c.encode(onset, forKey: .onset); try c.encode(wake, forKey: .wake)
+        try c.encode(inBedMin, forKey: .inBedMin); try c.encode(asleepMin, forKey: .asleepMin)
+        try c.encode(awakeMin, forKey: .awakeMin); try c.encode(lightMin, forKey: .lightMin)
+        try c.encode(deepMin, forKey: .deepMin); try c.encode(remMin, forKey: .remMin)
+        try c.encode(efficiency, forKey: .efficiency); try c.encode(disturbances, forKey: .disturbances)
+        try c.encode(hrv, forKey: .hrv); try c.encode(rhr, forKey: .rhr); try c.encode(resp, forKey: .resp)
+        try c.encode(skinTemp, forKey: .skinTemp); try c.encode(stress, forKey: .stress)
+        try c.encode(stressMin, forKey: .stressMin); try c.encode(highStressPct, forKey: .highStressPct)
+        try c.encode(stages, forKey: .stages)
+        try c.encode(naps.map(\.onset), forKey: .napOnset); try c.encode(naps.map(\.minutes), forKey: .napMin)
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: K.self)
+        let napOnset = try c.decode([Double].self, forKey: .napOnset), napMin = try c.decode([Int].self, forKey: .napMin)
+        self.init(onset: try c.decode(Double.self, forKey: .onset), wake: try c.decode(Double.self, forKey: .wake),
+                  inBedMin: try c.decode(Int.self, forKey: .inBedMin), asleepMin: try c.decode(Int.self, forKey: .asleepMin),
+                  awakeMin: try c.decode(Int.self, forKey: .awakeMin), lightMin: try c.decode(Int.self, forKey: .lightMin),
+                  deepMin: try c.decode(Int.self, forKey: .deepMin), remMin: try c.decode(Int.self, forKey: .remMin),
+                  efficiency: try c.decode(Double.self, forKey: .efficiency), disturbances: try c.decode(Int.self, forKey: .disturbances),
+                  hrv: try c.decode(Double.self, forKey: .hrv), rhr: try c.decode(Double.self, forKey: .rhr),
+                  resp: try c.decode(Double.self, forKey: .resp), skinTemp: try c.decode(Double.self, forKey: .skinTemp),
+                  stress: try c.decode([Double].self, forKey: .stress), stressMin: try c.decode(StressMinutes.self, forKey: .stressMin),
+                  highStressPct: try c.decode(Double.self, forKey: .highStressPct), stages: try c.decode([Stage].self, forKey: .stages),
+                  naps: zip(napOnset, napMin).map { (onset: $0, minutes: $1) })
+    }
+}

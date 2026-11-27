@@ -12,7 +12,7 @@ final class AppServices {
     let store = DayStore()
     let ble = BLEManager()
     let acts = ActivityStore()
-    let scores = ScoreModel()
+    let scores = ScoreModel(cached: true)
     let screen = ScreenMonitor()
     private(set) lazy var alarm = SleepAlarm(ble: ble, store: store, scores: scores)
     private var widgetSub: AnyCancellable?
