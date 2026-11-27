@@ -39,7 +39,9 @@ struct HapticProbeView: View {
     /// Geen wekkercommando's en geen andere commando-id's (die kunnen resetten, herstarten of data wissen).
     static let sweep: [(cmd: UInt8, body: [UInt8])] = {
         var out: [(UInt8, [UInt8])] = []
-        // Eerst gericht: het trildeel uit het wekkerpakket. De firmware start bij een wekker een "custom haptics"-
+        // Eerst de vorm uit openbare Whoop-documentatie: 79 met 5 bytes [preset, herhalingen, 00 00 00].
+        for preset in 0...20 { for loop: UInt8 in [1, 3] { out.append((0x4F, [UInt8(preset), loop, 0, 0, 0])) } }
+        // Daarna gericht: het trildeel uit het wekkerpakket. De firmware start bij een wekker een "custom haptics"-
         // sequentie op de DRV2625-trildriver; 2F 98 lijkt daar de reeks (effect 47 = buzz, 0x98 = 240 ms pauze),
         // gevolgd door 8 lege plekken, herhalingen (07) en duur (1E 00 = 30 s).
         let seqs: [[UInt8]] = [
@@ -141,6 +143,13 @@ struct HapticProbeView: View {
                     Button("Opnieuw (log wissen)", role: .destructive) { sweeping = false; sweepIndex = 0; sweepLog = []; sweepSent = [] }
                 }
             } header: { Text("Automatisch doorlopen") }
+            Section {
+                Button("Probeer 79 [02 03 00 00 00]") {
+                    lastResponse = "wacht…"
+                    if let e = ble.sendBandAlarm(0x4F, body: [0x02, 0x03, 0, 0, 0]) { lastResponse = "niet verstuurd: \(e)" }
+                }.disabled(ble.state != .connected)
+                Text("Antwoord band: \(lastResponse)").font(.caption.monospaced())
+            } header: { Text("Snelle test") }
             Section("Stap \(index + 1) van \(Self.candidates.count)") {
                 Text(c.note).font(.headline)
                 Text("cmd \(c.cmd) · \(hex(c.body()))").font(.caption.monospaced()).foregroundStyle(Theme.muted)
