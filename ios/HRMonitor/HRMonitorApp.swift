@@ -67,18 +67,22 @@ final class AppServices {
             let w = alarm.schedule.nextWake(after: now.addingTimeInterval(-60))
             if w.rule.enabled && w.date <= now { return }
         }
-        if now.timeIntervalSince(alarm.lastBuzz) < 15 { return }
+        // Een eigen trilling kan door de band als dubbeltik gezien worden: tikken vlak daarna niet tellen.
+        if now.timeIntervalSince(alarm.lastBuzz) < 2.5 { return }
         // Starten vraagt twee dubbeltikken binnen 15 s: één losse "dubbeltik" komt ook van stoten of
         // de band aanraken. Stoppen blijft één dubbeltik.
         if acts.ongoing == nil {
             let armed = tapArmed
             tapArmed = now
-            guard let a = armed, now.timeIntervalSince(a) <= 15 else { return }
+            guard let a = armed, now.timeIntervalSince(a) <= 15 else {
+                alarm.buzz()   // eerste dubbeltik geteld: 1× trillen, nog een keer tikken om te starten
+                return
+            }
             tapArmed = nil
         }
         guard let r = acts.toggleFromBand(store: store) else { return }
-        // Trilfeedback: 1× bij starten, 2× kort bij stoppen.
-        if r.started { alarm.buzz() } else { alarm.buzz(times: 2, gap: 0.8) }
+        // Trilfeedback: 1× = eerste tik geteld, 2× = gestart, 3× = gestopt.
+        alarm.buzz(times: r.started ? 2 : 3, gap: 0.8)
         InsightNotifications.post("band-tik", r.started ? "\(r.activity.type.name) gestart" : "\(r.activity.type.name) gestopt",
                                   r.started ? "Dubbeltik op je band om te stoppen. Soort wijzigen kan op Vandaag."
                                             : "Opgeslagen op Vandaag.")
