@@ -18,8 +18,10 @@ struct HapticProbeView: View {
         var felt: Bool
     }
 
-    /// Alleen het wekkerdeel: SET (66) en RUN (68). Niets anders kan worden verstuurd.
-    static let allowed: Set<UInt8> = [0x42, 0x44]
+    /// Het wekkerdeel (SET 66, RUN 68) en de haptics-commando's uit het bekende Whoop-protocol:
+    /// RUN_HAPTIC_PATTERN_MAVERICK (19), RUN_HAPTICS_PATTERN (79), GET_ALL_HAPTICS_PATTERN (80, alleen lezen)
+    /// en STOP_HAPTICS (122). Niets anders kan worden verstuurd (geen reset, herstart, trim of historie).
+    static let allowed: Set<UInt8> = [0x42, 0x44, 0x13, 0x4F, 0x50, 0x7A]
     private static let resultsKey = "probe.hapticResults"
 
     @EnvironmentObject var ble: BLEManager
@@ -41,7 +43,17 @@ struct HapticProbeView: View {
     static let candidates: [Candidate] = {
         var c: [Candidate] = []
         func add(_ cmd: UInt8, _ body: @escaping () -> [UInt8], _ note: String) { c.append(.init(id: c.count, cmd: cmd, body: body, note: note)) }
-        // Eerst de huidige bevestigingstrilling als referentie.
+        // Eerst de echte haptics-commando's (zonder wekkertruc). 80 leest alleen de patronen uit.
+        add(0x50, { [] }, "Haptics-patronen opvragen (80, alleen lezen: stuur het antwoord door)")
+        add(0x50, { [0x01] }, "Haptics-patronen opvragen (80) met 01")
+        for body: [UInt8] in [[], [0x00], [0x01], [0x02], [0x03], [0x01, 0x01], [0x01, 0x00], [0x00, 0x01, 0x00, 0x00]] {
+            add(0x4F, { body }, "Trilpatroon (79) [\(body.map { String(format: "%02X", $0) }.joined(separator: " "))]")
+        }
+        for body: [UInt8] in [[], [0x00], [0x01], [0x02], [0x01, 0x01]] {
+            add(0x13, { body }, "Trilpatroon Maverick (19) [\(body.map { String(format: "%02X", $0) }.joined(separator: " "))]")
+        }
+        add(0x7A, { [] }, "Trillen stoppen (122)")
+        // Daarna de wekkertruc: eerst de huidige bevestigingstrilling als referentie.
         add(0x42, alarm8 { $0[12] = 1; $0[13] = 1 }, "Wekker 8, 1× 1 s (huidige bevestiging, referentie)")
         add(0x42, alarm8 { _ in }, "Wekker 8 met de staart van de Whoop-app (7× / 30 s?), even laten lopen")
         // Byte 12 (vermoedelijk herhalingen) en byte 13 (vermoedelijk duur).
@@ -76,7 +88,7 @@ struct HapticProbeView: View {
         let c = Self.candidates[index]
         List {
             Section {
-                Text("Stuurt per stap één kandidaat-commando naar de band. Voel je iets, druk op Trilde!, anders op Niets. Alleen het wekkercommando (SET en RUN, wekker 8) met andere instellingen; elk ander commando is geblokkeerd. Je echte wekker blijft ongemoeid. Klein risico: een vreemde instelling kan wekker 8 langer laten trillen; tik dan op de band om hem uit te zetten. Doe dit niet terwijl de Whoop-app synchroniseert.")
+                Text("Stuurt per stap één kandidaat-commando naar de band. Voel je iets, druk op Trilde!, anders op Niets. Eerst de echte trilcommando's (79, 19, 122; 80 leest alleen), daarna het wekkercommando (wekker 8) met andere instellingen; elk ander commando is geblokkeerd. Je echte wekker blijft ongemoeid. Klein risico: een vreemde instelling kan wekker 8 langer laten trillen; tik dan op de band om hem uit te zetten. Doe dit niet terwijl de Whoop-app synchroniseert.")
                     .font(.footnote).foregroundStyle(Theme.muted)
             }
             Section("Stap \(index + 1) van \(Self.candidates.count)") {
