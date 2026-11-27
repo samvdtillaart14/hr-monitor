@@ -77,6 +77,8 @@ final class AppServices {
     static let tapActivityKey = "band.tapActivity"
 
     func updateWidget() {
+        // Nog niets berekend (bv. vlak na het opstarten): de vorige widgetstand niet met lege waarden overschrijven.
+        guard store.initialLoaded, !(scores.nights.isEmpty && scores.days.isEmpty) else { return }
         let n = scores.lastNight
         let p = alarm.plan()
         var s = WidgetSnapshot()

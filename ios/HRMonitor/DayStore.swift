@@ -27,6 +27,8 @@ final class DayStore: ObservableObject {
     nonisolated static let keepDays = 8
 
     @Published private(set) var revision = 0
+    /// true zodra de laatste dagen bij het opstarten van schijf zijn ingelezen
+    @Published private(set) var initialLoaded = false
     private(set) var byDay: [String: [UInt32: Sample]] = [:]
     /// gesorteerde samples per dag; vervalt zodra er voor die dag iets bijkomt
     private var sortedCache: [String: [Sample]] = [:]
@@ -61,6 +63,7 @@ final class DayStore: ObservableObject {
     func load() async {
         let now = Date()
         await load(keys: (0..<Self.keepDays).map { Self.key(now, minusDays: $0) })
+        initialLoaded = true
     }
 
     /// Dagen die bij het terugbladeren in het geheugen blijven (niet opgeruimd).
