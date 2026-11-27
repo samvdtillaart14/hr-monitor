@@ -1,6 +1,8 @@
 # WHOOP 5.0/MG BLE-protocol: wat we zelf hebben geverifieerd
 Band: WG50_r45, firmware 50.43.2.0, iOS 27 (21-11-2026). Bron voor de basis: openbaar werk van ryanbr/noop. Alles hieronder is gecontroleerd op eigen opnames.
 
+Volledig overzicht van alle commando's, events en datatypes: [WHOOP5-COMMANDO-OVERZICHT.md](WHOOP5-COMMANDO-OVERZICHT.md).
+
 ## Service
 `FD4B0001-CCE1-4033-93CE-002D5875F58A`
 - `…0002`: commando's (write with response)
@@ -20,7 +22,7 @@ Band: WG50_r45, firmware 50.43.2.0, iOS 27 (21-11-2026). Bron voor de basis: ope
 - **Resultaatcodes:** 0 = fout, 1 = ok, 2 = bezig, 3 = niet ondersteund.
 
 ## Commando's
-- **0x91 hello:** antwoordt met o.a. het serienummer `5A00772111`.
+- **0x91 hello:** antwoordt met o.a. het serienummer.
 - **0x03 realtime HR (body `01`):** resultaat ok. Daarna stuurt de band elke seconde een type-0x28-pakket.
 - **0x16 (22) historie opvragen (body `00`):** resultaat ok, body `0b`.
 - **0x17 (23) bevestiging historie:** dit verstuurt de Whoop-app. **Zelf niet versturen**, het wist mogelijk data op de band.
