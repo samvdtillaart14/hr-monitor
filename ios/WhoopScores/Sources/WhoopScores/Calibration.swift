@@ -60,7 +60,7 @@ public struct Calibration: Codable, Equatable, Sendable {
         /// een gat zonder data tot zoveel minuten wordt overbrugd. nil = 120 min (optioneel: oude kalibraties).
         public var noDataBridgeMin: Int? = nil
         /// …en alleen als de gemiddelde HR in dat blok hooguit zoveel bpm boven die van de hoofdslaap ligt.
-        public var extendMaxHrRise: Double? = nil   // nil = 4 bpm (optioneel: oude kalibraties)
+        public var extendMaxHrRise: Double? = 4   // ontbreekt in oude kalibraties: dan nil = 4 bpm
         /// Slaap die niet in het nachtvenster valt telt alleen als nacht als hij minstens zo lang duurt (late/verschoven nacht).
         /// Korter = dutje of stilzitten overdag, dan is er geen nacht (geen slaap- en herstelscore).
         public var minDayMainMin: Int? = nil   // nil = 180 min (optioneel: oude kalibraties)
