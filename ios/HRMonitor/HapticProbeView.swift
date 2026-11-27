@@ -29,6 +29,24 @@ struct HapticProbeView: View {
     @State private var lastResponse = "–"
     @State private var sentAt: Date?
     @State private var results: [Result] = Self.load()
+    // Automatisch doorlopen
+    @State private var sweeping = false
+    @State private var sweepIndex = 0
+    @State private var sweepLog: [String] = []
+    @State private var sweepSent: [(t: Date, text: String)] = []
+
+    /// Alleen de haptics-commando's 79 en 19, met alle waarden voor de eerste byte (en varianten met een tweede byte).
+    /// Geen wekkercommando's en geen andere commando-id's (die kunnen resetten, herstarten of data wissen).
+    static let sweep: [(cmd: UInt8, body: [UInt8])] = {
+        var out: [(UInt8, [UInt8])] = []
+        for p in 0...255 { out.append((0x4F, [UInt8(p)])) }
+        for p in 0...255 { out.append((0x4F, [UInt8(p), 0x01])) }
+        for p in 0...255 { out.append((0x4F, [0x01, UInt8(p)])) }
+        for p in 0...255 { out.append((0x13, [UInt8(p)])) }
+        return out
+    }()
+    /// tijd tussen twee commando's (s); 1024 × 0,4 s ≈ 7 min
+    static let sweepGap = 0.4
 
     private static func le32(_ v: UInt32) -> [UInt8] { [UInt8(v & 0xFF), UInt8(v >> 8 & 0xFF), UInt8(v >> 16 & 0xFF), UInt8(v >> 24)] }
     /// Wekker 8 over 2 s, met aangepaste staart (zelfde opbouw als de Whoop-app: `04 id` + tijd + 15 bytes).
@@ -91,6 +109,22 @@ struct HapticProbeView: View {
                 Text("Stuurt per stap één kandidaat-commando naar de band. Voel je iets, druk op Trilde!, anders op Niets. Eerst de echte trilcommando's (79, 19, 122; 80 leest alleen), daarna het wekkercommando (wekker 8) met andere instellingen; elk ander commando is geblokkeerd. Je echte wekker blijft ongemoeid. Klein risico: een vreemde instelling kan wekker 8 langer laten trillen; tik dan op de band om hem uit te zetten. Doe dit niet terwijl de Whoop-app synchroniseert.")
                     .font(.footnote).foregroundStyle(Theme.muted)
             }
+            Section {
+                Text("\(Self.sweep.count) trilcommando's (79 en 19, alle waarden) automatisch achter elkaar, zonder wekkertruc. Houd de band om. Voel je iets, druk dan meteen op Trilde nu!.")
+                    .font(.footnote).foregroundStyle(Theme.muted)
+                ProgressView(value: Double(sweepIndex), total: Double(Self.sweep.count))
+                Text("\(sweepIndex) / \(Self.sweep.count)").font(.caption.monospaced())
+                HStack {
+                    Button(sweeping ? "Stop" : (sweepIndex > 0 ? "Verder" : "Start")) { if sweeping { sweeping = false } else { startSweep() } }
+                        .buttonStyle(.bordered).disabled(ble.state != .connected)
+                    Spacer()
+                    Button("Trilde nu!") { feltNow() }.buttonStyle(.borderedProminent).tint(Theme.accent).disabled(sweepSent.isEmpty)
+                }
+                if !sweepLog.isEmpty {
+                    ShareLink(item: sweepLog.joined(separator: "\n")) { Label("Deel log", systemImage: "square.and.arrow.up") }
+                    Button("Opnieuw (log wissen)", role: .destructive) { sweeping = false; sweepIndex = 0; sweepLog = []; sweepSent = [] }
+                }
+            } header: { Text("Automatisch doorlopen") }
             Section("Stap \(index + 1) van \(Self.candidates.count)") {
                 Text(c.note).font(.headline)
                 Text("cmd \(c.cmd) · \(hex(c.body()))").font(.caption.monospaced()).foregroundStyle(Theme.muted)
@@ -118,8 +152,40 @@ struct HapticProbeView: View {
             }
         }
         .navigationTitle("Trilcommando zoeken")
-        .onAppear { ble.onProbeResponse = { cmd, res, body in lastResponse = "cmd \(cmd) → \(SleepAlarm.resultText(res)) [\(hex(body))]" } }
-        .onDisappear { ble.onProbeResponse = nil }
+        .onAppear { ble.onProbeResponse = { cmd, res, body in
+            lastResponse = "cmd \(cmd) → \(SleepAlarm.resultText(res)) [\(hex(body))]"
+            if sweeping || !sweepSent.isEmpty { sweepLog.append("\(Self.time()) ← \(lastResponse)") }
+        } }
+        .onDisappear { ble.onProbeResponse = nil; sweeping = false }
+    }
+
+    private static func time() -> String {
+        let f = DateFormatter(); f.dateFormat = "HH:mm:ss.S"; return f.string(from: Date())
+    }
+
+    private func startSweep() {
+        sweeping = true
+        Task { @MainActor in
+            while sweeping && sweepIndex < Self.sweep.count && ble.state == .connected {
+                let (cmd, body) = Self.sweep[sweepIndex]
+                guard Self.allowed.contains(cmd) else { break }
+                let text = "#\(sweepIndex + 1) cmd \(cmd) [\(hex(body))]"
+                if let e = ble.sendBandAlarm(cmd, body: body) { sweepLog.append("\(Self.time()) niet verstuurd: \(e)"); break }
+                sweepLog.append("\(Self.time()) → \(text)")
+                sweepSent.append((Date(), text))
+                if sweepSent.count > 20 { sweepSent.removeFirst() }
+                sweepIndex += 1
+                try? await Task.sleep(nanoseconds: UInt64(Self.sweepGap * 1e9))
+            }
+            sweeping = false
+        }
+    }
+
+    /// Markeert de commando's van de laatste 3 s als kandidaat (reactietijd) en pauzeert.
+    private func feltNow() {
+        let recent = sweepSent.filter { Date().timeIntervalSince($0.t) <= 3 }.map(\.text)
+        sweepLog.append("\(Self.time()) *** TRILDE *** kandidaten: " + recent.joined(separator: ", "))
+        sweeping = false
     }
 
     private func send(_ c: Candidate) {
