@@ -196,7 +196,12 @@ public enum SleepPlanner {
             }
         }
 
-        /// Korte trilling als bevestiging: een eigen wekker (nummer 8, de echte wekkers gebruiken 1–7) over een paar
+        /// Echte trilling zonder wekker (getest 27-11 op de 5.0): cmd 19, body = revisie 01, 8 DRV2625-effecten
+        /// (47 = trilling, 0x98 = 240 ms pauze), u16 loop, herhaalbyte.
+        public static let haptic: UInt8 = 0x13
+        public static let hapticBody: [UInt8] = [0x01, 0x2F, 0x98, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+        /// Oud (niet meer gebruikt): korte trilling via een eigen wekker (nummer 8, de echte wekkers gebruiken 1–7) over een paar
         /// seconden, met de staart van de 5.0-wekker maar 1 herhaling en 1 s duur (vermoedelijk @13 herhalingen, @14 duur).
         public static let buzzAlarmId: UInt8 = 8
         public static func buzzBody(unix: UInt32) -> [UInt8] {

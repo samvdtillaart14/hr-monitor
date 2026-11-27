@@ -77,7 +77,8 @@ final class AppServices {
             tapArmed = nil
         }
         guard let r = acts.toggleFromBand(store: store) else { return }
-        if r.started { alarm.buzz() }
+        // Trilfeedback: 1× bij starten, 2× kort bij stoppen.
+        if r.started { alarm.buzz() } else { alarm.buzz(times: 2, gap: 0.8) }
         InsightNotifications.post("band-tik", r.started ? "\(r.activity.type.name) gestart" : "\(r.activity.type.name) gestopt",
                                   r.started ? "Dubbeltik op je band om te stoppen. Soort wijzigen kan op Vandaag."
                                             : "Opgeslagen op Vandaag.")
