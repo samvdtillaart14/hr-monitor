@@ -119,10 +119,20 @@ final class ScoreModel: ObservableObject {
     }
 
     var lastNight: Night? {
-        guard let n = nights.last, Calendar.current.isDate(n.date, inSameDayAs: anchor) else { return nil }
-        return n
+        nights.last { Calendar.current.isDate($0.date, inSameDayAs: anchor) }
     }
-    var today: DayLoad? { days.last.flatMap { Calendar.current.isDate($0.date, inSameDayAs: anchor) ? $0 : nil } }
+    var today: DayLoad? { days.last { Calendar.current.isDate($0.date, inSameDayAs: anchor) } }
+
+    /// Lopende dag: na middernacht hoort alles nog bij gisteren tot er een nieuwe slaap is gemeten
+    /// (Whoop-cyclus loopt van wakker worden tot slapen), uiterlijk tot `cycleEndHour`.
+    static let cycleEndHour = 12
+    static func cycleAnchor(now: Date, nights: [Night], hasYesterday: Bool) -> Date {
+        let cal = Calendar.current
+        guard cal.component(.hour, from: now) < cycleEndHour, hasYesterday,
+              !nights.contains(where: { cal.isDate($0.date, inSameDayAs: now) }),
+              let y = cal.date(byAdding: .day, value: -1, to: now) else { return now }
+        return y
+    }
 
     /// `completion` volgt na de berekening; loopt er al een, dan volgt er nog één met de nieuwste data.
     /// - end: laatste dag van het venster (nil = vandaag).
@@ -162,7 +172,12 @@ final class ScoreModel: ObservableObject {
                     .filter { $0.t >= lo && $0.t <= hi }.compactMap(\.spo2).sorted() ?? []
                 if v.count >= 30 { n[i].metrics.spo2 = Double(v[v.count / 2]) }
             }
-            self.nights = n; self.days = dl; self.anchor = endDay; self.busy = false
+            let yesterday = cal.date(byAdding: .day, value: -1, to: endDay) ?? endDay
+            let hasYesterday = n.contains { cal.isDate($0.date, inSameDayAs: yesterday) }
+                || dl.contains { cal.isDate($0.date, inSameDayAs: yesterday) && $0.measuredMin > 0 }
+            // Eerst het anker: luisteraars op `nights` lezen lastNight/today meteen.
+            self.anchor = end == nil ? Self.cycleAnchor(now: endDay, nights: n, hasYesterday: hasYesterday) : endDay
+            self.nights = n; self.days = dl; self.busy = false
             if end == nil { self.saveCache() }
             if self.rerun { self.rerun = false; self.refresh(store: store, end: self.requestedEnd) }
             else { let w = self.waiters; self.waiters = []; w.forEach { $0() } }
