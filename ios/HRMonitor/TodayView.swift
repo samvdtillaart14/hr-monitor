@@ -28,11 +28,16 @@ struct TodayView: View {
     static let maxDaysBack = 30
 
     private var isToday: Bool { Calendar.current.isDateInToday(selected) }
+    /// Getoonde dag voor de waarden. Vandaag: de lopende dag volgens het model; na middernacht blijft dat
+    /// gisteren tot er een nieuwe slaap is gemeten (zoals een Whoop-cyclus), uiterlijk tot 12:00.
+    private var day: Date { isToday ? scores.anchor : selected }
+    /// Na middernacht nog wakker: de dag van gisteren loopt door.
+    private var dayRunsOn: Bool { isToday && !Calendar.current.isDateInToday(day) }
     /// Vandaag: het gedeelde model (meldingen, widget); eerdere dag: een eigen model.
     private var model: ScoreModel { isToday ? scores : past }
     private var night: Night? { model.lastNight }
-    private var pastNights: [Night] { model.nights.filter { !Calendar.current.isDate($0.date, inSameDayAs: selected) } }
-    private var pastDays: [DayLoad] { model.days.filter { !Calendar.current.isDate($0.date, inSameDayAs: selected) } }
+    private var pastNights: [Night] { model.nights.filter { !Calendar.current.isDate($0.date, inSameDayAs: day) } }
+    private var pastDays: [DayLoad] { model.days.filter { !Calendar.current.isDate($0.date, inSameDayAs: day) } }
     private var minDate: Date { Calendar.current.date(byAdding: .day, value: -Self.maxDaysBack, to: Calendar.current.startOfDay(for: Date()))! }
 
     var body: some View {
@@ -46,7 +51,7 @@ struct TodayView: View {
                             .font(.footnote).foregroundStyle(Theme.muted)
                     }
                     stepsCard
-                    ActivitiesCard(scores: model, day: selected)
+                    ActivitiesCard(scores: model, day: day)
                     if isToday {
                     Button { AppRouter.shared.sheet = .journal } label: {
                         Card(title: "Dagboek") {
@@ -128,23 +133,23 @@ struct TodayView: View {
 
     /// Zelfde berekening als het stressscherm.
     private func updateStress() {
-        let s = store.samples(day: selected)
+        let shown = day
+        let s = store.samples(day: shown)
         measuredMin = Set(s.map { $0.t / 60 }).count
         stepsToday = s.contains(where: { $0.steps != nil }) ? DayStore.steps(s) : nil
         let past = (1...7).compactMap { n in
-            Calendar.current.date(byAdding: .day, value: -n, to: selected).flatMap { store.steps(day: $0) }
+            Calendar.current.date(byAdding: .day, value: -n, to: shown).flatMap { store.steps(day: $0) }
         }
         stepsNormal = past.isEmpty ? nil : past.reduce(0, +) / past.count
         stepsFromPhone = false
         if stepsToday == nil {
             // Band gaf (nog) geen stappen: val terug op de iPhone-stappenteller.
-            let start = Calendar.current.startOfDay(for: selected)
+            let start = Calendar.current.startOfDay(for: shown)
             let end = min(Date(), Calendar.current.date(byAdding: .day, value: 1, to: start)!)
-            let day = selected
             Task {
                 let n = await ActivityStore.steps(Self.pedometer, start.addingTimeInterval(1), end)
                 await MainActor.run {
-                    guard Calendar.current.isDate(day, inSameDayAs: selected), stepsToday == nil, let n else { return }
+                    guard Calendar.current.isDate(shown, inSameDayAs: self.day), stepsToday == nil, let n else { return }
                     stepsToday = n; stepsFromPhone = true
                 }
             }
@@ -158,6 +163,7 @@ struct TodayView: View {
 
     private var dayLabel: String {
         let cal = Calendar.current
+        if dayRunsOn { return day.formatted(.dateTime.locale(DV.nl).weekday(.wide).day().month(.wide)) + " (tot je slaapt)" }
         if cal.isDateInToday(selected) { return selected.formatted(.dateTime.locale(DV.nl).weekday(.wide).day().month(.wide)) }
         if cal.isDateInYesterday(selected) { return "Gisteren, " + selected.formatted(.dateTime.locale(DV.nl).day().month(.wide)) }
         return selected.formatted(.dateTime.locale(DV.nl).weekday(.wide).day().month(.wide))
@@ -261,7 +267,7 @@ struct TodayView: View {
             if stress.count > 1 {
                 Chart {
                     if let n = night {
-                        RectangleMark(xStart: .value("", max(n.onset, Calendar.current.startOfDay(for: selected))), xEnd: .value("", n.wake))
+                        RectangleMark(xStart: .value("", max(n.onset, Calendar.current.startOfDay(for: day))), xEnd: .value("", n.wake))
                             .foregroundStyle(Theme.hex(0x8FA8C8).opacity(0.12))
                     }
                     ForEach(stress.indices, id: \.self) { i in
